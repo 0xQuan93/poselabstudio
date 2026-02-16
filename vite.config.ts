@@ -158,13 +158,15 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-  // Security headers removed to fix black screen issue (blocks external resources)
-  // server: {
-  //   headers: {
-  //     'Cross-Origin-Opener-Policy': 'same-origin',
-  //     'Cross-Origin-Embedder-Policy': 'require-corp',
-  //   },
-  // },
+  // Allow serving files from the main project root (for bg-cache symlink)
+  server: {
+    fs: {
+      allow: [
+        __dirname,
+        path.resolve(__dirname, '../..'),  // project root
+      ],
+    },
+  },
   preview: {
     // headers removed
   },
