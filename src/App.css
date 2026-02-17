@@ -1919,7 +1919,11 @@
 .app-shell.stream-mode .app-header,
 .app-shell.stream-mode .control-panel,
 .app-shell.stream-mode .viewport-overlay,
-.app-shell.stream-mode .control-toggle {
+.app-shell.stream-mode .control-toggle,
+.app-shell.stream-mode .ai-widget-container,
+.app-shell.stream-mode .session-hud,
+.app-shell.stream-mode .connection-progress-panel,
+.app-shell.stream-mode .toast-host {
   display: none !important;
 }
 
