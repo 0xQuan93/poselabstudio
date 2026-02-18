@@ -13,7 +13,7 @@ PoseLab is a browser-based VRM avatar studio that combines posing, real-time mot
 | **What** | Browser-based VRM avatar posing, animation, and collaboration platform |
 | **Who** | Content creators, VTubers, developers, artists, and communities |
 | **Why** | Avatar tools without downloads, accounts, or servers |
-| **How** | WebGL (Three.js) + WebRTC (PeerJS) + MediaPipe ML |
+| **How** | WebGL (Three.js) + WebRTC (LiveKit) + MediaPipe ML |
 | **Current Version** | v1.2.1 (January 2026) |
 
 **Note on Transparency:** For a detailed breakdown of system limitations and technical architecture constraints, please refer to [TECHNICAL-AUDIT.md](./TECHNICAL-AUDIT.md).
@@ -116,8 +116,8 @@ PoseLab is a browser-based VRM avatar studio that combines posing, real-time mot
 │  │         └───────────────┼────────────────────┘            │   │
 │  │                         │                                 │   │
 │  │                    ┌────▼────┐                            │   │
-│  │                    │ PeerJS  │                            │   │
-│  │                    │(Mesh Net)│                            │   │
+│  │                    │ LiveKit │                            │   │
+│  │                    │(SFU Net)│                            │   │
 │  │                    └─────────┘                            │   │
 │  └──────────────────────────────────────────────────────────┘   │
 ```
@@ -159,7 +159,7 @@ PoseLab is a browser-based VRM avatar studio that combines posing, real-time mot
 | Aspect | Implementation |
 |--------|----------------|
 | **Data Storage** | Browser localStorage only |
-| **Server** | None - pure P2P (Signaling via PeerJS cloud) |
+| **Server** | LiveKit Cloud (SFU) + Netlify Functions (Auth) |
 | **VRM Files** | Transferred P2P, never stored on a server |
 | **Voice Chat** | Direct peer connection (WebRTC) |
 | **AI Processing** | Google Gemini API (Data subject to Google's AI terms) |

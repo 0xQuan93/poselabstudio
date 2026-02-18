@@ -64,5 +64,5 @@ We added a `WebXRManager` to handle AR sessions.
 ---
 
 ## Future Roadmap (v3.1)
-- **Multiplayer Sync**: Transmit compressed bone quaternions via PeerJS.
+- **Multiplayer Sync**: Transmit compressed bone quaternions via LiveKit Data Channels.
 - **Recording**: Export `vrm` animation clips directly from AR sessions.

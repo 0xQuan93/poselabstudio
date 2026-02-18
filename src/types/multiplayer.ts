@@ -291,10 +291,10 @@ export interface MultiplayerConfig {
 
 /** Default config */
 export const DEFAULT_MULTIPLAYER_CONFIG: MultiplayerConfig = {
-  maxPeers: 8,
+  maxPeers: 32,
   poseSyncRate: 30, // 30 FPS sync
   enableVRMTransfer: true,
-  vrmChunkSize: 6 * 1024, // 6KB chunks (~8KB as base64, fits in PeerJS JSON limit)
+  vrmChunkSize: 6 * 1024, // 6KB chunks (~8KB as base64, fits in WebRTC data channel limits)
   connectionTimeout: 10000,
   reconnectAttempts: 3,
 };

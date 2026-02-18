@@ -25,7 +25,7 @@ For VRM specification details (humanoid bones, MToon, 0.0 vs 1.0) and recommende
 *   **Build Tool**: Vite
 *   **Language**: TypeScript
 *   **Styling**: CSS Modules
-*   **Networking**: PeerJS (WebRTC) + PubNub
+*   **Networking**: LiveKit (WebRTC SFU) + Netlify Functions (Token generation)
 *   **AI**: Google Gemini API
 
 ## Project Structure

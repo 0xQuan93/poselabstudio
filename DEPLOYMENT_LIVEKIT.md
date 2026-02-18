@@ -26,5 +26,5 @@ npm run dev
 
 ## Notes
 - The multiplayer system now uses `src/multiplayer/livekitManager.ts`.
-- The old `src/multiplayer/peerManager.ts` has been renamed to `src/multiplayer/peerManager.legacy.ts` as a backup.
+- The multiplayer system has been migrated from PeerJS to LiveKit.
 - You can monitor room usage in your LiveKit Cloud dashboard.
