@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { Server as OscServer } from 'node-osc'
+import { AccessToken } from 'livekit-server-sdk'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -13,12 +14,63 @@ const poseOutputDir = path.resolve(__dirname, 'src/poses')
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  // Load all env vars to get LIVEKIT secrets
+  const env = loadEnv(mode, process.cwd(), '')
   const isDev = mode === 'development'
   const enableVmcBridge = env.VITE_ENABLE_VMC_BRIDGE === 'true'
   const enablePoseExport = env.VITE_ENABLE_POSE_EXPORT === 'true'
   const plugins: PluginOption[] = [
     react(),
+    {
+      name: 'livekit-token-endpoint',
+      configureServer(server: ViteDevServer) {
+        server.middlewares.use('/.netlify/functions/livekit-token', async (req: IncomingMessage, res: ServerResponse) => {
+           if (req.method !== 'POST') {
+             res.writeHead(405, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+             return;
+           }
+
+           let body = '';
+           req.on('data', chunk => body += chunk);
+           req.on('end', async () => {
+             try {
+                const { roomName, participantName } = JSON.parse(body || '{}');
+                const apiKey = env.LIVEKIT_API_KEY;
+                const apiSecret = env.LIVEKIT_API_SECRET;
+                
+                if (!apiKey || !apiSecret) {
+                  console.error('Missing LiveKit credentials in environment variables');
+                   res.writeHead(500, { 'Content-Type': 'application/json' });
+                   res.end(JSON.stringify({ error: 'Missing LiveKit credentials' }));
+                   return;
+                }
+
+                const at = new AccessToken(apiKey, apiSecret, {
+                  identity: participantName,
+                  name: participantName,
+                });
+
+                at.addGrant({
+                  roomJoin: true,
+                  room: roomName,
+                  canPublish: true,
+                  canSubscribe: true,
+                  canPublishData: true,
+                });
+
+                const token = await at.toJwt();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ token }));
+             } catch (err) {
+                console.error('Error generating token:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal Server Error' }));
+             }
+           });
+        });
+      }
+    },
     enableVmcBridge && {
       name: 'vmc-bridge',
       configureServer(server: ViteDevServer) {

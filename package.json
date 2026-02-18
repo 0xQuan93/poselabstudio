@@ -31,6 +31,8 @@
     "jszip": "^3.10.1",
     "kalidokit": "^1.1.5",
     "kbar": "^0.1.0-beta.48",
+    "livekit-client": "^2.17.1",
+    "livekit-server-sdk": "^2.15.0",
     "peerjs": "^1.5.5",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.4.3",

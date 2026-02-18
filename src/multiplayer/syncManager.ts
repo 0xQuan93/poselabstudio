@@ -252,7 +252,7 @@ class SyncManager {
       };
 
       try {
-        const sent = peerManager.send(peerId, chunkMessage);
+        const sent = await peerManager.send(peerId, chunkMessage);
         if (sent) {
           successCount++;
           // Update progress UI
@@ -407,7 +407,7 @@ class SyncManager {
       };
 
       try {
-        peerManager.send(peerId, message);
+        await peerManager.send(peerId, message);
         notifyTransferProgress({
           peerId,
           displayName: peerDisplayName,

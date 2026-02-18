@@ -27,7 +27,6 @@ export function VoiceChatControls({ compact = false }: VoiceChatControlsProps) {
     voiceChatMuted,
     voiceChatVolume,
     localIsSpeaking,
-    peers,
     setVoiceChatEnabled,
     setVoiceChatMuted,
     setVoiceChatVolume,
@@ -50,16 +49,7 @@ export function VoiceChatControls({ compact = false }: VoiceChatControlsProps) {
     return unsubscribe;
   }, [setVoiceChatEnabled, setVoiceChatMuted, setVoiceChatVolume, setLocalIsSpeaking]);
 
-  // Call new peers when they join (if voice chat is enabled)
-  useEffect(() => {
-    if (!voiceChatEnabled) return;
 
-    peers.forEach((peerInfo, peerId) => {
-      if (!peerInfo.isLocal) {
-        voiceChatManager.callPeer(peerId);
-      }
-    });
-  }, [peers, voiceChatEnabled]);
 
   const handleToggleVoiceChat = useCallback(async () => {
     if (voiceChatEnabled) {

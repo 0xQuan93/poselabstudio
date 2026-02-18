@@ -1,44 +1,9 @@
-/**
- * Multiplayer Module
- * 
- * Provides peer-to-peer co-op functionality for PoseLab.
- * Enables multiple users to share a session and see each other's avatars in real-time.
- * 
- * Features:
- * - P2P avatar sync (pose, expression, position)
- * - VRM file transfer
- * - Voice chat
- * - Social features (chat, reactions, group photos)
- */
+// Export LiveKitManager as peerManager to serve as a drop-in replacement
+import { liveKitManager } from './livekitManager';
 
-export { peerManager } from './peerManager';
-export { syncManager } from './syncManager';
+export const peerManager = liveKitManager;
+
+// Re-export other managers
 export { voiceChatManager } from './voiceChatManager';
+export { syncManager } from './syncManager';
 export { socialManager } from './socialManager';
-export { 
-  initAvatarBridge, 
-  loadAvatar, 
-  notifyPoseChange, 
-  notifyExpressionChange,
-  notifySceneChange,
-  getAllAvatarPeerIds,
-  getAvatarCount,
-} from './avatarBridge';
-
-// Re-export types
-export type {
-  PeerId,
-  RoomId,
-  ConnectionState,
-  SessionRole,
-  AvatarState,
-  PeerInfo,
-  SessionState,
-  PeerMessage,
-  MultiplayerConfig,
-  ReactionType,
-  PresenceState,
-} from '../types/multiplayer';
-
-export { DEFAULT_MULTIPLAYER_CONFIG } from '../types/multiplayer';
-

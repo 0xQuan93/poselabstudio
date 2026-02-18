@@ -7,7 +7,7 @@ import { multiAvatarManager } from '../../three/multiAvatarManager';
 import { interactionManager } from '../../three/interactionManager';
 import type { AnimationMode } from '../../types/reactions';
 import { useToastStore } from '../../state/useToastStore';
-import { notifyExpressionChange } from '../../multiplayer';
+import { notifyExpressionChange } from '../../multiplayer/avatarBridge';
 import { CheckCircle, File } from '@phosphor-icons/react';
 
 export function PoseExpressionTab() {

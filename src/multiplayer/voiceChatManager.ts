@@ -1,16 +1,13 @@
-import Peer from 'peerjs';
-import type { MediaConnection } from 'peerjs';
+import { Room, RemoteTrack, RoomEvent, Track } from 'livekit-client';
 import type { PeerId } from '../types/multiplayer';
-import { useMultiplayerStore } from '../state/useMultiplayerStore';
 
 /**
- * VoiceChatManager handles peer-to-peer audio communication using WebRTC.
- * Works alongside the existing data-channel-based peerManager.
+ * VoiceChatManager handles peer-to-peer audio communication using LiveKit.
+ * Works alongside the existing data-channel-based liveKitManager.
  */
 
 interface AudioPeer {
   peerId: PeerId;
-  mediaConnection: MediaConnection;
   audioElement: HTMLAudioElement;
   isMuted: boolean;
   volume: number;
@@ -27,12 +24,8 @@ export interface VoiceChatState {
 }
 
 class VoiceChatManager {
-  private peer: Peer | null = null;
-  private localStream: MediaStream | null = null;
+  private room: Room | null = null;
   private audioPeers = new Map<PeerId, AudioPeer>();
-  private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
-  private gainNode: GainNode | null = null;
   
   // State
   private isEnabled = false;
@@ -42,7 +35,6 @@ class VoiceChatManager {
   
   // Listeners
   private stateListeners = new Set<VoiceChatStateListener>();
-  private speakingCheckInterval: number | null = null;
   
   // Audio container for remote audio elements
   private audioContainer: HTMLDivElement | null = null;
@@ -62,53 +54,37 @@ class VoiceChatManager {
   // ==================
 
   /**
-   * Initialize voice chat with an existing Peer instance
+   * Initialize voice chat with an existing Room instance
    */
-  setPeer(peer: Peer | null) {
-    this.peer = peer;
+  setRoom(room: Room | null) {
+    this.room = room;
     
-    if (peer) {
-      // Listen for incoming calls
-      peer.on('call', (call) => {
-        this.handleIncomingCall(call);
-      });
+    if (this.room) {
+      this.setupRoomListeners();
     }
   }
 
   /**
-   * Enable voice chat (request microphone access and start broadcasting)
+   * Enable voice chat (publish microphone)
    */
   async enable(): Promise<void> {
-    if (this.isEnabled) return;
+    if (this.isEnabled || !this.room) return;
 
     try {
-      // Request microphone access
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
-
-      // Setup audio analysis for speaking detection
-      this.setupAudioAnalysis();
-
       this.isEnabled = true;
       this.notifyStateChange();
 
-      // Call all existing peers
-      const store = useMultiplayerStore.getState();
-      store.peers.forEach((peerInfo, peerId) => {
-        if (!peerInfo.isLocal && this.peer) {
-          this.callPeer(peerId);
-        }
+      // Publish microphone
+      await this.room.localParticipant.setMicrophoneEnabled(true, {
+         echoCancellation: true,
+         noiseSuppression: true,
       });
 
       console.log('[VoiceChatManager] Voice chat enabled');
     } catch (error) {
       console.error('[VoiceChatManager] Failed to enable voice chat:', error);
+      this.isEnabled = false;
+      this.notifyStateChange();
       throw error;
     }
   }
@@ -116,35 +92,14 @@ class VoiceChatManager {
   /**
    * Disable voice chat
    */
-  disable() {
+  async disable() {
     if (!this.isEnabled) return;
 
-    // Stop local stream
-    if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
-      this.localStream = null;
+    // Unpublish microphone
+    if (this.room && this.room.localParticipant) {
+        await this.room.localParticipant.setMicrophoneEnabled(false);
     }
-
-    // Close all media connections
-    this.audioPeers.forEach((audioPeer) => {
-      audioPeer.mediaConnection.close();
-      audioPeer.audioElement.remove();
-    });
-    this.audioPeers.clear();
-
-    // Cleanup audio analysis
-    if (this.speakingCheckInterval) {
-      clearInterval(this.speakingCheckInterval);
-      this.speakingCheckInterval = null;
-    }
-
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
-      this.analyser = null;
-      this.gainNode = null;
-    }
-
+    
     this.isEnabled = false;
     this.isSpeaking = false;
     this.notifyStateChange();
@@ -158,11 +113,25 @@ class VoiceChatManager {
   toggleMute(): boolean {
     this.isMuted = !this.isMuted;
 
-    // Mute/unmute local stream tracks
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach(track => {
-        track.enabled = !this.isMuted;
-      });
+    if (this.room && this.room.localParticipant) {
+        // We can just mute the track or disable mic. 
+        // Muting the track keeps it published but sends silence.
+        // setMicrophoneEnabled(false) unpublishes.
+        // Usually "mute" means silence but keep connection.
+        // But LiveKit recommends setMicrophoneEnabled(false) for full mute to save bandwidth, 
+        // or just track.mute()
+        
+        // Let's use track.mute() if available, or just setMicrophoneEnabled
+        // Actually, LiveKit localParticipant.setMicrophoneEnabled(true/false) is the high level API
+        // For temporary mute (toggle), we might want to just mute the track.
+        const audioTrack = this.room.localParticipant.getTrackPublication(Track.Source.Microphone);
+        if (audioTrack && audioTrack.track) {
+            if (this.isMuted) {
+                audioTrack.track.mute();
+            } else {
+                audioTrack.track.unmute();
+            }
+        }
     }
 
     this.notifyStateChange();
@@ -174,13 +143,17 @@ class VoiceChatManager {
    */
   setMuted(muted: boolean) {
     if (this.isMuted === muted) return;
-    
     this.isMuted = muted;
     
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach(track => {
-        track.enabled = !this.isMuted;
-      });
+    if (this.room && this.room.localParticipant) {
+        const audioTrack = this.room.localParticipant.getTrackPublication(Track.Source.Microphone);
+        if (audioTrack && audioTrack.track) {
+            if (this.isMuted) {
+                audioTrack.track.mute();
+            } else {
+                audioTrack.track.unmute();
+            }
+        }
     }
 
     this.notifyStateChange();
@@ -227,24 +200,11 @@ class VoiceChatManager {
   }
 
   /**
-   * Call a specific peer
-   */
-  callPeer(peerId: PeerId) {
-    if (!this.peer || !this.localStream || this.audioPeers.has(peerId)) return;
-
-    console.log('[VoiceChatManager] Calling peer:', peerId);
-    
-    const call = this.peer.call(peerId, this.localStream);
-    this.setupMediaConnection(call, peerId);
-  }
-
-  /**
    * Handle peer leaving
    */
   handlePeerLeave(peerId: PeerId) {
     const audioPeer = this.audioPeers.get(peerId);
     if (audioPeer) {
-      audioPeer.mediaConnection.close();
       audioPeer.audioElement.remove();
       this.audioPeers.delete(peerId);
       this.notifyStateChange();
@@ -259,7 +219,7 @@ class VoiceChatManager {
     
     this.audioPeers.forEach((audioPeer, peerId) => {
       activePeers.set(peerId, {
-        isSpeaking: false, // We could add speaking detection for remote peers too
+        isSpeaking: false, // LiveKit has 'ActiveSpeaker' events we can listen to
         volume: audioPeer.volume,
       });
     });
@@ -292,115 +252,45 @@ class VoiceChatManager {
   // Internal Methods
   // ==================
 
-  private handleIncomingCall(call: MediaConnection) {
-    const peerId = call.peer;
-    console.log('[VoiceChatManager] Incoming call from:', peerId);
+  private setupRoomListeners() {
+      if (!this.room) return;
 
-    // If we have a local stream, answer with it
-    if (this.localStream) {
-      call.answer(this.localStream);
-    } else {
-      // Answer without sending audio (receive only)
-      call.answer();
-    }
-
-    this.setupMediaConnection(call, peerId);
-  }
-
-  private setupMediaConnection(call: MediaConnection, peerId: PeerId) {
-    call.on('stream', (remoteStream) => {
-      console.log('[VoiceChatManager] Received stream from:', peerId);
-      
-      // Create audio element for playback
-      const audioElement = document.createElement('audio');
-      audioElement.srcObject = remoteStream;
-      audioElement.volume = this.volume;
-      audioElement.autoplay = true;
-      audioElement.setAttribute('playsinline', ''); // Helps on mobile
-      
-      // Add to container
-      if (this.audioContainer) {
-        this.audioContainer.appendChild(audioElement);
-      }
-
-      // iOS Safari requires explicit play() after user gesture
-      // The enable() method is called from a button click, so this should work
-      const playPromise = audioElement.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.warn('[VoiceChatManager] Audio autoplay blocked, will retry on user interaction:', error);
-          // Store for retry - user's next interaction will trigger play
-          const retryPlay = () => {
-            audioElement.play().catch(() => {});
-            document.removeEventListener('touchstart', retryPlay);
-            document.removeEventListener('click', retryPlay);
-          };
-          document.addEventListener('touchstart', retryPlay, { once: true });
-          document.addEventListener('click', retryPlay, { once: true });
+      this.room
+        .on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+            if (track.kind === Track.Kind.Audio) {
+                this.handleTrackSubscribed(track as RemoteTrack, participant.identity);
+            }
+        })
+        .on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+            if (track.kind === Track.Kind.Audio) {
+                this.handlePeerLeave(participant.identity);
+            }
+        })
+        .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+             // Update speaking state
+             this.isSpeaking = speakers.some(s => s.isLocal);
+             this.notifyStateChange();
         });
-      }
-
-      // Store the audio peer
-      this.audioPeers.set(peerId, {
-        peerId,
-        mediaConnection: call,
-        audioElement,
-        isMuted: false,
-        volume: 1.0,
-      });
-
-      this.notifyStateChange();
-    });
-
-    call.on('close', () => {
-      console.log('[VoiceChatManager] Call closed with:', peerId);
-      this.handlePeerLeave(peerId);
-    });
-
-    call.on('error', (err) => {
-      console.error('[VoiceChatManager] Call error with', peerId, ':', err);
-      this.handlePeerLeave(peerId);
-    });
   }
 
-  private setupAudioAnalysis() {
-    if (!this.localStream) return;
-
-    this.audioContext = new AudioContext();
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 256;
-    this.analyser.smoothingTimeConstant = 0.8;
-
-    this.gainNode = this.audioContext.createGain();
-
-    const source = this.audioContext.createMediaStreamSource(this.localStream);
-    source.connect(this.analyser);
-    source.connect(this.gainNode);
-    // Don't connect to destination - we don't want to hear ourselves
-
-    // Start speaking detection
-    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-    
-    this.speakingCheckInterval = window.setInterval(() => {
-      if (!this.analyser) return;
+  private handleTrackSubscribed(track: RemoteTrack, peerId: PeerId) {
+      console.log('[VoiceChatManager] Audio track subscribed:', peerId);
       
-      this.analyser.getByteFrequencyData(dataArray);
+      const element = track.attach();
+      element.volume = this.volume;
       
-      // Calculate average volume
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
+      if (this.audioContainer) {
+          this.audioContainer.appendChild(element);
       }
-      const average = sum / dataArray.length;
+
+      this.audioPeers.set(peerId, {
+          peerId,
+          audioElement: element,
+          isMuted: false,
+          volume: 1.0
+      });
       
-      // Threshold for speaking detection
-      const wasSpeaking = this.isSpeaking;
-      this.isSpeaking = average > 20 && !this.isMuted;
-      
-      if (wasSpeaking !== this.isSpeaking) {
-        this.notifyStateChange();
-      }
-    }, 100);
+      this.notifyStateChange();
   }
 
   private notifyStateChange() {
@@ -426,10 +316,9 @@ class VoiceChatManager {
     }
 
     this.stateListeners.clear();
-    this.peer = null;
+    this.room = null;
   }
 }
 
 // Singleton instance
 export const voiceChatManager = new VoiceChatManager();
-
