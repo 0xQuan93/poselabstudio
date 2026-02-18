@@ -238,8 +238,13 @@ class SyncManager {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * chunkSize;
       const end = Math.min(start + chunkSize, uint8Array.length);
-      // Create a copy of the chunk to ensure it's a clean ArrayBuffer
-      const chunk = uint8Array.slice(start, end).buffer;
+      const chunkBytes = uint8Array.slice(start, end);
+      
+      let binary = '';
+      for (let j = 0; j < chunkBytes.length; j++) {
+        binary += String.fromCharCode(chunkBytes[j]);
+      }
+      const base64Chunk = btoa(binary);
       
       const chunkMessage: VRMChunkMessage = {
         type: 'vrm-chunk',
@@ -248,7 +253,7 @@ class SyncManager {
         timestamp: Date.now(),
         chunkIndex: i,
         totalChunks,
-        data: chunk,
+        data: base64Chunk,
       };
 
       try {
@@ -392,7 +397,13 @@ class SyncManager {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * chunkSize;
       const end = Math.min(start + chunkSize, uint8Array.length);
-      const chunk = uint8Array.slice(start, end).buffer;
+      const chunkBytes = uint8Array.slice(start, end);
+      
+      let binary = '';
+      for (let j = 0; j < chunkBytes.length; j++) {
+        binary += String.fromCharCode(chunkBytes[j]);
+      }
+      const base64Chunk = btoa(binary);
       
       const message: BackgroundChunkMessage = {
         type: 'background-chunk',
@@ -401,7 +412,7 @@ class SyncManager {
         timestamp: Date.now(),
         chunkIndex: i,
         totalChunks,
-        data: chunk,
+        data: base64Chunk,
         fileName,
         fileType: customBackgroundType || 'image/png'
       };
