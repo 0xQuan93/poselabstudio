@@ -14,6 +14,7 @@ import type {
 import { DEFAULT_MULTIPLAYER_CONFIG } from '../types/multiplayer';
 import { useMultiplayerStore } from '../state/useMultiplayerStore';
 import { voiceChatManager } from './voiceChatManager';
+import { multiAvatarManager } from '../three/multiAvatarManager';
 
 type MessageHandler = (peerId: PeerId, message: PeerMessage) => void;
 type ConnectionHandler = (peerId: PeerId, state: ConnectionState) => void;
@@ -142,6 +143,7 @@ class LiveKitManager {
     const store = useMultiplayerStore.getState();
     store.resetSession();
     voiceChatManager.disable();
+    multiAvatarManager.endSession();
   }
 
   // ==================

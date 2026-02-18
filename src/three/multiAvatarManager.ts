@@ -318,6 +318,42 @@ class MultiAvatarManager {
     this.localPeerId = null;
   }
 
+  /**
+   * End session cleanup
+   * Removes remote avatars but preserves local avatar in scene
+   */
+  endSession() {
+    console.log('[MultiAvatarManager] Ending session, cleaning up avatars');
+    const peerIds = Array.from(this.avatars.keys());
+    
+    peerIds.forEach(peerId => {
+      const instance = this.avatars.get(peerId);
+      if (instance?.isLocal) {
+         console.log('[MultiAvatarManager] Preserving local avatar, resetting position');
+         // Stop tracking in this manager but keep in scene
+         this.avatars.delete(peerId);
+         
+         // Reset position to center (undo multiplayer layout offset)
+         instance.vrm.scene.position.set(0, 0, 0);
+         
+         // Stop our mixer (AvatarManager's mixer will continue to handle it)
+         instance.mixer.stopAllAction();
+         
+      } else {
+         this.removeAvatar(peerId);
+      }
+    });
+    
+    this.localPeerId = null;
+    this.gestureAnimations.clear();
+    
+    // Stop tick loop if empty
+    if (this.avatars.size === 0) {
+      this.tickDispose?.();
+      this.tickDispose = undefined;
+    }
+  }
+
   // ==================
   // Pose Application
   // ==================
