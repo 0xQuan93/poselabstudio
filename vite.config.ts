@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => {
 
                 const token = await at.toJwt();
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ token }));
+                res.end(JSON.stringify({ token, url: env.LIVEKIT_URL }));
              } catch (err) {
                 console.error('Error generating token:', err);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -210,19 +210,16 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-  define: {
-    'import.meta.env.VITE_LIVEKIT_URL': JSON.stringify(env.VITE_LIVEKIT_URL || env.LIVEKIT_URL),
-  },
-  // Security headers removed to fix black screen issue (blocks external resources)
-  // server: {
-  //   headers: {
-  //     'Cross-Origin-Opener-Policy': 'same-origin',
-  //     'Cross-Origin-Embedder-Policy': 'require-corp',
-  //   },
-  // },
-  preview: {
-    // headers removed
-  },
+    // Security headers removed to fix black screen issue (blocks external resources)
+    // server: {
+    //   headers: {
+    //     'Cross-Origin-Opener-Policy': 'same-origin',
+    //     'Cross-Origin-Embedder-Policy': 'require-corp',
+    //   },
+    // },
+    preview: {
+      // headers removed
+    },
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
   },

@@ -50,7 +50,7 @@ const handler: Handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, url: process.env.LIVEKIT_URL }),
     };
   } catch (error) {
     console.error('Error generating token:', error);

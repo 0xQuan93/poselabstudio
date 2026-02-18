@@ -73,7 +73,7 @@ class LiveKitManager {
 
     try {
       // 1. Get Token from Netlify Function
-      const token = await this.fetchToken(roomId, displayName);
+      const { token, url } = await this.fetchToken(roomId, displayName);
       
       // 2. Initialize Room
       this.room = new Room({
@@ -88,7 +88,7 @@ class LiveKitManager {
       this.setupRoomListeners();
 
       // 4. Connect
-      const wsUrl = import.meta.env.VITE_LIVEKIT_URL || "wss://your-project.livekit.cloud"; // Needs to be in .env
+      const wsUrl = url || import.meta.env.VITE_LIVEKIT_URL || "wss://your-project.livekit.cloud";
       console.log(`[LiveKitManager] Connecting to ${wsUrl} as ${displayName}`);
       
       await this.room.connect(wsUrl, token);
@@ -345,7 +345,7 @@ class LiveKitManager {
   // Internal
   // ==================
 
-  private async fetchToken(roomName: string, participantName: string): Promise<string> {
+  private async fetchToken(roomName: string, participantName: string): Promise<{ token: string, url: string }> {
     const response = await fetch('/.netlify/functions/livekit-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -362,7 +362,7 @@ class LiveKitManager {
       console.error('Failed to parse token response:', text);
       throw new Error(`Invalid response from server: ${text.substring(0, 100)}...`);
     });
-    return data.token;
+    return { token: data.token, url: data.url };
   }
 
   private setupRoomListeners() {
