@@ -357,7 +357,7 @@ class LiveKitManager {
       throw new Error(error.error || 'Failed to fetch token');
     }
 
-    const data = await response.json().catch(async (e) => {
+    const data = await response.json().catch(async (_e) => {
       const text = await response.text();
       console.error('Failed to parse token response:', text);
       throw new Error(`Invalid response from server: ${text.substring(0, 100)}...`);
