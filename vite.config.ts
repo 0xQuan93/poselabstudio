@@ -210,6 +210,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+  define: {
+    'import.meta.env.VITE_LIVEKIT_URL': JSON.stringify(env.VITE_LIVEKIT_URL || env.LIVEKIT_URL),
+  },
   // Security headers removed to fix black screen issue (blocks external resources)
   // server: {
   //   headers: {
