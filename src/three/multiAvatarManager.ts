@@ -29,6 +29,8 @@ interface AvatarInstance {
   isDirty: boolean;
   /** Whether position was manually set by user (ignore auto-layout) */
   isManualPosition: boolean;
+  /** The position assigned by auto-layout */
+  assignedPosition: THREE.Vector3;
   /** Offset position in the scene */
   positionOffset: THREE.Vector3;
   
@@ -144,6 +146,7 @@ class MultiAvatarManager {
       isAnimated: false,
       lastUpdate: Date.now(),
       positionOffset: new THREE.Vector3(0, 0, 0),
+      assignedPosition: new THREE.Vector3(0, 0, 0),
       isManualPosition: false,
       isDirty: true,
       poseAlpha: 1,
@@ -252,6 +255,7 @@ class MultiAvatarManager {
       isAnimated: false,
       lastUpdate: Date.now(),
       positionOffset: new THREE.Vector3(0, 0, 0), // Keep current position
+      assignedPosition: new THREE.Vector3(0, 0, 0),
       isManualPosition: false,
       isDirty: true,
       poseAlpha: 1,
@@ -496,6 +500,11 @@ class MultiAvatarManager {
 
     // Get scene position (user-controlled via gizmo)
     const scenePosition = instance.vrm.scene.position;
+    
+    // Check if position deviates from assigned auto-layout position
+    // If effectively same, don't broadcast position (let receiver auto-layout handle it)
+    const dist = scenePosition.distanceTo(instance.assignedPosition);
+    const isManual = dist > 0.01 || instance.isManualPosition;
 
     return {
       peerId: instance.peerId,
@@ -503,11 +512,11 @@ class MultiAvatarManager {
       sceneRotation,
       pose,
       expressions,
-      position: {
+      position: isManual ? {
         x: scenePosition.x,
         y: scenePosition.y,
         z: scenePosition.z,
-      },
+      } : undefined,
       hasAvatar: true,
       timestamp: Date.now(),
     };
@@ -905,15 +914,17 @@ class MultiAvatarManager {
       
       const z = -row * SPACING_Z; // Rows go back into the screen
 
-      // Check if we need to update position (avoid dirtying if already there)
-      if (instance.positionOffset.x !== x || instance.positionOffset.z !== z) {
-        instance.positionOffset.set(x, 0, z);
-        instance.vrm.scene.position.copy(instance.positionOffset);
-        // Ensure rotation is correct (facing camera/forward +Z)
-        // VRMs face +Z by default? No, VRM standard is +Z forward.
-        // But we rotate them 180 (Math.PI) in loadAvatar.
-        // Let's re-enforce rotation just in case.
-        instance.vrm.scene.rotation.set(0, Math.PI, 0); 
+      // Update assigned position (auto-layout target)
+      instance.assignedPosition.set(x, 0, z);
+
+      // Only apply if not manually positioned
+      if (!instance.isManualPosition) {
+        if (instance.positionOffset.x !== x || instance.positionOffset.z !== z) {
+          instance.positionOffset.set(x, 0, z);
+          instance.vrm.scene.position.copy(instance.positionOffset);
+          // Ensure rotation is correct (facing camera/forward +Z)
+          instance.vrm.scene.rotation.set(0, Math.PI, 0); 
+        }
       }
     });
   }

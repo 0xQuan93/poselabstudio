@@ -23,7 +23,7 @@ export interface AvatarState {
   /** Expression weights (e.g., { Joy: 0.8, Angry: 0 }) */
   expressions: Record<string, number>;
   /** Position offset in scene (for multiple avatars) */
-  position: { x: number; y: number; z: number };
+  position?: { x: number; y: number; z: number };
   /** Whether this avatar has a VRM loaded */
   hasAvatar: boolean;
   /** Timestamp for ordering/staleness */
