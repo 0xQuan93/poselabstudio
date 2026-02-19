@@ -16,9 +16,6 @@ import { getPoseDefinitionWithAnimation, getPoseDefinition } from '../poses';
 import { buildVRMPose } from './avatarManager';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
 
-/** Position offset for multiple avatars (arranged in a line) */
-const AVATAR_SPACING = 1.2; // meters between avatars
-
 /** Individual avatar instance data */
 interface AvatarInstance {
   vrm: VRM;
@@ -812,6 +809,49 @@ class MultiAvatarManager {
   // ==================
   // Internal
   // ==================
+
+  /**
+   * Interpolate between two VRMPoses
+   */
+  private interpolatePose(start: VRMPose, end: VRMPose, alpha: number): VRMPose {
+    const result: VRMPose = {};
+    const boneNames = Object.values(VRMHumanBoneName) as VRMHumanBoneName[];
+
+    boneNames.forEach(name => {
+      const startBone = start[name];
+      const endBone = end[name];
+
+      if (startBone && endBone) {
+        const interpolated: any = {};
+        
+        // Rotation
+        if (startBone.rotation && endBone.rotation) {
+          const q1 = new THREE.Quaternion().fromArray(startBone.rotation);
+          const q2 = new THREE.Quaternion().fromArray(endBone.rotation);
+          q1.slerp(q2, alpha);
+          interpolated.rotation = q1.toArray();
+        }
+
+        // Position (optional)
+        if (startBone.position && endBone.position) {
+          const v1 = new THREE.Vector3().fromArray(startBone.position);
+          const v2 = new THREE.Vector3().fromArray(endBone.position);
+          v1.lerp(v2, alpha);
+          interpolated.position = v1.toArray();
+        }
+
+        result[name] = interpolated;
+      } else if (endBone) {
+        // If only end exists, snap to it
+        result[name] = endBone;
+      } else if (startBone) {
+        // If only start exists, keep it
+        result[name] = startBone;
+      }
+    });
+
+    return result;
+  }
 
   /**
    * Recalculate and apply positions for all avatars (Grid Layout)
