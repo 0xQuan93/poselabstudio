@@ -30,6 +30,8 @@ interface AvatarInstance {
   isAnimated: boolean;
   lastUpdate: number;
   isDirty: boolean;
+  /** Whether position was manually set by user (ignore auto-layout) */
+  isManualPosition: boolean;
   /** Offset position in the scene */
   positionOffset: THREE.Vector3;
   
@@ -135,9 +137,6 @@ class MultiAvatarManager {
     // Combine skeletons for better performance (replaces deprecated removeUnnecessaryJoints)
     VRMUtils.combineSkeletons(vrm.scene);
 
-    // Calculate position offset based on avatar count
-    const positionOffset = this.calculatePositionOffset(peerId, isLocal);
-
     // Create avatar instance
     const instance: AvatarInstance = {
       vrm,
@@ -147,13 +146,14 @@ class MultiAvatarManager {
       mixer: new THREE.AnimationMixer(vrm.scene),
       isAnimated: false,
       lastUpdate: Date.now(),
-      positionOffset,
+      positionOffset: new THREE.Vector3(0, 0, 0),
+      isManualPosition: false,
       isDirty: true,
       poseAlpha: 1,
     };
 
-    // Position the avatar
-    vrm.scene.position.copy(positionOffset);
+    // Position the avatar (initial placement at 0,0,0, layout engine will fix)
+    vrm.scene.position.set(0, 0, 0);
     // Most VRMs are exported facing +Z but poses were authored with avatar at 180°.
     // Start at 180° rotation so avatar faces camera.
     vrm.scene.rotation.set(0, Math.PI, 0);
@@ -169,8 +169,8 @@ class MultiAvatarManager {
       this.localPeerId = peerId;
     }
 
-    // Update all avatar positions for proper layout
-    this.updateAllPositions();
+    // Update layout for all avatars
+    this.recalculateLayout();
 
     // Frame camera on local avatar
     if (isLocal) {
@@ -255,6 +255,7 @@ class MultiAvatarManager {
       isAnimated: false,
       lastUpdate: Date.now(),
       positionOffset: new THREE.Vector3(0, 0, 0), // Keep current position
+      isManualPosition: false,
       isDirty: true,
       poseAlpha: 1,
     };
@@ -267,8 +268,8 @@ class MultiAvatarManager {
       this.localPeerId = peerId;
     }
 
-    // Update all avatar positions for proper layout
-    this.updateAllPositions();
+    // Update layout
+    this.recalculateLayout();
 
     // Start tick loop if not already running
     this.ensureTickLoop();
@@ -300,7 +301,7 @@ class MultiAvatarManager {
     this.avatars.delete(peerId);
 
     // Recalculate positions for remaining avatars
-    this.recalculatePositions();
+    this.recalculateLayout();
 
     // If no avatars left, stop tick loop
     if (this.avatars.size === 0) {
@@ -448,8 +449,9 @@ class MultiAvatarManager {
     // Apply user-controlled position (from gizmo translation)
     instance.vrm.scene.position.set(position.x, position.y, position.z);
     
-    // Update the stored offset
+    // Update the stored offset and mark as manual
     instance.positionOffset.set(position.x, position.y, position.z);
+    instance.isManualPosition = true;
     instance.isDirty = true;
   }
 
@@ -812,117 +814,68 @@ class MultiAvatarManager {
   // ==================
 
   /**
-   * Calculate position offset for an avatar
+   * Recalculate and apply positions for all avatars (Grid Layout)
+   * Arranges avatars in centered rows, skipping manually positioned ones.
    */
-  private calculatePositionOffset(peerId: PeerId, isLocal: boolean): THREE.Vector3 {
-    // Get all avatars including the one being added
+  private recalculateLayout() {
     const allAvatars = Array.from(this.avatars.values());
-    const totalCount = allAvatars.length + (this.avatars.has(peerId) ? 0 : 1);
     
-    if (totalCount === 1) {
-      // Single avatar - center
-      return new THREE.Vector3(0, 0, 0);
-    }
+    // Filter avatars that should be part of the auto-layout
+    // (Not manually positioned)
+    const layoutAvatars = allAvatars.filter(a => !a.isManualPosition);
     
-    // Multiple avatars - arrange symmetrically around center
-    // Local avatar on the left, remote avatars on the right
-    if (isLocal) {
-      return new THREE.Vector3(-AVATAR_SPACING / 2, 0, 0);
-    } else {
-      // Remote avatars to the right
-      return new THREE.Vector3(AVATAR_SPACING / 2, 0, 0);
-    }
-  }
+    if (layoutAvatars.length === 0) return;
 
-  /**
-   * Interpolate between two VRMPoses
-   */
-  private interpolatePose(start: VRMPose, end: VRMPose, alpha: number): VRMPose {
-    const result: VRMPose = {};
-    const boneNames = Object.values(VRMHumanBoneName) as VRMHumanBoneName[];
-
-    boneNames.forEach(name => {
-      const startBone = start[name];
-      const endBone = end[name];
-
-      if (startBone && endBone) {
-        const interpolated: any = {};
-        
-        // Rotation
-        if (startBone.rotation && endBone.rotation) {
-          const q1 = new THREE.Quaternion().fromArray(startBone.rotation);
-          const q2 = new THREE.Quaternion().fromArray(endBone.rotation);
-          q1.slerp(q2, alpha);
-          interpolated.rotation = q1.toArray();
-        }
-
-        // Position (optional)
-        if (startBone.position && endBone.position) {
-          const v1 = new THREE.Vector3().fromArray(startBone.position);
-          const v2 = new THREE.Vector3().fromArray(endBone.position);
-          v1.lerp(v2, alpha);
-          interpolated.position = v1.toArray();
-        }
-
-        result[name] = interpolated;
-      } else if (endBone) {
-        // If only end exists, snap to it
-        result[name] = endBone;
-      } else if (startBone) {
-        // If only start exists, keep it
-        result[name] = startBone;
-      }
+    // Sort: Local avatar first (if present), then alphabetical by PeerID
+    layoutAvatars.sort((a, b) => {
+      if (a.isLocal) return -1;
+      if (b.isLocal) return 1;
+      return a.peerId.localeCompare(b.peerId);
     });
 
-    return result;
-  }
+    // Grid configuration
+    const SPACING_X = 1.5; // Meters
+    const SPACING_Z = 1.5; // Meters
+    const MAX_ROW_WIDTH = 6; // Avatars per row
 
-  /**
-   * Recalculate and apply positions for all avatars
-   * Called when avatars are added/removed to maintain proper layout
-   * Only sets INITIAL positions - doesn't override user-controlled positions
-   */
-  private updateAllPositions() {
-    const avatarList = Array.from(this.avatars.values());
-    const totalCount = avatarList.length;
-    
-    if (totalCount <= 1) {
-      // Single or no avatars - only set initial position if not already positioned
-      avatarList.forEach(instance => {
-        // Only set position if this is a fresh avatar (position is 0,0,0)
-        if (instance.positionOffset.lengthSq() === 0 && instance.vrm.scene.position.lengthSq() === 0) {
-          instance.positionOffset.set(0, 0, 0);
-          instance.vrm.scene.position.set(0, 0, 0);
-        }
-      });
-      return;
-    }
-    
-    // Multiple avatars - calculate initial positions for NEW avatars only
-    // Don't override positions of avatars that have already been positioned
-    const sortedAvatars = avatarList.sort((a, b) => a.peerId.localeCompare(b.peerId));
-    
-    sortedAvatars.forEach((instance, index) => {
-      // Only set position for avatars that haven't been positioned yet
-      // (positionOffset is 0,0,0 and scene position is also 0,0,0)
-      const isUnpositioned = instance.positionOffset.lengthSq() === 0;
+    layoutAvatars.forEach((instance, index) => {
+      const row = Math.floor(index / MAX_ROW_WIDTH);
+      const col = index % MAX_ROW_WIDTH;
       
-      if (isUnpositioned) {
-        // First avatar (alphabetically by peer ID) goes left, rest go right
-        const xOffset = index === 0 ? -AVATAR_SPACING / 2 : AVATAR_SPACING / 2 + (index - 1) * AVATAR_SPACING;
-        instance.positionOffset.set(xOffset, 0, 0);
+      // Calculate centering offset for this row
+      const itemsInThisRow = Math.min(MAX_ROW_WIDTH, layoutAvatars.length - row * MAX_ROW_WIDTH);
+      const rowWidth = (itemsInThisRow - 1) * SPACING_X;
+      const xStart = -rowWidth / 2;
+
+      const x = xStart + col * SPACING_X;
+      // Z position: Row 0 is at Z=0, subsequent rows behind (positive Z?) or checkerboard?
+      // Usually +Z is towards camera. So rows should be at 0, -1.5, -3.0 etc?
+      // Or 0, 1.5, 3.0? If camera is at (0, 1.4, 1.5) looking at (0, 1.0, 0)
+      // We want rows BEHIND the first row? No, that would be occluded.
+      // We want a V-shape or grid where back rows are visible?
+      // Simplest: Rows go back (-Z) or spread out.
+      // Let's keep them on Z=0 line if possible, or slight arc.
+      // But for 32 users, we need depth.
+      // Let's use Z = -row * SPACING_Z (going backwards)
+      // And maybe elevate back rows slightly? 
+      // For now, flat grid.
+      // Wait, standard VRM is at 0,0,0. Camera is at 0, 1.4, ~2.5.
+      // If we put rows at -Z, they get further away.
+      // If we stagger them?
+      
+      const z = -row * SPACING_Z; // Rows go back into the screen
+
+      // Check if we need to update position (avoid dirtying if already there)
+      if (instance.positionOffset.x !== x || instance.positionOffset.z !== z) {
+        instance.positionOffset.set(x, 0, z);
         instance.vrm.scene.position.copy(instance.positionOffset);
-        console.log(`[MultiAvatarManager] Set initial position for ${instance.peerId}: x=${xOffset}`);
+        // Ensure rotation is correct (facing camera/forward +Z)
+        // VRMs face +Z by default? No, VRM standard is +Z forward.
+        // But we rotate them 180 (Math.PI) in loadAvatar.
+        // Let's re-enforce rotation just in case.
+        instance.vrm.scene.rotation.set(0, Math.PI, 0); 
       }
     });
-  }
-
-  /**
-   * Recalculate positions after avatar removal
-   */
-  private recalculatePositions() {
-    // Delegate to updateAllPositions for consistent layout
-    this.updateAllPositions();
   }
 
   /**
