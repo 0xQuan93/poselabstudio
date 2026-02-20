@@ -2031,8 +2031,8 @@
   }
 
   .viewport {
-    padding: var(--space-4);
-    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+    padding: var(--space-2);
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
   }
 
   .control-panel {
@@ -2052,15 +2052,21 @@
     align-items: center;
     justify-content: center;
     position: fixed;
-    bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
-    right: var(--space-5);
-    padding: var(--space-3) var(--space-5);
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    right: var(--space-4);
+    width: 48px;
+    height: 48px;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-600) 100%);
     color: var(--color-abyss);
-    border-radius: var(--radius-full);
-    font-weight: var(--weight-semibold);
+    border-radius: 50%;
     box-shadow: var(--shadow-lg), 0 0 24px rgba(0, 255, 214, 0.3);
     cursor: pointer;
+    z-index: 1100;
+    transition: transform 0.2s var(--ease-spring);
+  }
+
+  .control-toggle:active {
+    transform: scale(0.9);
   }
 
   .drawer-backdrop {
@@ -2224,7 +2230,9 @@
   }
 
   .viewport-overlay.bottom-right {
-    display: none;
+    display: flex;
+    bottom: calc(var(--space-20) + env(safe-area-inset-bottom));
+    right: var(--space-4);
   }
 
   .viewport-overlay.top-right {
@@ -2233,11 +2241,14 @@
   }
 
   .viewport-overlay.bottom-left {
-    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    bottom: calc(var(--space-20) + env(safe-area-inset-bottom));
+    left: var(--space-4);
   }
 
   .viewport-overlay.bottom-center {
-    bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+    bottom: calc(var(--space-24) + 60px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%) scale(0.85);
   }
 
   .canvas-container::before {
@@ -2253,6 +2264,10 @@
     opacity: 0.12;
     inset: -6%;
     animation-duration: 48s;
+  }
+
+  .hide-mobile {
+    display: none !important;
   }
 }
 

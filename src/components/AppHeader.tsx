@@ -180,7 +180,7 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
         <div className="app-header__right">
           <div className="status-indicator">
             <span className={`status-dot ${isAvatarReady ? 'ready' : 'loading'}`} />
-            <span className="status-text">{isAvatarReady ? 'Ready' : 'Loading...'}</span>
+            <span className="status-text hide-mobile">{isAvatarReady ? 'Ready' : 'Loading...'}</span>
           </div>
 
           <button 
@@ -192,10 +192,10 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
             <GearSix size={20} weight="duotone" />
           </button>
           
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+          <div className="hide-mobile" style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
 
           <button 
-            className="icon-button"
+            className="icon-button hide-mobile"
             style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={handleProjectSave}
             title="Save Project"
@@ -203,7 +203,7 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
             <FloppyDisk size={20} weight="duotone" />
           </button>
           <button 
-            className="icon-button"
+            className="icon-button hide-mobile"
             style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => projectInputRef.current?.click()}
             title="Load Project"
@@ -219,10 +219,10 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
             style={{ display: 'none' }}
           />
 
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+          <div className="hide-mobile" style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
 
           <button 
-            className="icon-button"
+            className="icon-button hide-mobile"
             style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => {
                 setStreamMode(true);

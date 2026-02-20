@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { sceneManager } from '../../three/sceneManager';
 import { useReactionStore } from '../../state/useReactionStore';
@@ -6,6 +6,8 @@ import { avatarManager } from '../../three/avatarManager';
 import { exportAsWebM, canExportVideo } from '../../export/exportVideo';
 import { exportAsGLB } from '../../export/exportGLB';
 import { useToastStore } from '../../state/useToastStore';
+import { useUIStore } from '../../state/useUIStore';
+import { projectManager } from '../../persistence/projectManager';
 import { postProcessingManager } from '../../three/postProcessingManager';
 import { getPoseLabTimestamp } from '../../utils/exportNaming';
 import { serializeAnimationClip } from '../../poses/animationClipSerializer';
@@ -20,7 +22,10 @@ import {
   Lightbulb,
   FileJs as FileJson,
   Package,
-  Aperture
+  Aperture,
+  FloppyDisk,
+  FolderOpen,
+  Broadcast
 } from '@phosphor-icons/react';
 import { batchConfigs, applyMixamoBuffer, savePoseToDisk } from '../../pose-lab/batchUtils';
 
@@ -31,6 +36,8 @@ interface ExportTabProps {
 export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
   const { activePreset, animationMode, isAvatarReady } = useReactionStore();
   const { addToast } = useToastStore();
+  const setStreamMode = useUIStore((state) => state.setStreamMode);
+  const projectInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -46,6 +53,27 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
     // The actual export uses sceneManager.getAspectRatio() directly
     sceneManager.getAspectRatio();
   }, []);
+
+  const handleProjectSave = () => {
+    projectManager.downloadProject("My Project");
+    addToast("Project saved", "success");
+  };
+
+  const handleProjectLoad = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const result = await projectManager.loadFromFile(file);
+    if (result.success) {
+        addToast("Project loaded", "success");
+        if (result.avatarWarning) {
+          setTimeout(() => addToast(result.avatarWarning!, "warning"), 500);
+        }
+    } else {
+        addToast("Failed to load project", "error");
+    }
+    event.target.value = '';
+  };
 
   const getExportDimensions = (): { width: number; height: number; bitrate: number } => {
     switch (resolution) {
@@ -584,6 +612,46 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
             }}>P</kbd> to instantly save PNG with current Effects & FX
           </p>
         )}
+      </div>
+
+      <div className="tab-section" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem' }}>
+        <h3>Project & System</h3>
+        <div className="actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+          <button 
+            className="secondary" 
+            onClick={handleProjectSave}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <FloppyDisk size={16} weight="duotone" />
+            Save Project
+          </button>
+          <button 
+            className="secondary" 
+            onClick={() => projectInputRef.current?.click()}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <FolderOpen size={16} weight="duotone" />
+            Load Project
+          </button>
+          <input
+            ref={projectInputRef}
+            type="file"
+            accept=".pose,.json"
+            onChange={handleProjectLoad}
+            style={{ display: 'none' }}
+          />
+        </div>
+        <button 
+          className="secondary full-width"
+          onClick={() => {
+            setStreamMode(true);
+            addToast("Stream Mode Active (Press Esc to exit)", "info");
+          }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+        >
+          <Broadcast size={16} weight="duotone" style={{ color: 'var(--accent)' }} />
+          Enter Stream Mode
+        </button>
       </div>
 
       {mode === 'poselab' && (

@@ -17,6 +17,7 @@ import { ConnectionProgressPanel } from './components/ConnectionProgressPanel';
 import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
+import { GearSix, X } from '@phosphor-icons/react';
 
 // import { LobbyPanel } from './components/LobbyPanel';
 
@@ -163,10 +164,11 @@ function App() {
       {/* Mobile drawer toggle */}
       {isMobile && (
         <button
-          className="control-toggle"
+          className={`control-toggle ${mobileDrawerOpen ? 'open' : ''}`}
           onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+          aria-label={mobileDrawerOpen ? 'Close Controls' : 'Open Controls'}
         >
-          {mobileDrawerOpen ? 'Close' : 'Controls'}
+          {mobileDrawerOpen ? <X size={24} weight="bold" /> : <GearSix size={24} weight="bold" />}
         </button>
       )}
 

@@ -645,23 +645,29 @@
 /* Mobile Responsiveness */
 @media (max-width: 640px) {
   .session-bar {
-    width: calc(100% - 32px);
-    padding: 6px 12px;
+    width: auto;
+    min-width: 240px;
+    max-width: calc(100% - 100px); /* Leave room for control toggle */
+    left: var(--space-4);
+    transform: none;
+    padding: 6px 8px;
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   }
 
   .session-bar button {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .chat-panel {
     /* Mobile chat is usually fixed at bottom or fullscreen, not draggable */
     position: fixed;
-    bottom: 70px;
+    bottom: 80px;
     left: 8px;
     right: 8px;
     width: auto;
     max-height: 300px;
+    z-index: 2100;
   }
   
   .chat-draggable {
@@ -674,8 +680,10 @@
   .reaction-picker {
     position: fixed;
     bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: var(--space-4);
+    right: var(--space-4);
+    transform: none;
     margin-bottom: 0;
+    min-width: 0;
   }
 }
