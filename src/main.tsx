@@ -16,6 +16,8 @@ if (!rootElement) {
 
 const root = createRoot(rootElement);
 
+import { PrivyWrapper } from './components/auth/PrivyWrapper'
+
 const render = () => {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get('mode');
@@ -23,9 +25,11 @@ const render = () => {
 
   root.render(
     <StrictMode>
-      <CommandPalette>
-        {mode === 'pose-lab' ? <PoseLab /> : <App />}
-      </CommandPalette>
+      <PrivyWrapper>
+        <CommandPalette>
+          {mode === 'pose-lab' ? <PoseLab /> : <App />}
+        </CommandPalette>
+      </PrivyWrapper>
     </StrictMode>
   );
 };

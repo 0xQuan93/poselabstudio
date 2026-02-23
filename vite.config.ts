@@ -69,6 +69,59 @@ export default defineConfig(({ mode }) => {
              }
            });
         });
+
+        // Mock Discord Token Exchange
+        server.middlewares.use('/api/discord-token', async (req: IncomingMessage, res: ServerResponse) => {
+           if (req.method !== 'POST') {
+             res.writeHead(405, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+             return;
+           }
+
+           let body = '';
+           req.on('data', chunk => body += chunk);
+           req.on('end', async () => {
+             try {
+                const { code } = JSON.parse(body || '{}');
+                const clientId = env.VITE_DISCORD_CLIENT_ID;
+                const clientSecret = env.DISCORD_CLIENT_SECRET;
+                
+                if (!clientId || !clientSecret) {
+                  console.error('Missing Discord credentials in environment variables');
+                   res.writeHead(500, { 'Content-Type': 'application/json' });
+                   res.end(JSON.stringify({ error: 'Missing Discord credentials' }));
+                   return;
+                }
+
+                const data = new URLSearchParams({
+                  client_id: clientId,
+                  client_secret: clientSecret,
+                  grant_type: 'authorization_code',
+                  code: code,
+                });
+
+                const response = await fetch('https://discord.com/api/oauth2/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: data,
+                });
+
+                if (!response.ok) {
+                  res.writeHead(response.status, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Failed to exchange token with Discord' }));
+                  return;
+                }
+
+                const { access_token } = await response.json();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ access_token }));
+             } catch (err) {
+                console.error('Error in discord token exchange:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal Server Error' }));
+             }
+           });
+        });
       }
     },
     enableVmcBridge && {

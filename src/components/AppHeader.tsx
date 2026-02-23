@@ -19,6 +19,8 @@ import {
 } from '@phosphor-icons/react';
 import { useUIStore } from '../state/useUIStore';
 
+import { LoginButton } from './auth/LoginButton';
+
 interface AppHeaderProps {
   mode: 'reactions' | 'poselab';
   onModeChange: (mode: 'reactions' | 'poselab') => void;
@@ -241,6 +243,9 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
           >
             <Question size={20} weight="duotone" />
           </button>
+          
+          <div className="hide-mobile" style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+          <LoginButton />
         </div>
       </header>
       <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />

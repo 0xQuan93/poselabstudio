@@ -18,6 +18,7 @@ import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
 import { GearSix, X } from '@phosphor-icons/react';
+import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 
 // import { LobbyPanel } from './components/LobbyPanel';
 
@@ -27,6 +28,7 @@ initAvatarBridge();
 const IS_DEV = import.meta.env.DEV;
 
 function App() {
+  const { isReady, error } = useDiscordActivity();
   const { mode, setMode, mobileDrawerOpen, setMobileDrawerOpen, focusModeActive } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
@@ -133,6 +135,22 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  if (isEmbeddedApp && error) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', color: 'red', backgroundColor: '#111' }}>
+        <h2>Failed to load Discord Activity: {error.message}</h2>
+      </div>
+    );
+  }
+
+  if (isEmbeddedApp && !isReady) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', color: 'white', backgroundColor: '#111' }}>
+        <h2>Connecting to Discord...</h2>
+      </div>
+    );
+  }
 
   return (
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
