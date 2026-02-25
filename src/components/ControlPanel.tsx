@@ -8,6 +8,7 @@ import { MocapTab } from './tabs/MocapTab';
 import { DirectorTab } from './tabs/DirectorTab';
 import { AnimationsTab } from './tabs/AnimationsTab';
 import { TrainingTab } from './tabs/TrainingTab';
+import { CreatorFeed } from './feed/CreatorFeed';
 import { 
   Sliders, 
   PersonArmsSpread, 
@@ -18,7 +19,7 @@ import {
   VideoCamera,
   FloppyDisk,
   FilmStrip,
-  GraduationCap
+  Users
 } from '@phosphor-icons/react';
 
 interface ControlPanelProps {
@@ -54,11 +55,12 @@ export function ControlPanel({ mode }: ControlPanelProps) {
             <span>Scene</span>
           </button>
           <button
-            className={reactionTab === 'training' ? 'active' : ''}
-            onClick={() => setReactionTab('training')}
+            className={reactionTab === 'feed' ? 'active' : ''}
+            onClick={() => setReactionTab('feed')}
+            style={{ color: reactionTab === 'feed' ? 'inherit' : '#5865F2' }}
           >
-            <GraduationCap size={16} weight="duotone" />
-            <span>Training</span>
+            <Users size={16} weight="duotone" />
+            <span>Feed</span>
           </button>
           <button
             className={reactionTab === 'export' ? 'active' : ''}
@@ -69,11 +71,12 @@ export function ControlPanel({ mode }: ControlPanelProps) {
           </button>
         </div>
 
-        <div className="control-panel__content">
+        <div className="control-panel__content" style={{ padding: reactionTab === 'feed' ? 0 : undefined }}>
           {reactionTab === 'presets' && <PresetsTab />}
           {reactionTab === 'pose' && <PoseExpressionTab />}
           {reactionTab === 'scene' && <SceneTab />}
           {reactionTab === 'training' && <TrainingTab />}
+          {reactionTab === 'feed' && <CreatorFeed />}
           {reactionTab === 'export' && <ExportTab />}
         </div>
       </aside>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type AppMode = 'reactions' | 'poselab';
-export type ReactionTab = 'presets' | 'pose' | 'scene' | 'export' | 'training';
+export type ReactionTab = 'presets' | 'pose' | 'scene' | 'export' | 'training' | 'feed';
 export type PoseLabTab = 'animations' | 'poses' | 'mocap' | 'director' | 'timeline' | 'export';
 
 interface UIState {
