@@ -1,3 +1,10 @@
+.credits-display-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+}
+
 .credits-display {
   display: flex;
   align-items: center;
@@ -6,11 +13,24 @@
   padding: 4px 12px;
   border-radius: 16px;
   font-weight: 600;
+}
+
+.xp-display {
   border: 1px solid rgba(255, 215, 0, 0.3);
-  margin-right: 8px;
+}
+
+.sol-display {
+  border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .credits-amount {
-  color: #FFD700;
   font-family: 'Monaco', monospace;
+}
+
+.xp-amount {
+  color: #FFD700;
+}
+
+.sol-amount {
+  color: #a855f7;
 }

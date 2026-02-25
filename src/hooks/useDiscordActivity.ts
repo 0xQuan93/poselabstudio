@@ -57,8 +57,7 @@ export const useDiscordActivity = () => {
         });
         
         // 2. Exchange code for access_token securely via our serverless function
-        // Note: For local dev, Vite proxy must route /api to Netlify dev server
-        const response = await fetch('/api/discord-token', {
+        const response = await fetch('/.netlify/functions/discord-token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -12,6 +12,8 @@ import { postProcessingManager } from '../../three/postProcessingManager';
 import { getPoseLabTimestamp } from '../../utils/exportNaming';
 import { serializeAnimationClip } from '../../poses/animationClipSerializer';
 import { animationManager } from '../../three/animationManager';
+import { useUserStore } from '../../state/useUserStore';
+import { useSolanaWallets } from '@privy-io/react-auth';
 import { 
   Image, 
   FilmStrip, 
@@ -25,7 +27,8 @@ import {
   Aperture,
   FloppyDisk,
   FolderOpen,
-  Broadcast
+  Broadcast,
+  DiscordLogo
 } from '@phosphor-icons/react';
 import { batchConfigs, applyMixamoBuffer, savePoseToDisk } from '../../pose-lab/batchUtils';
 
@@ -37,9 +40,12 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
   const { activePreset, animationMode, isAvatarReady } = useReactionStore();
   const { addToast } = useToastStore();
   const setStreamMode = useUIStore((state) => state.setStreamMode);
+  const { user } = useUserStore();
+  const { wallets } = useSolanaWallets();
   const projectInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportFormat, setExportFormat] = useState<'png' | 'webm' | 'glb' | 'json'>('png');
   const [resolution, setResolution] = useState<'720p' | '1080p' | 'square' | '4k'>('720p');
@@ -421,6 +427,71 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
     }
   };
 
+  const handlePublishToDiscord = async () => {
+    if (!user) {
+      addToast('You must be logged in to publish to Discord Studio', 'warning');
+      return;
+    }
+
+    setIsPublishing(true);
+    addToast('Capturing pose...', 'info');
+
+    try {
+      const dimensions = getExportDimensions();
+      const camera = sceneManager.getCamera();
+      let originalAspect = 1;
+      
+      if (camera) {
+        originalAspect = camera.aspect;
+        camera.aspect = dimensions.width / dimensions.height;
+        camera.updateProjectionMatrix();
+      }
+
+      const dataUrl = await sceneManager.captureSnapshot({
+        width: dimensions.width,
+        height: dimensions.height,
+        includeLogo: includeLogo,
+        transparentBackground: false, // Discord embeds don't always like transparent, keep false for thumbnail
+        fitToFrame: autoFrame,
+      });
+
+      if (camera) {
+        camera.aspect = originalAspect;
+        camera.updateProjectionMatrix();
+      }
+
+      if (!dataUrl) throw new Error("Failed to capture image");
+
+      const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
+      const address = wallet ? wallet.address : null;
+
+      addToast('Publishing to Studio...', 'info');
+      
+      const response = await fetch('/.netlify/functions/publish-pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: dataUrl,
+          creatorName: user.username || 'Anonymous Creator',
+          creatorAddress: address,
+          description: `Mode: ${mode === 'poselab' ? 'Pose Lab' : 'Reactions'} | Resolution: ${resolution}`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to publish');
+      }
+
+      addToast('✅ Successfully published to Discord Studio!', 'success');
+    } catch (error: any) {
+      console.error('Publish error:', error);
+      addToast(error.message || 'Failed to publish to Discord', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleExport = () => {
     if (exportFormat === 'png') {
       handleExportPNG();
@@ -586,6 +657,22 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
       </div>
 
       <div className="tab-section">
+        {exportFormat === 'png' && (
+          <button
+            className="secondary full-width large"
+            onClick={handlePublishToDiscord}
+            disabled={!isAvatarReady || isPublishing || isExporting}
+            style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', borderColor: '#5865F2', color: '#5865F2' }}
+          >
+            {isPublishing ? 'Publishing...' : (
+              <>
+                <DiscordLogo size={20} weight="fill" />
+                Publish to Studio Feed
+              </>
+            )}
+          </button>
+        )}
+
         <button
           className="primary full-width large"
           onClick={handleExport}

@@ -1,0 +1,105 @@
+.tip-modal-content {
+  max-width: 400px;
+}
+
+.tip-description {
+  margin-bottom: 24px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.tip-input-group {
+  display: flex;
+  align-items: center;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 12px 16px;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tip-input-group input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 24px;
+  font-weight: bold;
+  outline: none;
+  width: 100%;
+}
+
+.tip-input-group input::placeholder {
+  color: #666;
+}
+
+.currency-label {
+  font-weight: bold;
+  color: #888;
+  font-size: 18px;
+}
+
+.tip-error {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.tip-success {
+  color: #51cf66;
+  background: rgba(81, 207, 102, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tip-success a {
+  color: #339af0;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.tip-success a:hover {
+  text-decoration: underline;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tip-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: bold;
+  background: #676FFF;
+  transition: background 0.2s;
+}
+
+.tip-btn:hover:not(:disabled) {
+  background: #5058E5;
+}

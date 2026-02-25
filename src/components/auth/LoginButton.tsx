@@ -1,50 +1,36 @@
 import { usePrivy } from '@privy-io/react-auth';
-import { User, SignOut, Gear } from '@phosphor-icons/react';
+import { User, SignOut } from '@phosphor-icons/react';
 import { useUserStore } from '../../state/useUserStore';
 import { CreditsDisplay } from '../rewards/CreditsDisplay';
 import { ProfileModal } from '../profile/ProfileModal';
 import { useEffect, useState } from 'react';
 import './LoginButton.css';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-
 export const LoginButton = () => {
-  const { login, authenticated, user: privyUser, logout, getAccessToken } = usePrivy();
+  const { login, authenticated, user: privyUser, logout } = usePrivy();
   const { user, setUser, logout: storeLogout } = useUserStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   useEffect(() => {
-    const syncUser = async () => {
+    const syncUser = () => {
       if (authenticated && privyUser && !user) {
-        try {
-          const token = await getAccessToken();
-          const response = await fetch(`${BACKEND_URL}/auth/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ token }),
-          });
-          
-          if (response.ok) {
-            const userData = await response.json();
-            setUser({
-              id: userData.id,
-              username: userData.username,
-              avatarUrl: userData.avatarUrl,
-              credits: userData.credits || 0
-            });
-          }
-        } catch (error) {
-          console.error('Failed to sync user:', error);
-        }
+        // Extract username/avatar from Privy user data
+        // Priority: Discord profile > Email > ID
+        const discordAccount = privyUser.linkedAccounts.find(a => a.type === 'discord_oauth') as any;
+        
+        setUser({
+          id: privyUser.id,
+          username: discordAccount?.username || privyUser.email?.address?.split('@')[0] || 'User',
+          avatarUrl: discordAccount?.profile_picture_url || null,
+          credits: 0 // Default to 0, or load from localStorage/on-chain later
+        });
       } else if (!authenticated && user) {
         storeLogout();
       }
     };
 
     syncUser();
-  }, [authenticated, privyUser, user, getAccessToken, setUser, storeLogout]);
+  }, [authenticated, privyUser, user, setUser, storeLogout]);
 
   const handleLogout = async () => {
     await logout();

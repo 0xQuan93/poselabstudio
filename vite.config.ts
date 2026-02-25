@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type PluginOption, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import fs from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'node:path'
@@ -21,6 +22,7 @@ export default defineConfig(({ mode }) => {
   const enablePoseExport = env.VITE_ENABLE_POSE_EXPORT === 'true'
   const plugins: PluginOption[] = [
     react(),
+    nodePolyfills(),
     {
       name: 'livekit-token-endpoint',
       configureServer(server: ViteDevServer) {
@@ -112,7 +114,7 @@ export default defineConfig(({ mode }) => {
                   return;
                 }
 
-                const { access_token } = await response.json();
+                const { access_token } = (await response.json()) as { access_token: string };
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ access_token }));
              } catch (err) {

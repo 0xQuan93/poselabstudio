@@ -7,11 +7,14 @@ export const PrivyWrapper = ({ children }: { children: React.ReactNode }) => {
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
-        loginMethods: ['email', 'wallet', 'google', 'twitter', 'discord'],
+        loginMethods: ['email', 'wallet', 'discord'],
         appearance: {
           theme: 'dark',
           accentColor: '#676FFF',
-          logo: 'https://your-logo-url', // TODO: Update with actual logo
+          logo: '/logo/poselab.svg',
+        },
+        embeddedWallets: {
+          createOnLogin: 'users-without-wallets',
         },
       }}
     >
