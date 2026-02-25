@@ -3,40 +3,44 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background-color: var(--surface-1);
-  border-left: 1px solid var(--border-subtle);
+  background-color: var(--color-abyss, #030305);
   overflow: hidden;
 }
 
 .studio-feed-header {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 1.5rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 10;
 }
 
 .studio-feed-header h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.5rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  text-shadow: 0 0 10px rgba(255, 94, 91, 0.4);
 }
 
 .studio-feed-content {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  padding: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 2rem;
+  align-content: start;
 }
 
 /* Scrollbar styles */
 .studio-feed-content::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 .studio-feed-content::-webkit-scrollbar-track {
   background: transparent;
@@ -51,17 +55,20 @@
 
 /* Feed Item Card */
 .feed-item {
-  background-color: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: border-color 0.2s;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
 
 .feed-item:hover {
-  border-color: var(--border-muted);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+  border-color: var(--accent);
 }
 
 .feed-item-image {
@@ -72,36 +79,44 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
 }
 
 .feed-item-image img {
   width: 100%;
   height: 100%;
   object-fit: contain; /* Keeps the whole image visible (e.g. 9:16 won't be cropped) */
+  transition: transform 0.5s ease;
+}
+
+.feed-item:hover .feed-item-image img {
+  transform: scale(1.02);
 }
 
 .feed-item-details {
-  padding: 1rem;
+  padding: 1.25rem;
+  background: linear-gradient(to top, var(--surface-1) 80%, rgba(30, 30, 35, 0.9));
 }
 
 .feed-item-creator {
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 0.25rem;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
+  color: var(--text-primary);
 }
 
 .feed-item-desc {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
-  margin-bottom: 1rem;
-  line-height: 1.4;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
 }
 
 .feed-item-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 0.75rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -109,14 +124,14 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: none;
-  border: none;
+  background: var(--surface-2);
+  border: 1px solid transparent;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   transition: all 0.2s;
 }
 
@@ -127,18 +142,22 @@
 
 .action-btn.upvoted {
   color: #FF5E5B; /* Fire color */
+  border-color: rgba(255, 94, 91, 0.3);
+  background-color: rgba(255, 94, 91, 0.1);
 }
 
 .action-btn.upvoted:hover {
-  background-color: rgba(255, 94, 91, 0.1);
+  background-color: rgba(255, 94, 91, 0.15);
 }
 
 .tip-btn-small {
   color: #FFD700;
+  border-color: rgba(255, 215, 0, 0.2);
+  background-color: rgba(255, 215, 0, 0.05);
 }
 
 .tip-btn-small:hover {
-  background-color: rgba(255, 215, 0, 0.1);
+  background-color: rgba(255, 215, 0, 0.15);
 }
 
 .feed-empty, .feed-loading, .feed-error {
@@ -149,6 +168,11 @@
   height: 100%;
   color: var(--text-muted);
   text-align: center;
-  gap: 1rem;
-  padding: 2rem;
+  gap: 1.5rem;
+  padding: 4rem;
+  grid-column: 1 / -1; /* Span all columns */
+}
+
+.feed-empty p, .feed-loading p, .feed-error p {
+  font-size: 1.2rem;
 }

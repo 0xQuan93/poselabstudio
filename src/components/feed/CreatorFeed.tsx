@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useToastStore } from '../../state/useToastStore';
+import { useUserStore } from '../../state/useUserStore';
 import { Fire, Coin, ArrowClockwise, WarningCircle } from '@phosphor-icons/react';
 import { TipCreatorModal } from '../rewards/TipCreatorModal';
 import './CreatorFeed.css';
@@ -10,6 +11,7 @@ interface FeedItem {
   description: string;
   imageUrl: string;
   creatorName: string;
+  creatorId: string | null;
   creatorAddress: string | null;
   upvotes: number;
   timestamp: string;
@@ -21,6 +23,7 @@ export const CreatorFeed = () => {
   const [error, setError] = useState<string | null>(null);
   const [upvotedItems, setUpvotedItems] = useState<Set<string>>(new Set());
   const { addToast } = useToastStore();
+  const { user, updateCredits } = useUserStore();
   
   // Tipping State
   const [isTipModalOpen, setIsTipModalOpen] = useState(false);
@@ -36,6 +39,15 @@ export const CreatorFeed = () => {
       }
       const data = await response.json();
       setFeed(data.feed);
+
+      // Sync XP based on total upvotes received across all published poses
+      if (user) {
+        const userPosts = data.feed.filter((item: FeedItem) => item.creatorId === user.id);
+        const totalUpvotes = userPosts.reduce((sum: number, item: FeedItem) => sum + item.upvotes, 0);
+        // Let's say 1 upvote = 10 XP/Credits
+        updateCredits(totalUpvotes * 10);
+      }
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while loading the feed.');

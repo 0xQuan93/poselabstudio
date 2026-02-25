@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AppMode = 'reactions' | 'poselab';
+export type AppMode = 'reactions' | 'poselab' | 'studio';
 export type ReactionTab = 'presets' | 'pose' | 'scene' | 'export' | 'training' | 'feed';
 export type PoseLabTab = 'animations' | 'poses' | 'mocap' | 'director' | 'timeline' | 'export';
 

@@ -19,6 +19,7 @@ import { SessionHUD } from './components/SessionHUD';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
 import { GearSix, X } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
+import { CreatorFeed } from './components/feed/CreatorFeed';
 
 // import { LobbyPanel } from './components/LobbyPanel';
 
@@ -156,16 +157,24 @@ function App() {
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
       <AppHeader mode={mode} onModeChange={setMode} />
       
-      <main className="layout">
-        <section className="viewport">
-          <ErrorBoundary>
-            <CanvasStage />
-            <ViewportEffectOverlay />
-            <ViewportOverlay mode={mode} />
-          </ErrorBoundary>
-        </section>
+      <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''}`}>
+        {mode === 'studio' ? (
+          <div className="studio-mode-wrapper" style={{ width: '100%', height: '100%', display: 'flex' }}>
+            <CreatorFeed />
+          </div>
+        ) : (
+          <>
+            <section className="viewport">
+              <ErrorBoundary>
+                <CanvasStage />
+                <ViewportEffectOverlay />
+                <ViewportOverlay mode={mode} />
+              </ErrorBoundary>
+            </section>
 
-        {!isMobile && <ControlPanel mode={mode} />}
+            {!isMobile && <ControlPanel mode={mode} />}
+          </>
+        )}
       </main>
 
       {/* Exit Stream Mode Button */}

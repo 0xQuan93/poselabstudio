@@ -8,7 +8,6 @@ import { MocapTab } from './tabs/MocapTab';
 import { DirectorTab } from './tabs/DirectorTab';
 import { AnimationsTab } from './tabs/AnimationsTab';
 import { TrainingTab } from './tabs/TrainingTab';
-import { CreatorFeed } from './feed/CreatorFeed';
 import { 
   Sliders, 
   PersonArmsSpread, 
@@ -19,15 +18,17 @@ import {
   VideoCamera,
   FloppyDisk,
   FilmStrip,
-  Users
+  GraduationCap
 } from '@phosphor-icons/react';
 
 interface ControlPanelProps {
-  mode: 'reactions' | 'poselab';
+  mode: 'reactions' | 'poselab' | 'studio';
 }
 
 export function ControlPanel({ mode }: ControlPanelProps) {
   const { reactionTab, setReactionTab, poseLabTab, setPoseLabTab } = useUIStore();
+
+  if (mode === 'studio') return null;
 
   if (mode === 'reactions') {
     return (
@@ -55,12 +56,11 @@ export function ControlPanel({ mode }: ControlPanelProps) {
             <span>Scene</span>
           </button>
           <button
-            className={reactionTab === 'feed' ? 'active' : ''}
-            onClick={() => setReactionTab('feed')}
-            style={{ color: reactionTab === 'feed' ? 'inherit' : '#5865F2' }}
+            className={reactionTab === 'training' ? 'active' : ''}
+            onClick={() => setReactionTab('training')}
           >
-            <Users size={16} weight="duotone" />
-            <span>Feed</span>
+            <GraduationCap size={16} weight="duotone" />
+            <span>Training</span>
           </button>
           <button
             className={reactionTab === 'export' ? 'active' : ''}
@@ -71,12 +71,11 @@ export function ControlPanel({ mode }: ControlPanelProps) {
           </button>
         </div>
 
-        <div className="control-panel__content" style={{ padding: reactionTab === 'feed' ? 0 : undefined }}>
+        <div className="control-panel__content">
           {reactionTab === 'presets' && <PresetsTab />}
           {reactionTab === 'pose' && <PoseExpressionTab />}
           {reactionTab === 'scene' && <SceneTab />}
           {reactionTab === 'training' && <TrainingTab />}
-          {reactionTab === 'feed' && <CreatorFeed />}
           {reactionTab === 'export' && <ExportTab />}
         </div>
       </aside>

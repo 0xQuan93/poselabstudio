@@ -43,6 +43,7 @@ export const handler: Handler = async (event) => {
 
         // Parse fields
         const creatorField = embed.fields?.find((f: any) => f.name === 'Creator');
+        const creatorIdField = embed.fields?.find((f: any) => f.name === 'Creator ID');
         const addressField = embed.fields?.find((f: any) => f.name === 'Solana Address');
 
         // Clean the backticks out of the address if present
@@ -55,8 +56,9 @@ export const handler: Handler = async (event) => {
           id: msg.id,
           title: embed.title,
           description: embed.description,
-          imageUrl: embed.image?.url || embed.thumbnail?.proxy_url,
+          imageUrl: embed.image?.proxy_url || embed.image?.url || embed.thumbnail?.proxy_url,
           creatorName: creatorField?.value || 'Anonymous',
+          creatorId: creatorIdField?.value || null,
           creatorAddress: address,
           upvotes: upvotes,
           timestamp: msg.timestamp

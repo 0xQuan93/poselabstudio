@@ -473,6 +473,7 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
         body: JSON.stringify({
           image: dataUrl,
           creatorName: user.username || 'Anonymous Creator',
+          creatorId: user.id,
           creatorAddress: address,
           description: `Mode: ${mode === 'poselab' ? 'Pose Lab' : 'Reactions'} | Resolution: ${resolution}`
         })

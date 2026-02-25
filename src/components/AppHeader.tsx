@@ -15,15 +15,16 @@ import {
   Question,
   Atom,
   Flask,
-  Broadcast
+  Broadcast,
+  Fire
 } from '@phosphor-icons/react';
 import { useUIStore } from '../state/useUIStore';
 
 import { LoginButton } from './auth/LoginButton';
 
 interface AppHeaderProps {
-  mode: 'reactions' | 'poselab';
-  onModeChange: (mode: 'reactions' | 'poselab') => void;
+  mode: 'reactions' | 'poselab' | 'studio';
+  onModeChange: (mode: 'reactions' | 'poselab' | 'studio') => void;
 }
 
 export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
@@ -132,6 +133,13 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
             >
               <Flask size={16} weight="duotone" />
               <span>Pose Lab</span>
+            </button>
+            <button
+              className={mode === 'studio' ? 'active' : ''}
+              onClick={() => onModeChange('studio')}
+            >
+              <Fire size={16} weight="duotone" />
+              <span>Studio</span>
             </button>
           </div>
         </div>

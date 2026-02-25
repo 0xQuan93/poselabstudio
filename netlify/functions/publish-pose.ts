@@ -10,7 +10,7 @@ export const handler: Handler = async (event) => {
 
   try {
     const body = JSON.parse(event.body || '{}');
-    const { image, creatorName, creatorAddress, description } = body;
+    const { image, creatorName, creatorId, creatorAddress, description } = body;
 
     if (!image || !creatorName) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) };
@@ -56,6 +56,11 @@ export const handler: Handler = async (event) => {
             {
               name: "Creator",
               value: creatorName,
+              inline: true
+            },
+            {
+              name: "Creator ID",
+              value: creatorId || "Anonymous",
               inline: true
             },
             {
