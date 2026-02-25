@@ -1,5 +1,6 @@
 import { Handler } from '@netlify/functions';
 import { Keypair, Transaction } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY;
 
@@ -36,10 +37,27 @@ export const handler: Handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid fee payer' }) };
     }
 
-    // SECURITY NOTE: In a production app, you MUST iterate through tx.instructions
-    // and strictly validate them (e.g., only allow specific SPL token transfers to known programs).
-    // Otherwise, users can make the treasury pay for arbitrary transactions!
-    
+    // --- INSTRUCTION VALIDATION SECURITY GATE ---
+    // We only allow SPL Token Transfers and Associated Token Account creation
+    // to prevent malicious actors from submitting arbitrary heavy transactions (e.g. deployments)
+    const allowedPrograms = [
+      TOKEN_PROGRAM_ID.toBase58(),
+      ASSOCIATED_TOKEN_PROGRAM_ID.toBase58()
+    ];
+
+    for (const ix of tx.instructions) {
+      const programIdStr = ix.programId.toBase58();
+      
+      if (!allowedPrograms.includes(programIdStr)) {
+        console.error(`Rejected TX: Contains unauthorized program interaction (${programIdStr})`);
+        return { 
+          statusCode: 403, 
+          body: JSON.stringify({ error: `Unauthorized program interaction: ${programIdStr}` }) 
+        };
+      }
+    }
+    // ------------------------------------------
+
     tx.partialSign(treasuryKeypair);
 
     const serializedTx = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
