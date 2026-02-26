@@ -206,13 +206,15 @@ export const StudioChatPanel = () => {
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             placeholder="Message #studio-chat..."
           />
-          <button className="emoji-btn">
-            <Smiley size={20} />
-          </button>
+          <div className="input-actions">
+            <button className="emoji-btn">
+              <Smiley size={20} />
+            </button>
+            <button className="send-btn" onClick={handleSendMessage} disabled={!inputValue.trim()}>
+              <PaperPlaneRight size={20} weight="fill" />
+            </button>
+          </div>
         </div>
-        <button className="send-btn" onClick={handleSendMessage} disabled={!inputValue.trim()}>
-          <PaperPlaneRight size={20} weight="fill" />
-        </button>
       </div>
     </aside>
   );
