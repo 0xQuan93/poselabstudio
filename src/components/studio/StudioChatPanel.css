@@ -60,6 +60,7 @@
   padding-bottom: 80px;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end; /* Anchor messages to the bottom */
   gap: var(--space-4);
 }
 
@@ -150,10 +151,11 @@
   left: 0;
   width: 100%;
   padding: var(--space-3);
-  background: rgba(0, 0, 0, 0.4); /* Slightly darker for better contrast */
-  backdrop-filter: blur(10px); /* Ensure text behind is blurred */
+  background: rgba(0, 0, 0, 0.6); /* Darker for better contrast */
+  backdrop-filter: blur(10px);
   border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   display: flex;
+  align-items: flex-end; /* Align to bottom if height varies */
   gap: var(--space-2);
   z-index: 10;
 }
@@ -167,6 +169,7 @@
   padding: 0 var(--space-2);
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.2s ease;
+  min-height: 42px; /* Force minimum height */
 }
 
 .input-wrapper:focus-within {
@@ -208,11 +211,13 @@
   border: none;
   border-radius: var(--radius-md, 8px);
   width: 42px;
+  height: 42px; /* Fixed height */
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .send-btn:hover {
