@@ -4,10 +4,14 @@ export const handler: Handler = async (event) => {
   // 1. Environment Variable Check
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
   const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
-  const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID;
+  const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID || process.env.VITE_DISCORD_STUDIO_CHANNEL_ID;
 
   if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID || !DISCORD_STUDIO_CHANNEL_ID) {
     console.error('Server configuration error: Missing Discord Bot Token, Guild ID, or Channel ID');
+    if (!DISCORD_BOT_TOKEN) console.error('Missing DISCORD_BOT_TOKEN');
+    if (!DISCORD_GUILD_ID) console.error('Missing DISCORD_GUILD_ID');
+    if (!DISCORD_STUDIO_CHANNEL_ID) console.error('Missing DISCORD_STUDIO_CHANNEL_ID');
+    
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Server configuration error' })
