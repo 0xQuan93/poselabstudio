@@ -6,8 +6,8 @@ This project has been updated to use **LiveKit** for scalable multiplayer (20+ u
 For local testing, you must create a `.env` file in the project root:
 
 ```env
-LIVEKIT_API_KEY=your_key_here
-LIVEKIT_API_SECRET=your_secret_here
+LIVEKIT_API_KEY=[REQUIRED]
+LIVEKIT_API_SECRET=[REQUIRED]
 LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 

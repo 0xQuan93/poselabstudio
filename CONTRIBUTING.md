@@ -32,7 +32,7 @@ Whether you're a developer, 3D artist, or UI designer, there's a place for you h
 4.  **Set Up Environment Variables**
     Create a `.env` file in the root directory:
     ```env
-    VITE_GEMINI_API_KEY=your_api_key_here
+    VITE_GEMINI_API_KEY=[REQUIRED]
     ```
     *(Note: You can run the app without an API key, but the AI Pose Generation feature will not work.)*
 

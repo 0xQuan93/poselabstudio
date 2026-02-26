@@ -24,7 +24,7 @@ Your API key stays on the server and is **never exposed** to users.
    - Go to: Site settings → Environment variables
    - Click "Add a variable"
    - Key: `GEMINI_API_KEY`
-   - Value: `your-api-key-here` (starts with `AIza...`)
+   - Value: `[REQUIRED]` (starts with `AIza...`)
 
 4. **Deploy**
    - Netlify automatically deploys the function at `/.netlify/functions/gemini`
@@ -45,7 +45,7 @@ Your API key stays on the server and is **never exposed** to users.
 
 3. **Set Environment Variable**
    - In Vercel dashboard → Settings → Environment Variables
-   - Add: `GEMINI_API_KEY` = `your-api-key-here`
+   - Add: `GEMINI_API_KEY` = `[REQUIRED]`
 
 4. **Deploy**
    - Vercel automatically deploys the `/api/gemini.ts` serverless function
@@ -96,7 +96,7 @@ For local development, you can use an environment variable:
 
 1. Create `.env.local` in project root:
    ```
-   VITE_GEMINI_API_KEY=your-api-key-here
+   VITE_GEMINI_API_KEY=[REQUIRED]
    ```
 
 2. The key is embedded in the build - **DO NOT use this in production!**

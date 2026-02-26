@@ -133,7 +133,7 @@ PoseLab has two primary routes:
 ### Environment Variables
 Create a `.env` file in the root for AI features:
 ```env
-VITE_GEMINI_API_KEY=your_api_key_here
+VITE_GEMINI_API_KEY=[REQUIRED]
 VITE_ENABLE_VMC_BRIDGE=true
 VITE_ENABLE_POSE_EXPORT=true
 ```

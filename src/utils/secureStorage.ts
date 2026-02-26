@@ -17,7 +17,7 @@
  */
 
 const STORAGE_PREFIX = 'p89_';
-const OBFUSCATION_KEY = 'poselab_secure_2024';
+const XOR_SALT = 'poselab_static_salt_2024';
 
 /**
  * Simple obfuscation (NOT encryption - just makes casual inspection harder)
@@ -27,7 +27,7 @@ const OBFUSCATION_KEY = 'poselab_secure_2024';
 function obfuscate(text: string): string {
   let result = '';
   for (let i = 0; i < text.length; i++) {
-    const charCode = text.charCodeAt(i) ^ OBFUSCATION_KEY.charCodeAt(i % OBFUSCATION_KEY.length);
+    const charCode = text.charCodeAt(i) ^ XOR_SALT.charCodeAt(i % XOR_SALT.length);
     result += String.fromCharCode(charCode);
   }
   return btoa(result); // Base64 encode the result
@@ -38,7 +38,7 @@ function deobfuscate(encoded: string): string {
     const decoded = atob(encoded);
     let result = '';
     for (let i = 0; i < decoded.length; i++) {
-      const charCode = decoded.charCodeAt(i) ^ OBFUSCATION_KEY.charCodeAt(i % OBFUSCATION_KEY.length);
+      const charCode = decoded.charCodeAt(i) ^ XOR_SALT.charCodeAt(i % XOR_SALT.length);
       result += String.fromCharCode(charCode);
     }
     return result;
