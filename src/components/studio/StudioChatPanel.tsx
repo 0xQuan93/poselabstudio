@@ -9,22 +9,32 @@ interface Message {
     username: string;
     avatarUrl?: string;
     isBot?: boolean;
+    id: string;
   };
   content: string;
   timestamp: Date;
 }
 
+interface DiscordAuthor {
+  id: string;
+  username: string;
+  avatar: string | null;
+  bot?: boolean;
+  discriminator: string;
+}
+
+interface DiscordMessage {
+  id: string;
+  content: string;
+  author: DiscordAuthor;
+  timestamp: string;
+}
+
 export const StudioChatPanel = () => {
   const { user } = useUserStore();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      author: { username: 'System', isBot: true },
-      content: 'Welcome to the Studio Feed! Chat with other creators here.',
-      timestamp: new Date()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -35,23 +45,111 @@ export const StudioChatPanel = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const fetchMessages = async () => {
+    try {
+      const response = await fetch('/.netlify/functions/studio-chat');
+      if (!response.ok) throw new Error('Failed to fetch messages');
+      
+      const data = await response.json();
+      
+      const mappedMessages: Message[] = data.messages.map((msg: DiscordMessage) => {
+        // Construct avatar URL
+        let avatarUrl = undefined;
+        if (msg.author.avatar) {
+          avatarUrl = `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`;
+        } else {
+          // Default avatar based on discriminator
+          const discriminator = parseInt(msg.author.discriminator) % 5;
+          avatarUrl = `https://cdn.discordapp.com/embed/avatars/${discriminator}.png`;
+        }
+
+        // Handle Bot Proxy Messages (format: "**Username**: Message")
+        let displayUsername = msg.author.username;
+        let displayContent = msg.content;
+        let isBot = msg.author.bot;
+
+        // Simple check if it looks like a proxied message from our bot
+        // This is a heuristic; in a real app we might use a specific bot ID check or metadata
+        if (msg.author.bot && msg.content.startsWith('**') && msg.content.includes('**: ')) {
+          const match = msg.content.match(/^\*\*(.*?)\*\*: (.*)$/s);
+          if (match) {
+            displayUsername = match[1];
+            displayContent = match[2];
+            isBot = false; // Treat as user message visually
+          }
+        }
+
+        return {
+          id: msg.id,
+          author: {
+            id: msg.author.id,
+            username: displayUsername,
+            avatarUrl,
+            isBot
+          },
+          content: displayContent,
+          timestamp: new Date(msg.timestamp)
+        };
+      }).reverse(); // Discord returns newest first, we want oldest first for chat log
+
+      setMessages(mappedMessages);
+    } catch (error) {
+      console.error('Error fetching chat:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Poll for new messages every 5 seconds
+  useEffect(() => {
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
+    const contentToSend = inputValue;
+    setInputValue(''); // Clear input immediately
+
+    // Optimistic update
+    const tempId = Date.now().toString();
+    const optimisticMessage: Message = {
+      id: tempId,
       author: {
+        id: user?.id || 'guest',
         username: user?.username || 'Guest',
         avatarUrl: user?.avatarUrl || undefined,
+        isBot: false,
       },
-      content: inputValue,
+      content: contentToSend,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, newMessage]);
-    setInputValue('');
-    
-    // TODO: Send to backend/Discord via bot or webhook
+    setMessages(prev => [...prev, optimisticMessage]);
+
+    try {
+      await fetch('/.netlify/functions/studio-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: contentToSend,
+          username: user?.username || 'Guest',
+          avatar_url: user?.avatarUrl
+        }),
+      });
+      
+      // Fetch specifically to get the real message and replace/update
+      // fetchMessages(); // Let the poller handle it or do it here
+      setTimeout(fetchMessages, 500); // Small delay to ensure Discord processed it
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      // Remove optimistic message on failure? Or show error state.
+      // For now, simple console error.
+    }
   };
 
   return (
