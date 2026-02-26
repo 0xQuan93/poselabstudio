@@ -32,7 +32,20 @@ interface DiscordMessage {
 
 export const StudioChatPanel = () => {
   const { user } = useUserStore();
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Initialize with a welcome message so the chat isn't empty on first load
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      author: { 
+        username: 'System', 
+        isBot: true,
+        id: 'system', 
+        avatarUrl: undefined 
+      },
+      content: 'Welcome to the Studio Feed! Chat with other creators here.',
+      timestamp: new Date()
+    }
+  ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [memberCount, setMemberCount] = useState<number>(0);
@@ -170,6 +183,9 @@ export const StudioChatPanel = () => {
         </div>
       </div>
       
+      {/* Spacer to push chat messages to the bottom when there are few messages */}
+      <div style={{ flex: '1 1 0%', minHeight: 0 }} />
+      
       <div className="chat-messages">
         {isLoading && messages.length === 0 ? (
           <div className="chat-loading">Loading chat...</div>
@@ -198,6 +214,9 @@ export const StudioChatPanel = () => {
 
       <div className="chat-input-area">
         <div className="input-wrapper">
+          <button className="emoji-btn">
+            <Smiley size={20} />
+          </button>
           <input
             type="text"
             value={inputValue}
@@ -205,14 +224,9 @@ export const StudioChatPanel = () => {
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             placeholder="Message #studio-chat..."
           />
-          <div className="input-actions">
-            <button className="emoji-btn">
-              <Smiley size={20} />
-            </button>
-            <button className="send-btn" onClick={handleSendMessage} disabled={!inputValue.trim()}>
-              <PaperPlaneRight size={20} weight="fill" />
-            </button>
-          </div>
+          <button className="send-btn" onClick={handleSendMessage} disabled={!inputValue.trim()}>
+            <PaperPlaneRight size={20} weight="fill" />
+          </button>
         </div>
       </div>
     </aside>

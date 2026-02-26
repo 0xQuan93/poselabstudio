@@ -1,6 +1,6 @@
 .studio-chat-panel {
-  position: relative;
-  display: block; /* Switch to block for absolute children positioning */
+  display: flex;
+  flex-direction: column;
   height: 100%;
   width: 100%;
   background: var(--glass-bg, rgba(20, 20, 25, 0.7));
@@ -16,10 +16,7 @@
 }
 
 .chat-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  flex-shrink: 0;
   height: 57px; /* Match tabs height */
   padding: 0 var(--space-4);
   display: flex;
@@ -49,18 +46,16 @@
 }
 
 .chat-messages {
-  position: absolute;
-  top: 57px; /* Below header */
-  bottom: 0px; /* Stop ABOVE input area */
-  left: 0;
-  width: 100%;
-  overflow-y: auto;
-  padding: var(--space-4);
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
-  /* Use justify-content: flex-end to force bottom alignment */
-  justify-content: flex-end; 
+  overflow-y: auto;
+  padding: var(--space-4);
+  /* Ensure padding-bottom allows messages to be visible above input if necessary,
+     but layout is flex so they naturally sit above. */
+  padding-bottom: var(--space-4); 
   gap: var(--space-4);
+  min-height: 0; /* Crucial for scrolling inside flex */
 }
 
 
@@ -148,38 +143,28 @@
 }
 
 .chat-input-area {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 80px; /* Fixed height container */
-  padding: var(--space-3);
-  background: rgba(0, 0, 0, 0.8); /* Opaque background to hide content behind */
+  flex-shrink: 0;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.2);
   border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   display: flex;
   align-items: center;
   gap: var(--space-2);
   z-index: 10;
-  box-sizing: border-box;
 }
 
 .input-wrapper {
   flex: 1;
   display: flex;
+  flex-direction: row;
   align-items: center;
   background: rgba(0, 0, 0, 0.4); /* Darker and more integrated */
-  border-radius: var(--radius-md, 8px);
-  padding: 0 var(--space-2);
+  border-radius: var(--radius-xl, 16px);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.2s ease;
   min-height: 48px; /* Slightly taller for comfort */
   gap: var(--space-2);
-}
-
-.input-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 .input-wrapper:focus-within {
@@ -192,7 +177,7 @@
   flex: 1;
   background: transparent;
   border: none;
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-2);
   color: var(--text-primary);
   outline: none;
   font-family: inherit;
@@ -207,7 +192,7 @@
   padding: var(--space-2);
   display: flex;
   align-items: center;
-  border-radius: 4px;
+  border-radius: var(--radius-full, 50%);
   transition: all 0.2s;
 }
 
@@ -220,7 +205,7 @@
   background: var(--accent);
   color: #000;
   border: none;
-  border-radius: var(--radius-sm, 6px); /* Match input radius slightly smaller */
+  border-radius: var(--radius-full, 50%);
   width: 32px;
   height: 32px; /* Smaller, fits inside input */
   display: flex;
