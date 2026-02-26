@@ -51,13 +51,12 @@
 .chat-messages {
   position: absolute;
   top: 57px; /* Below header */
-  bottom: 0;
+  bottom: 80px; /* Stop ABOVE input area so scrollbar is visible */
   left: 0;
   width: 100%;
   overflow-y: auto;
   padding: var(--space-4);
-  /* Space for absolute input area (height + padding) */
-  padding-bottom: 80px;
+  padding-bottom: var(--space-2); /* Small padding inside */
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -150,14 +149,15 @@
   bottom: 0;
   left: 0;
   width: 100%;
+  height: 80px; /* Fixed height container */
   padding: var(--space-3);
-  background: rgba(0, 0, 0, 0.6); /* Darker for better contrast */
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.8); /* Opaque background to hide content behind */
   border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   display: flex;
-  align-items: flex-end; /* Align to bottom if height varies */
+  align-items: center;
   gap: var(--space-2);
   z-index: 10;
+  box-sizing: border-box;
 }
 
 .input-wrapper {
@@ -183,11 +183,6 @@
   border-color: var(--accent);
   background: rgba(0, 0, 0, 0.6);
   box-shadow: 0 0 0 1px rgba(0, 255, 214, 0.2);
-}
-
-.input-wrapper:focus-within {
-  border-color: var(--accent);
-  background: rgba(0, 0, 0, 0.5);
 }
 
 .input-wrapper input {
