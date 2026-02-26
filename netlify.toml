@@ -37,6 +37,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/check-env"
+  to = "/.netlify/functions/check-env"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200

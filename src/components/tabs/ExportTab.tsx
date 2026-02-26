@@ -479,7 +479,10 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to publish');
+        const errorMessage = errorData.details 
+          ? `${errorData.error}: ${errorData.details}`
+          : (errorData.error || 'Failed to publish');
+        throw new Error(errorMessage);
       }
 
       addToast('✅ Successfully published to Discord Studio!', 'success');

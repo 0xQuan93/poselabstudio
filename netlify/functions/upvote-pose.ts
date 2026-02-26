@@ -2,7 +2,7 @@ import { Handler } from '@netlify/functions';
 
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
-  const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+  const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
   const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID || process.env.VITE_DISCORD_STUDIO_CHANNEL_ID;
 
   if (event.httpMethod !== 'POST') {
@@ -11,10 +11,17 @@ export const handler: Handler = async (event) => {
 
   if (!DISCORD_BOT_TOKEN || !DISCORD_STUDIO_CHANNEL_ID) {
     console.error('Discord bot credentials not configured.');
-    if (!DISCORD_BOT_TOKEN) console.error('Missing DISCORD_BOT_TOKEN');
-    if (!DISCORD_STUDIO_CHANNEL_ID) console.error('Missing DISCORD_STUDIO_CHANNEL_ID');
+    const missing = [];
+    if (!DISCORD_BOT_TOKEN) missing.push('DISCORD_BOT_TOKEN');
+    if (!DISCORD_STUDIO_CHANNEL_ID) missing.push('DISCORD_STUDIO_CHANNEL_ID');
     
-    return { statusCode: 500, body: JSON.stringify({ error: 'Server configuration error' }) };
+    return { 
+      statusCode: 500, 
+      body: JSON.stringify({ 
+        error: 'Server configuration error', 
+        details: `Missing variables: ${missing.join(', ')}` 
+      }) 
+    };
   }
 
   try {
