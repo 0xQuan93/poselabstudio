@@ -1,8 +1,5 @@
 import { Handler } from '@netlify/functions';
 
-const FormData = global.FormData;
-const Blob = global.Blob;
-
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
@@ -50,6 +47,7 @@ export const handler: Handler = async (event) => {
     const filename = `pose-${Date.now()}.${extension}`;
 
     // Discord API requires multipart/form-data for file uploads
+    // In Node 18+, FormData and Blob are available globally
     const formData = new FormData();
     const blob = new Blob([buffer], { type: mimeType });
     formData.append('files[0]', blob, filename);
