@@ -226,6 +226,8 @@
 .layout {
   display: grid;
   grid-template-columns: 1fr 380px;
+  /* Ensure grid rows fill the available height */
+  grid-template-rows: 1fr;
   flex: 1;
   overflow: hidden;
 }
