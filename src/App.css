@@ -227,11 +227,15 @@
   display: grid;
   grid-template-columns: 1fr 380px;
   /* Ensure grid rows fill the available height */
-  grid-template-rows: 1fr;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
+  /* Fallback height calculation if flex fails */
+  height: calc(100vh - 60px); 
+  height: calc(100dvh - 60px);
   overflow: hidden;
   /* Ensure min-height: 0 so it can shrink */
   min-height: 0;
+  box-sizing: border-box;
 }
 
 /* Studio layout now follows the same grid structure with a sidebar */

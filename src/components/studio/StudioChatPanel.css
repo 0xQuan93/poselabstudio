@@ -3,13 +3,20 @@
   flex-direction: column;
   /* Ensure it fills the parent container */
   height: 100%;
+  width: 100%;
   min-height: 0; /* Important for flex/grid children to shrink properly */
   background: var(--glass-bg, rgba(20, 20, 25, 0.7));
   border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   overflow: hidden;
+  box-sizing: border-box;
 }
+
+.studio-chat-panel * {
+  box-sizing: border-box;
+}
+
 
 .chat-header {
   height: 57px; /* Match tabs height */
