@@ -1,7 +1,17 @@
 import { Handler } from '@netlify/functions';
 
 export const handler: Handler = async (event) => {
-  const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+  // Support both standard and Vite-prefixed env vars
+  const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+
+  if (!DISCORD_CLIENT_ID) {
+    console.error('Missing Discord credentials (DISCORD_CLIENT_ID) in environment variables');
+    return {
+      statusCode: 500,
+      body: 'Server configuration error: Missing Discord Client ID',
+    };
+  }
+
   // Fallback to localhost for local dev if URL is not provided by Netlify
   const REDIRECT_URI = process.env.URL ? `${process.env.URL}/api/auth/callback` : 'http://localhost:8888/api/auth/callback';
   

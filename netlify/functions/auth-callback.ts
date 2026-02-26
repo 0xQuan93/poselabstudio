@@ -11,9 +11,18 @@ export const handler: Handler = async (event) => {
     };
   }
 
-  const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+  // Support both standard and Vite-prefixed env vars
+  const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
   const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
   const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
+  
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    console.error('Missing Discord credentials in environment variables');
+    return {
+      statusCode: 302,
+      headers: { Location: '/?error=server_config_missing' }
+    };
+  }
   
   // Base URL resolution
   const baseUrl = process.env.URL || 'http://localhost:8888';
