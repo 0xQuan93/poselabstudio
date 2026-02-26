@@ -51,27 +51,19 @@
 .chat-messages {
   position: absolute;
   top: 57px; /* Below header */
-  bottom: 80px; /* Stop ABOVE input area so scrollbar is visible */
+  bottom: 0px; /* Stop ABOVE input area */
   left: 0;
   width: 100%;
   overflow-y: auto;
-  padding: 0; /* Remove padding from scroll container */
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
+  /* Use justify-content: flex-end to force bottom alignment */
+  justify-content: flex-end; 
+  gap: var(--space-4);
 }
 
-.chat-content {
-  /* This is the magic: margin-top: auto pushes content to the bottom
-     when it is smaller than the container, but allows scrolling when larger. */
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-4); /* Add padding here instead */
-  padding-bottom: var(--space-2);
-  gap: var(--space-4);
-  width: 100%; /* Ensure full width */
-  min-height: 0; /* Allow shrinking if needed */
-}
+
 
 /* Custom scrollbar for messages */
 .chat-messages::-webkit-scrollbar {

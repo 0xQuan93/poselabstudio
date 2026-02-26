@@ -171,31 +171,29 @@ export const StudioChatPanel = () => {
       </div>
       
       <div className="chat-messages">
-        <div className="chat-content">
-          {isLoading && messages.length === 0 ? (
-            <div className="chat-loading">Loading chat...</div>
-          ) : (
-            messages.map((msg) => (
-              <div key={msg.id} className={`message ${msg.author.username === user?.username ? 'own' : ''}`}>
-                <div className="message-avatar">
-                  {msg.author.avatarUrl ? (
-                    <img src={msg.author.avatarUrl} alt={msg.author.username} />
-                  ) : (
-                    <div className="avatar-placeholder">{msg.author.username[0]}</div>
-                  )}
-                </div>
-                <div className="message-content">
-                  <div className="message-header">
-                    <span className="username">{msg.author.username}</span>
-                    <span className="timestamp">{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <p>{msg.content}</p>
-                </div>
+        {isLoading && messages.length === 0 ? (
+          <div className="chat-loading">Loading chat...</div>
+        ) : (
+          messages.map((msg) => (
+            <div key={msg.id} className={`message ${msg.author.username === user?.username ? 'own' : ''}`}>
+              <div className="message-avatar">
+                {msg.author.avatarUrl ? (
+                  <img src={msg.author.avatarUrl} alt={msg.author.username} />
+                ) : (
+                  <div className="avatar-placeholder">{msg.author.username[0]}</div>
+                )}
               </div>
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+              <div className="message-content">
+                <div className="message-header">
+                  <span className="username">{msg.author.username}</span>
+                  <span className="timestamp">{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <p>{msg.content}</p>
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="chat-input-area">
