@@ -9,9 +9,9 @@ interface ProfileModalProps {
 }
 
 const ROLE_DEFINITIONS = [
-  { id: '1475655702155362587', name: 'Studio Tech', color: '#ffd700', icon: <Medal size={20} weight="fill" /> }, // Gold
-  { id: '1475651244067524650', name: 'Lab Tech', color: '#c0c0c0', icon: <Circuitry size={20} weight="bold" /> }, // Silver
-  { id: '1475652933965054034', name: 'General Tech', color: '#cd7f32', icon: <Lightning size={20} weight="bold" /> } // Bronze
+  { id: import.meta.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech', color: '#ffd700', icon: <Medal size={20} weight="fill" /> }, // Gold
+  { id: import.meta.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech', color: '#c0c0c0', icon: <Circuitry size={20} weight="bold" /> }, // Silver
+  { id: import.meta.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech', color: '#cd7f32', icon: <Lightning size={20} weight="bold" /> } // Bronze
 ];
 
 export const ProfileModal = ({ isOpen, onClose }: ProfileModalProps) => {

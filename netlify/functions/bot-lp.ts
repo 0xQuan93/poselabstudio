@@ -106,9 +106,9 @@ export const handler: Handler = async (event) => {
     };
 
     const ROLE_THRESHOLDS = [
-      { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
-      { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech' },
-      { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
+      { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH || process.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
+      { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH || process.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech' },
+      { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH || process.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
     ];
 
     // 4. Main Handler Logic

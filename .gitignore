@@ -94,3 +94,5 @@ TOKEN_STRATEGY_HIGH_LEVEL.md
 
 # Local Netlify folder
 .netlify
+
+.env
