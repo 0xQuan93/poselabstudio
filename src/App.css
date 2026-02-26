@@ -230,9 +230,8 @@
   overflow: hidden;
 }
 
+/* Studio layout now follows the same grid structure with a sidebar */
 .layout.studio-layout {
-  display: flex;
-  flex-direction: column;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

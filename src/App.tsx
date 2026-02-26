@@ -20,6 +20,7 @@ import { MobileWelcomeModal } from './components/MobileWelcomeModal';
 import { GearSix, X } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
+import { StudioChatPanel } from './components/studio/StudioChatPanel';
 import { useUserStore } from './state/useUserStore';
 
 // import { LobbyPanel } from './components/LobbyPanel';
@@ -186,11 +187,14 @@ function App() {
             width: '100%', 
             height: '100%', 
             display: mode === 'studio' ? 'flex' : 'none',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            overflow: 'hidden'
           }}
         >
           <CreatorFeed />
         </div>
+
+        {mode === 'studio' && <StudioChatPanel />}
 
         <section className="viewport" style={{ display: mode === 'studio' ? 'none' : 'flex' }}>
           <ErrorBoundary>
