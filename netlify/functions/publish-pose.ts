@@ -35,6 +35,7 @@ export const handler: Handler = async (event) => {
     // Extract base64 data
     const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
+      console.error('Invalid image format');
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid image format. Expected base64 data URI.' }) };
     }
 
@@ -42,12 +43,23 @@ export const handler: Handler = async (event) => {
     const base64Data = matches[2];
     const buffer = Buffer.from(base64Data, 'base64');
 
+    // Check size (approximate)
+    if (buffer.length > 8 * 1024 * 1024) {
+      console.error('Image too large:', buffer.length);
+      return { statusCode: 400, body: JSON.stringify({ error: 'Image too large (max 8MB)' }) };
+    }
+
     // Determine extension
     const extension = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1] || 'png';
     const filename = `pose-${Date.now()}.${extension}`;
 
     // Discord API requires multipart/form-data for file uploads
     // In Node 18+, FormData and Blob are available globally
+    if (typeof FormData === 'undefined' || typeof Blob === 'undefined') {
+       console.error('FormData or Blob not available in this environment');
+       return { statusCode: 500, body: JSON.stringify({ error: 'Server Environment Error: FormData/Blob missing' }) };
+    }
+
     const formData = new FormData();
     const blob = new Blob([buffer], { type: mimeType });
     formData.append('files[0]', blob, filename);

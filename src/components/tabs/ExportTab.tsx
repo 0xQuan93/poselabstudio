@@ -460,6 +460,13 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
 
       if (!dataUrl) throw new Error("Failed to capture image");
 
+      // Check image size before sending (Netlify has 6MB payload limit)
+      // Base64 overhead is ~33%, so safe limit is around 4.5MB
+      const sizeInBytes = Math.ceil((dataUrl.length - 'data:image/png;base64,'.length) * 3 / 4);
+      if (sizeInBytes > 4.5 * 1024 * 1024) {
+        throw new Error(`Image too large (${(sizeInBytes / 1024 / 1024).toFixed(2)}MB). Please reduce resolution or crop.`);
+      }
+
       addToast('Publishing to Studio...', 'info');
       
       // Calculate level for Discord Embed display
@@ -478,10 +485,17 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = errorData.details 
-          ? `${errorData.error}: ${errorData.details}`
-          : (errorData.error || 'Failed to publish');
+        const errorText = await response.text();
+        let errorMessage = 'Failed to publish';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.details 
+            ? `${errorData.error}: ${errorData.details}`
+            : (errorData.error || errorMessage);
+        } catch (e) {
+          console.error('Non-JSON error response:', errorText);
+          errorMessage = `Server Error (${response.status}): ${errorText.substring(0, 100)}`;
+        }
         throw new Error(errorMessage);
       }
 
