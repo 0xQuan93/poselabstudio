@@ -44,6 +44,7 @@ export const LoginButton = () => {
             discordId: decoded.discordId,
             username: decoded.username,
             avatarUrl: decoded.avatarUrl,
+            roles: decoded.roles || [],
             lp: currentLp,
             lastLoginDate,
             explorationMilestones

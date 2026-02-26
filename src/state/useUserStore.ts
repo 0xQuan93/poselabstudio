@@ -6,6 +6,7 @@ interface UserProfile {
   discordId?: string | null; // Extracted Discord Snowflake
   username: string | null;
   avatarUrl: string | null;
+  roles?: string[]; // Discord Role IDs
   lp: number; // Local fallback/cache for Lab Points
   lastLoginDate?: string | null;
   explorationMilestones?: Record<string, boolean>;
