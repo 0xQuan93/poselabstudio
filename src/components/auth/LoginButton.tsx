@@ -24,7 +24,14 @@ export const LoginButton = () => {
     
     if (sessionCookie) {
       try {
-        const decoded = JSON.parse(atob(sessionCookie));
+        // Robust Base64 decoding for UTF-8 support (e.g. emojis in usernames)
+        const binaryString = atob(sessionCookie);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const decodedString = new TextDecoder().decode(bytes);
+        const decoded = JSON.parse(decodedString);
         
         // Update store if user is not set or data changed
         if (!user || user.id !== decoded.id) {

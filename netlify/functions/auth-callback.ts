@@ -81,12 +81,18 @@ export const handler: Handler = async (event) => {
     // 4. Store session in a cookie (not HttpOnly so the React app can decode it on load)
     const sessionBase64 = Buffer.from(JSON.stringify(sessionData)).toString('base64');
     
+    // Only apply Secure and SameSite=None in HTTPS environments (Production)
+    const isSecure = baseUrl.startsWith('https://');
+    const cookieAttributes = isSecure 
+      ? 'Secure; SameSite=None' 
+      : 'SameSite=Lax'; 
+
     return {
       statusCode: 302,
       headers: {
         Location: '/?login=success',
         // Max-Age 30 days. Secure is required for iframe/embedded contexts. SameSite=None allows cross-site usage.
-        'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; Secure; SameSite=None; Max-Age=2592000`
+        'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; ${cookieAttributes}; Max-Age=2592000`
       }
     };
   } catch (err) {
