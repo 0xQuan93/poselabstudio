@@ -55,20 +55,21 @@
   left: 0;
   width: 100%;
   overflow-y: auto;
-  padding: 0; /* Remove padding from scroll container to prevent offset issues */
+  padding: 0; /* Remove padding from scroll container */
   display: flex;
   flex-direction: column;
 }
 
 .chat-content {
-  flex-grow: 1; /* Allow content to grow */
+  /* This is the magic: margin-top: auto pushes content to the bottom
+     when it is smaller than the container, but allows scrolling when larger. */
+  margin-top: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end; /* Anchor messages to bottom */
-  min-height: 100%; /* Ensure content fills at least the visible area */
-  padding: var(--space-4); /* Add padding here instead */
+  padding: var(--space-4);
   padding-bottom: var(--space-2);
   gap: var(--space-4);
+  width: 100%; /* Ensure full width */
 }
 
 /* Custom scrollbar for messages */
