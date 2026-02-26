@@ -47,6 +47,7 @@
 
 .chat-messages {
   flex: 0 1 auto;
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   overflow-y: auto;

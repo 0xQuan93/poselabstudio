@@ -183,9 +183,6 @@ export const StudioChatPanel = () => {
         </div>
       </div>
       
-      {/* Spacer to push chat messages to the bottom when there are few messages */}
-      <div style={{ flex: '1 1 0%', minHeight: 0 }} />
-      
       <div className="chat-messages">
         {isLoading && messages.length === 0 ? (
           <div className="chat-loading">Loading chat...</div>
