@@ -126,7 +126,7 @@ export default defineConfig(({ mode }) => {
         });
 
         // Local Auth Redirect for Discord
-        server.middlewares.use('/api/auth/discord', (req: IncomingMessage, res: ServerResponse) => {
+        server.middlewares.use('/api/auth/discord', (_req: IncomingMessage, res: ServerResponse) => {
           const clientId = env.VITE_DISCORD_CLIENT_ID || env.DISCORD_CLIENT_ID;
           // Use the actual dev port (usually 5173)
           const port = server.config.server.port || 5173;
@@ -139,7 +139,7 @@ export default defineConfig(({ mode }) => {
         });
 
         // Local Callback Mock for Development
-        server.middlewares.use('/api/auth/callback', (req: IncomingMessage, res: ServerResponse) => {
+        server.middlewares.use('/api/auth/callback', (_req: IncomingMessage, res: ServerResponse) => {
           // In a real scenario, we'd exchange the code here.
           // For local Vite dev, we'll just redirect back with a "mock" success state
           // or you can implement the full exchange if you have the client secret.
@@ -177,13 +177,13 @@ export default defineConfig(({ mode }) => {
         });
 
         // Mock Feed API
-        server.middlewares.use('/.netlify/functions/fetch-feed', (req: IncomingMessage, res: ServerResponse) => {
+        server.middlewares.use('/.netlify/functions/fetch-feed', (_req: IncomingMessage, res: ServerResponse) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ feed: [] }));
         });
 
         // Mock Upvote API
-        server.middlewares.use('/.netlify/functions/upvote-pose', (req: IncomingMessage, res: ServerResponse) => {
+        server.middlewares.use('/.netlify/functions/upvote-pose', (_req: IncomingMessage, res: ServerResponse) => {
            res.writeHead(200, { 'Content-Type': 'application/json' });
            res.end(JSON.stringify({ success: true }));
         });
