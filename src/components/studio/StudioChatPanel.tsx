@@ -171,6 +171,7 @@ export const StudioChatPanel = () => {
       </div>
       
       <div className="chat-messages">
+        <div style={{ flex: '1 1 0%', minHeight: 0 }} />
         {isLoading && messages.length === 0 ? (
           <div className="chat-loading">Loading messages...</div>
         ) : (

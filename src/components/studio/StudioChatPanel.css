@@ -60,7 +60,6 @@
   padding-bottom: 80px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end; /* Anchor messages to the bottom */
   gap: var(--space-4);
 }
 
@@ -80,6 +79,7 @@
   display: flex;
   gap: var(--space-3);
   animation: fadeIn 0.3s ease-out;
+  flex-shrink: 0; /* Prevent messages from shrinking */
 }
 
 .message-avatar {
