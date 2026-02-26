@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useMultiplayerStore } from '../state/useMultiplayerStore';
+import { Link, UploadSimple, DownloadSimple, CheckCircle, XCircle } from '@phosphor-icons/react';
 import './ConnectionProgressPanel.css';
 
 interface TransferProgress {
@@ -81,7 +82,9 @@ export function ConnectionProgressPanel() {
   return (
     <div className="connection-progress-panel">
       <div className="progress-header">
-        <span className="progress-icon">🔗</span>
+        <span className="progress-icon">
+          <Link size={20} weight="bold" />
+        </span>
         <span className="progress-title">
           {isConnecting ? 'Connecting...' : 
            showComplete ? 'Connected!' :
@@ -109,15 +112,27 @@ export function ConnectionProgressPanel() {
         <div key={transfer.peerId} className="progress-item">
           <div className="progress-label">
             <span className="transfer-direction">
-              {transfer.direction === 'sending' ? '📤' : '📥'}
+              {transfer.direction === 'sending' ? (
+                <UploadSimple size={16} weight="bold" />
+              ) : (
+                <DownloadSimple size={16} weight="bold" />
+              )}
             </span>
             <span className="transfer-name">{transfer.displayName}</span>
             <span className="transfer-status">
               {transfer.status === 'pending' && 'Waiting...'}
               {transfer.status === 'transferring' && 'Transferring avatar...'}
               {transfer.status === 'loading' && 'Loading model...'}
-              {transfer.status === 'complete' && '✓ Ready'}
-              {transfer.status === 'error' && '✗ Failed'}
+              {transfer.status === 'complete' && (
+                <span className="status-ready">
+                  <CheckCircle size={14} weight="fill" /> Ready
+                </span>
+              )}
+              {transfer.status === 'error' && (
+                <span className="status-failed">
+                  <XCircle size={14} weight="fill" /> Failed
+                </span>
+              )}
             </span>
           </div>
           <div className="progress-bar-container">

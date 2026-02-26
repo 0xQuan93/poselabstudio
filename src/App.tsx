@@ -20,6 +20,7 @@ import { MobileWelcomeModal } from './components/MobileWelcomeModal';
 import { GearSix, X } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
+import { useUserStore } from './state/useUserStore';
 
 // import { LobbyPanel } from './components/LobbyPanel';
 
@@ -29,11 +30,32 @@ initAvatarBridge();
 const IS_DEV = import.meta.env.DEV;
 
 function App() {
-  const { isReady, error } = useDiscordActivity();
+  const { isReady, error, discordSdk } = useDiscordActivity();
   const { mode, setMode, mobileDrawerOpen, setMobileDrawerOpen, focusModeActive } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
+  const user = useUserStore((state) => state.user);
+
+  // Sync LP and Activity State to Discord
+  useEffect(() => {
+    if (isReady && isEmbeddedApp && discordSdk && user) {
+      const level = Math.floor(user.lp / 100) + 1;
+      
+      let modeName = 'Reaction Forge';
+      if (mode === 'studio') modeName = 'Browsing the Studio Feed';
+      else if (mode === 'poselab') modeName = 'Crafting Poses in Pose Lab';
+      else if (mode === 'reactions') modeName = 'Triggering Reactions';
+
+      discordSdk.commands.setActivity({
+        activity: {
+          type: 0,
+          details: modeName,
+          state: `Level ${level} | ${user.lp.toLocaleString()} LP`,
+        }
+      }).catch((err) => console.error('Failed to sync Activity', err));
+    }
+  }, [isReady, discordSdk, user?.lp, mode]);
 
   // Handle body transparency for Stream Mode
   useEffect(() => {
@@ -158,22 +180,30 @@ function App() {
       <AppHeader mode={mode} onModeChange={setMode} />
       
       <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''}`}>
-        {mode === 'studio' ? (
-          <div className="studio-mode-wrapper" style={{ width: '100%', height: '100%', display: 'flex' }}>
-            <CreatorFeed />
-          </div>
-        ) : (
-          <>
-            <section className="viewport">
-              <ErrorBoundary>
-                <CanvasStage />
-                <ViewportEffectOverlay />
-                <ViewportOverlay mode={mode} />
-              </ErrorBoundary>
-            </section>
+        <div 
+          className="studio-mode-wrapper" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: mode === 'studio' ? 'flex' : 'none',
+            flexDirection: 'column'
+          }}
+        >
+          <CreatorFeed />
+        </div>
 
-            {!isMobile && <ControlPanel mode={mode} />}
-          </>
+        <section className="viewport" style={{ display: mode === 'studio' ? 'none' : 'flex' }}>
+          <ErrorBoundary>
+            <CanvasStage />
+            <ViewportEffectOverlay />
+            <ViewportOverlay mode={mode === 'studio' ? 'reactions' : mode} />
+          </ErrorBoundary>
+        </section>
+
+        {!isMobile && (
+          <div style={{ display: mode === 'studio' ? 'none' : 'contents' }}>
+            <ControlPanel mode={mode === 'studio' ? 'reactions' : mode} />
+          </div>
         )}
       </main>
 

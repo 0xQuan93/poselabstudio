@@ -1,6 +1,7 @@
 import { Handler } from '@netlify/functions';
 import { Keypair, Transaction } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import bs58 from 'bs58';
 
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY;
 
@@ -22,9 +23,22 @@ export const handler: Handler = async (event) => {
     }
 
     let secretKey: Uint8Array;
+    const key = TREASURY_PRIVATE_KEY.trim();
+
     try {
-      secretKey = Uint8Array.from(JSON.parse(TREASURY_PRIVATE_KEY));
+      // Try parsing as JSON array first (e.g. [1, 2, 3...])
+      if (key.startsWith('[') && !isNaN(parseInt(key[1]))) {
+        secretKey = Uint8Array.from(JSON.parse(key));
+      } else {
+        // If it starts with [ but isn't a number array, maybe the user wrapped a base58 string in brackets?
+        const base58String = (key.startsWith('[') && key.endsWith(']')) 
+          ? key.slice(1, -1) 
+          : key;
+          
+        secretKey = bs58.decode(base58String);
+      }
     } catch (e) {
+      console.error('Failed to parse private key:', e);
       return { statusCode: 500, body: JSON.stringify({ error: 'Invalid Treasury configuration' }) };
     }
     

@@ -53,7 +53,7 @@ export const useDiscordActivity = () => {
           response_type: 'code',
           state: '',
           prompt: 'none',
-          scope: ['identify', 'guilds'],
+          scope: ['identify', 'guilds', 'rpc.activities.write'],
         });
         
         // 2. Exchange code for access_token securely via our serverless function
@@ -80,15 +80,36 @@ export const useDiscordActivity = () => {
           throw new Error('Authenticate command did not return a user');
         }
 
+        // Helper to resolve avatar URL (custom or default)
+        const getAvatarUrl = (user: typeof auth.user) => {
+          if (user.avatar) {
+            const format = user.avatar.startsWith('a_') ? 'gif' : 'png';
+            return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${format}`;
+          }
+          
+          // Default avatar logic
+          if (user.discriminator === '0') {
+            const id = BigInt(user.id);
+            const index = Number((id >> 22n) % 6n);
+            return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+          }
+          
+          // Legacy discriminator
+          const index = parseInt(user.discriminator) % 5;
+          return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+        };
+
         // 4. Update the global user state with Discord profile data
+        const currentLp = useUserStore.getState().user?.lp || 0;
         setUser({
            id: auth.user.id,
            username: auth.user.username,
-           avatarUrl: auth.user.avatar 
-            ? `https://cdn.discordapp.com/avatars/${auth.user.id}/${auth.user.avatar}.png` 
-            : null,
-           credits: 0, // Placeholder until Solana RPC fetch is implemented
+           avatarUrl: getAvatarUrl(auth.user),
+           lp: currentLp,
         });
+
+        // Hydrate LP from the Discord channel ledger
+        useUserStore.getState().fetchLpFromBot(auth.user.id);
 
         setIsReady(true);
       } catch (err) {

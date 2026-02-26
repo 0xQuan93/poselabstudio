@@ -3,6 +3,7 @@ import { useAvatarSource } from '../state/useAvatarSource';
 import { useReactionStore } from '../state/useReactionStore';
 import { useToastStore } from '../state/useToastStore';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
+import { useUserStore } from '../state/useUserStore';
 import { sceneManager } from '../three/sceneManager';
 import { avatarManager } from '../three/avatarManager';
 import { AboutModal } from './AboutModal';
@@ -36,8 +37,21 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const { avatarType, setFileSource, setLive2dSource, sourceLabel } = useAvatarSource();
   const isAvatarReady = useReactionStore((state) => state.isAvatarReady);
   const { addToast } = useToastStore();
+  const { recordExploration, user } = useUserStore();
   const resetSceneSettings = useSceneSettingsStore((state) => state.resetAll);
   const setStreamMode = useUIStore((state) => state.setStreamMode);
+
+  const handleModeChange = (newMode: 'reactions' | 'poselab' | 'studio') => {
+    onModeChange(newMode);
+    
+    // Reward for exploring different modes
+    if (user) {
+      const reward = recordExploration(`explore_mode_${newMode}`, 20);
+      if (reward > 0) {
+        addToast(`Explorer Bonus: +${reward} LP for visiting ${newMode}! 🔥`, 'success');
+      }
+    }
+  };
 
   const handleResetScene = () => {
     if (confirm('Reset scene settings to default? This will clear lighting, effects, and background settings.')) {
@@ -122,21 +136,21 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
           <div className="mode-switch" data-tutorial-id="mode-switch">
             <button
               className={mode === 'reactions' ? 'active' : ''}
-              onClick={() => onModeChange('reactions')}
+              onClick={() => handleModeChange('reactions')}
             >
               <Atom size={16} weight="duotone" />
               <span>Reactions</span>
             </button>
             <button
               className={mode === 'poselab' ? 'active' : ''}
-              onClick={() => onModeChange('poselab')}
+              onClick={() => handleModeChange('poselab')}
             >
               <Flask size={16} weight="duotone" />
               <span>Pose Lab</span>
             </button>
             <button
               className={mode === 'studio' ? 'active' : ''}
-              onClick={() => onModeChange('studio')}
+              onClick={() => handleModeChange('studio')}
             >
               <Fire size={16} weight="duotone" />
               <span>Studio</span>

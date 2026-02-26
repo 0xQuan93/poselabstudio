@@ -96,6 +96,20 @@
   font-size: 0.8rem;
 }
 
+.status-ready {
+  color: #00ff88;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-failed {
+  color: #ff4444;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .progress-bar-container {
   height: 6px;
   background: rgba(255, 255, 255, 0.1);

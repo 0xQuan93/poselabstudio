@@ -1,43 +1,75 @@
-import { usePrivy } from '@privy-io/react-auth';
 import { User, SignOut } from '@phosphor-icons/react';
 import { useUserStore } from '../../state/useUserStore';
+import { useToastStore } from '../../state/useToastStore';
 import { CreditsDisplay } from '../rewards/CreditsDisplay';
 import { ProfileModal } from '../profile/ProfileModal';
 import { useEffect, useState } from 'react';
 import './LoginButton.css';
 
 export const LoginButton = () => {
-  const { login, authenticated, user: privyUser, logout } = usePrivy();
   const { user, setUser, logout: storeLogout } = useUserStore();
+  const { addToast } = useToastStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   useEffect(() => {
-    const syncUser = () => {
-      if (authenticated && privyUser && !user) {
-        // Extract username/avatar from Privy user data
-        // Priority: Discord profile > Email > ID
-        const discordAccount = privyUser.linkedAccounts.find(a => a.type === 'discord_oauth') as any;
-        
-        setUser({
-          id: privyUser.id,
-          username: discordAccount?.username || privyUser.email?.address?.split('@')[0] || 'User',
-          avatarUrl: discordAccount?.profile_picture_url || null,
-          credits: 0 // Default to 0, or load from localStorage/on-chain later
-        });
-      } else if (!authenticated && user) {
-        storeLogout();
-      }
+    // Check for poselab_user cookie
+    const getCookie = (name: string) => {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
+      return null;
     };
 
-    syncUser();
-  }, [authenticated, privyUser, user, setUser, storeLogout]);
+    const sessionCookie = getCookie('poselab_user');
+    
+    if (sessionCookie) {
+      try {
+        const decoded = JSON.parse(atob(sessionCookie));
+        
+        // Update store if user is not set or data changed
+        if (!user || user.id !== decoded.id) {
+          const currentLp = useUserStore.getState().user?.lp || 0;
+          const lastLoginDate = useUserStore.getState().user?.lastLoginDate;
+          const explorationMilestones = useUserStore.getState().user?.explorationMilestones || {};
+          
+          setUser({
+            id: decoded.id,
+            discordId: decoded.discordId,
+            username: decoded.username,
+            avatarUrl: decoded.avatarUrl,
+            lp: currentLp,
+            lastLoginDate,
+            explorationMilestones
+          });
 
-  const handleLogout = async () => {
-    await logout();
+          // Fetch fresh LP from the Discord channel backend
+          if (decoded.discordId) {
+            useUserStore.getState().fetchLpFromBot(decoded.discordId);
+          }
+          
+          setTimeout(() => {
+            const reward = useUserStore.getState().recordDailyLogin();
+            if (reward > 0) {
+              addToast(`Daily Login: +${reward} LP! 🔥`, 'success');
+            }
+          }, 1000); // Slight delay so toast doesn't get buried
+        }
+      } catch (err) {
+        console.error('Failed to parse session cookie', err);
+      }
+    } else if (user) {
+      // Cookie is gone, log out locally
+      storeLogout();
+    }
+  }, [user, setUser, storeLogout, addToast]);
+
+  const handleLogout = () => {
+    // Delete cookie
+    document.cookie = 'poselab_user=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
     storeLogout();
   };
   
-  if (authenticated) {
+  if (user) {
     return (
       <>
         <div className="user-menu-container">
@@ -55,7 +87,7 @@ export const LoginButton = () => {
                     <User size={20} />
                   )}
                 </div>
-                <span>{user?.username || privyUser?.email?.address?.split('@')[0] || 'User'}</span>
+                <span>{user?.username || 'User'}</span>
             </button>
             <button onClick={handleLogout} className="logout-btn" title="Sign Out">
               <SignOut size={20} />
@@ -68,8 +100,8 @@ export const LoginButton = () => {
   }
 
   return (
-    <button onClick={login} className="login-btn">
+    <a href="/api/auth/discord" className="login-btn" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       Log In
-    </button>
+    </a>
   );
 };

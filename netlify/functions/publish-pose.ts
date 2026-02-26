@@ -10,7 +10,7 @@ export const handler: Handler = async (event) => {
 
   try {
     const body = JSON.parse(event.body || '{}');
-    const { image, creatorName, creatorId, creatorAddress, description } = body;
+    const { image, creatorName, creatorId, creatorAddress, description, creatorAvatarUrl } = body;
 
     if (!image || !creatorName) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) };
@@ -36,14 +36,17 @@ export const handler: Handler = async (event) => {
     const filename = `pose-${Date.now()}.${extension}`;
 
     // Discord API requires multipart/form-data for file uploads
-    // Node 18+ has native fetch and FormData, but we can also build the multipart payload manually if needed.
-    // However, native FormData with a Blob works well.
     const formData = new FormData();
     const blob = new Blob([buffer], { type: mimeType });
     formData.append('files[0]', blob, filename);
 
+    // Only mention if it looks like a Discord User ID (snowflake)
+    // Privy DIDs (e.g. did:privy:...) should be displayed as names
+    const isDiscordId = creatorId && /^\d+$/.test(creatorId);
+    const mentionText = isDiscordId ? `<@${creatorId}>` : creatorName;
+
     const payload_json = {
-      content: `**New Pose Published by ${creatorName}**!`,
+      content: `**New Pose Published by ${mentionText}**!`,
       embeds: [
         {
           title: "Creator Studio Post",
@@ -52,6 +55,10 @@ export const handler: Handler = async (event) => {
           image: {
             url: `attachment://${filename}`
           },
+          author: {
+            name: creatorName,
+            icon_url: creatorAvatarUrl || undefined
+          },
           fields: [
             {
               name: "Creator",
@@ -59,14 +66,9 @@ export const handler: Handler = async (event) => {
               inline: true
             },
             {
-              name: "Creator ID",
-              value: creatorId || "Anonymous",
-              inline: true
-            },
-            {
               name: "Solana Address",
               value: creatorAddress ? `${creatorAddress}` : "Not provided",
-              inline: false
+              inline: true
             }
           ],
           footer: {

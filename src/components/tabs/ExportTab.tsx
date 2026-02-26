@@ -13,7 +13,6 @@ import { getPoseLabTimestamp } from '../../utils/exportNaming';
 import { serializeAnimationClip } from '../../poses/animationClipSerializer';
 import { animationManager } from '../../three/animationManager';
 import { useUserStore } from '../../state/useUserStore';
-import { useSolanaWallets } from '@privy-io/react-auth';
 import { 
   Image, 
   FilmStrip, 
@@ -41,7 +40,6 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
   const { addToast } = useToastStore();
   const setStreamMode = useUIStore((state) => state.setStreamMode);
   const { user } = useUserStore();
-  const { wallets } = useSolanaWallets();
   const projectInputRef = useRef<HTMLInputElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
@@ -462,20 +460,20 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
 
       if (!dataUrl) throw new Error("Failed to capture image");
 
-      const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
-      const address = wallet ? wallet.address : null;
-
       addToast('Publishing to Studio...', 'info');
       
+      // Calculate level for Discord Embed display
+      const currentLevel = Math.floor((user?.lp || 0) / 100) + 1;
+
       const response = await fetch('/.netlify/functions/publish-pose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: dataUrl,
           creatorName: user.username || 'Anonymous Creator',
+          creatorAvatarUrl: user.avatarUrl,
           creatorId: user.id,
-          creatorAddress: address,
-          description: `Mode: ${mode === 'poselab' ? 'Pose Lab' : 'Reactions'} | Resolution: ${resolution}`
+          description: `Level ${currentLevel} Creator | Mode: ${mode === 'poselab' ? 'Pose Lab' : 'Reactions'} | Res: ${resolution}`
         })
       });
 

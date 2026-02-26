@@ -124,6 +124,69 @@ export default defineConfig(({ mode }) => {
              }
            });
         });
+
+        // Local Auth Redirect for Discord
+        server.middlewares.use('/api/auth/discord', (req: IncomingMessage, res: ServerResponse) => {
+          const clientId = env.VITE_DISCORD_CLIENT_ID || env.DISCORD_CLIENT_ID;
+          // Use the actual dev port (usually 5173)
+          const port = server.config.server.port || 5173;
+          const redirectUri = encodeURIComponent(`http://localhost:${port}/api/auth/callback`);
+          const scope = encodeURIComponent('identify email guilds guilds.members.read');
+          const url = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
+          
+          res.writeHead(302, { Location: url });
+          res.end();
+        });
+
+        // Local Callback Mock for Development
+        server.middlewares.use('/api/auth/callback', (req: IncomingMessage, res: ServerResponse) => {
+          // In a real scenario, we'd exchange the code here.
+          // For local Vite dev, we'll just redirect back with a "mock" success state
+          // or you can implement the full exchange if you have the client secret.
+          
+          const mockUser = {
+            id: 'mock_user_id',
+            discordId: 'mock_user_id',
+            username: 'DevMode_User',
+            avatarUrl: null,
+            lp: 1000
+          };
+          
+          const sessionBase64 = Buffer.from(JSON.stringify(mockUser)).toString('base64');
+          
+          res.writeHead(302, { 
+            Location: '/?login=success',
+            'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; SameSite=Lax; Max-Age=2592000`
+          });
+          res.end();
+        });
+
+        // Mock LP Ledger API
+        server.middlewares.use('/.netlify/functions/bot-lp', (req: IncomingMessage, res: ServerResponse) => {
+           let body = '';
+           req.on('data', chunk => body += chunk);
+           req.on('end', () => {
+             const { action } = JSON.parse(body || '{}');
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             if (action === 'read') {
+               res.end(JSON.stringify({ lp: 1250 }));
+             } else {
+               res.end(JSON.stringify({ success: true, lp: 1250 }));
+             }
+           });
+        });
+
+        // Mock Feed API
+        server.middlewares.use('/.netlify/functions/fetch-feed', (req: IncomingMessage, res: ServerResponse) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ feed: [] }));
+        });
+
+        // Mock Upvote API
+        server.middlewares.use('/.netlify/functions/upvote-pose', (req: IncomingMessage, res: ServerResponse) => {
+           res.writeHead(200, { 'Content-Type': 'application/json' });
+           res.end(JSON.stringify({ success: true }));
+        });
       }
     },
     enableVmcBridge && {

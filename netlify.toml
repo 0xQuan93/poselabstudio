@@ -7,9 +7,26 @@
   # Use esbuild for TypeScript functions
   node_bundler = "esbuild"
 
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Security: Allow Discord and Localhost to embed this app (replaces X-Frame-Options)
+    Content-Security-Policy = "frame-ancestors 'self' https://*.discord.com https://discord.com https://localhost:* http://localhost:*;"
+    
+    # Standard Security Headers
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=*, microphone=*, clipboard-write=*"
+
 # Headers removed to fix resource blocking
 # [[headers]]
 #   for = "/*"
 #   [headers.values]
 #     Cross-Origin-Opener-Policy = "same-origin"
 #     Cross-Origin-Embedder-Policy = "require-corp"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useToastStore } from '../../state/useToastStore';
 import { useUserStore } from '../../state/useUserStore';
-import { Fire, Coin, ArrowClockwise, WarningCircle } from '@phosphor-icons/react';
-import { TipCreatorModal } from '../rewards/TipCreatorModal';
+import { Fire, ArrowClockwise, WarningCircle, User } from '@phosphor-icons/react';
 import './CreatorFeed.css';
 
 interface FeedItem {
@@ -11,6 +10,7 @@ interface FeedItem {
   description: string;
   imageUrl: string;
   creatorName: string;
+  creatorAvatarUrl: string | null;
   creatorId: string | null;
   creatorAddress: string | null;
   upvotes: number;
@@ -23,11 +23,7 @@ export const CreatorFeed = () => {
   const [error, setError] = useState<string | null>(null);
   const [upvotedItems, setUpvotedItems] = useState<Set<string>>(new Set());
   const { addToast } = useToastStore();
-  const { user, updateCredits } = useUserStore();
-  
-  // Tipping State
-  const [isTipModalOpen, setIsTipModalOpen] = useState(false);
-  const [selectedCreator, setSelectedCreator] = useState<{name: string, address: string} | null>(null);
+  const { user, updateLp } = useUserStore();
 
   const fetchFeed = async () => {
     setIsLoading(true);
@@ -40,12 +36,14 @@ export const CreatorFeed = () => {
       const data = await response.json();
       setFeed(data.feed);
 
-      // Sync XP based on total upvotes received across all published poses
+      // Sync LP based on total upvotes received across all published poses
       if (user) {
         const userPosts = data.feed.filter((item: FeedItem) => item.creatorId === user.id);
         const totalUpvotes = userPosts.reduce((sum: number, item: FeedItem) => sum + item.upvotes, 0);
-        // Let's say 1 upvote = 10 XP/Credits
-        updateCredits(totalUpvotes * 10);
+        // Let's say 1 upvote = 10 LP
+        if (updateLp) {
+          updateLp(totalUpvotes * 10);
+        }
       }
 
     } catch (err: any) {
@@ -61,6 +59,11 @@ export const CreatorFeed = () => {
   }, []);
 
   const handleUpvote = async (messageId: string) => {
+    if (!user) {
+      addToast('Please log in to upvote poses.', 'warning');
+      return;
+    }
+
     if (upvotedItems.has(messageId)) return; // Prevent double-clicking
 
     // Optimistic UI update
@@ -102,23 +105,29 @@ export const CreatorFeed = () => {
     }
   };
 
-  const handleOpenTip = (creatorName: string, creatorAddress: string | null) => {
-    if (!creatorAddress || creatorAddress === 'Not provided') {
-      addToast('This creator has not linked a Solana wallet.', 'warning');
-      return;
-    }
-    setSelectedCreator({ name: creatorName, address: creatorAddress });
-    setIsTipModalOpen(true);
-  };
+  const recentPosters = [...new Set(feed.slice(0, 15).map(f => f.creatorName))];
+  const tickerText = recentPosters.length > 0 ? `🚀 RECENTS: ${recentPosters.join(' • ')}` : '';
 
   return (
     <div className="studio-feed-container">
       <div className="studio-feed-header">
-        <h2>🔥 Studio Feed</h2>
+        <h2>
+          <Fire size={24} weight="fill" color="#FF5E5B" />
+          Studio Feed
+        </h2>
         <button className="icon-button" onClick={fetchFeed} disabled={isLoading} title="Refresh Feed">
           <ArrowClockwise size={18} className={isLoading ? 'spinning' : ''} />
         </button>
       </div>
+
+      {tickerText && (
+        <div className="studio-feed-ticker">
+          <div className="ticker-track">
+            <span className="ticker-text">{tickerText}</span>
+            <span className="ticker-text">{tickerText}</span>
+          </div>
+        </div>
+      )}
 
       <div className="studio-feed-content">
         {isLoading && feed.length === 0 ? (
@@ -146,7 +155,16 @@ export const CreatorFeed = () => {
                 </div>
               )}
               <div className="feed-item-details">
-                <div className="feed-item-creator">{item.creatorName}</div>
+                <div className="feed-item-creator-info">
+                  <div className="feed-item-creator-avatar">
+                    {item.creatorAvatarUrl ? (
+                      <img src={item.creatorAvatarUrl} alt={item.creatorName} />
+                    ) : (
+                      <User size={16} weight="fill" />
+                    )}
+                  </div>
+                  <div className="feed-item-creator">{item.creatorName}</div>
+                </div>
                 {item.description && (
                   <div className="feed-item-desc">{item.description}</div>
                 )}
@@ -158,31 +176,12 @@ export const CreatorFeed = () => {
                     <Fire size={18} weight={upvotedItems.has(item.id) ? "fill" : "duotone"} />
                     {item.upvotes}
                   </button>
-                  
-                  <button 
-                    className="action-btn tip-btn-small"
-                    onClick={() => handleOpenTip(item.creatorName, item.creatorAddress)}
-                    title={item.creatorAddress ? "Send a Tip" : "No wallet linked"}
-                    style={{ opacity: item.creatorAddress ? 1 : 0.5 }}
-                  >
-                    <Coin size={18} weight="duotone" />
-                    Tip
-                  </button>
                 </div>
               </div>
             </div>
           ))
         )}
       </div>
-
-      {selectedCreator && (
-        <TipCreatorModal
-          isOpen={isTipModalOpen}
-          onClose={() => setIsTipModalOpen(false)}
-          creatorName={selectedCreator.name}
-          creatorAddress={selectedCreator.address}
-        />
-      )}
     </div>
   );
 };

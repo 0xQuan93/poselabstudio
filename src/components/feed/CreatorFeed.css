@@ -3,29 +3,67 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background-color: var(--color-abyss, #030305);
+  background: transparent;
   overflow: hidden;
 }
 
 .studio-feed-header {
-  padding: 1.5rem 2rem;
+  padding: 0.75rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(10, 10, 12, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   z-index: 10;
 }
 
 .studio-feed-header h2 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: var(--text-primary);
+  color: #ffffff;
+  font-weight: 600;
   text-shadow: 0 0 10px rgba(255, 94, 91, 0.4);
+  font-family: var(--font-display, 'Orbitron', sans-serif);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Ticker Styles */
+.studio-feed-ticker {
+  background: rgba(168, 85, 247, 0.1);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.2);
+  padding: 4px 0;
+  overflow: hidden;
+  white-space: nowrap;
+  display: flex;
+  z-index: 9;
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker 30s linear infinite;
+}
+
+.ticker-text {
+  padding-right: 2rem;
+  color: #d8b4fe;
+  font-size: 0.85rem;
+  font-family: var(--font-display, 'Orbitron', sans-serif);
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@keyframes ticker {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
 }
 
 .studio-feed-content {
@@ -46,40 +84,43 @@
   background: transparent;
 }
 .studio-feed-content::-webkit-scrollbar-thumb {
-  background: var(--surface-3);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }
 .studio-feed-content::-webkit-scrollbar-thumb:hover {
-  background: var(--surface-4);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* Feed Item Card */
 .feed-item {
-  background: var(--surface-1);
-  border: 1px solid var(--glass-border);
+  background: rgba(20, 20, 25, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .feed-item:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.4);
-  border-color: var(--accent);
+  transform: translateY(-6px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(100, 108, 255, 0.1);
+  border-color: rgba(100, 108, 255, 0.3);
 }
 
 .feed-item-image {
   width: 100%;
   aspect-ratio: 1; /* Default to square, image object-fit will handle the rest */
-  background-color: var(--surface-0);
+  background: linear-gradient(135deg, rgba(30, 30, 35, 0.8), rgba(15, 15, 18, 0.9));
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .feed-item-image img {
@@ -90,24 +131,55 @@
 }
 
 .feed-item:hover .feed-item-image img {
-  transform: scale(1.02);
+  transform: scale(1.03);
 }
 
 .feed-item-details {
   padding: 1.25rem;
-  background: linear-gradient(to top, var(--surface-1) 80%, rgba(30, 30, 35, 0.9));
+  background: rgba(15, 15, 18, 0.4);
+}
+
+.feed-item-creator-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.feed-item-creator-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid rgba(100, 108, 255, 0.5);
+  box-shadow: 0 0 10px rgba(100, 108, 255, 0.2);
+}
+
+.feed-item-creator-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .feed-item-creator {
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-  font-size: 1.1rem;
-  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.05em;
+  font-family: var(--font-display, 'Orbitron', sans-serif);
 }
 
 .feed-item-desc {
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
   margin-bottom: 1.25rem;
   line-height: 1.5;
 }
@@ -117,33 +189,35 @@
   justify-content: space-between;
   align-items: center;
   padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .action-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid transparent;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   padding: 0.5rem 1rem;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
   transition: all 0.2s;
+  backdrop-filter: blur(4px);
 }
 
 .action-btn:hover {
-  background-color: var(--surface-3);
-  color: var(--text-normal);
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 .action-btn.upvoted {
   color: #FF5E5B; /* Fire color */
   border-color: rgba(255, 94, 91, 0.3);
   background-color: rgba(255, 94, 91, 0.1);
+  box-shadow: 0 0 12px rgba(255, 94, 91, 0.15);
 }
 
 .action-btn.upvoted:hover {
@@ -158,6 +232,7 @@
 
 .tip-btn-small:hover {
   background-color: rgba(255, 215, 0, 0.15);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.15);
 }
 
 .feed-empty, .feed-loading, .feed-error {
@@ -166,13 +241,17 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
   text-align: center;
   gap: 1.5rem;
   padding: 4rem;
   grid-column: 1 / -1; /* Span all columns */
+  background: rgba(10, 10, 12, 0.4);
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
 .feed-empty p, .feed-loading p, .feed-error p {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  font-weight: 500;
 }
