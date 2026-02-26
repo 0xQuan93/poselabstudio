@@ -6,9 +6,9 @@ const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID;
 
 // Define the role thresholds based on the user's instructions
 const ROLE_THRESHOLDS = [
-  { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH || '1475652933965054034', name: 'General Tech' },
-  { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH || '1475651244067524650', name: 'Lab Tech' },
-  { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH || '1475655702155362587', name: 'Studio Tech' }
+  { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
+  { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech' },
+  { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
 ];
 
 // Helper to interact with Discord API
