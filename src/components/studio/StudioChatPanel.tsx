@@ -213,7 +213,7 @@ export const StudioChatPanel = () => {
       </div>
 
       <div className="chat-input-area">
-        <div className="input-wrapper">
+        <div className="chat-input-wrapper">
           <button className="emoji-btn">
             <Smiley size={20} />
           </button>

@@ -153,7 +153,7 @@
   z-index: 10;
 }
 
-.input-wrapper {
+.chat-input-wrapper {
   flex: 1;
   display: flex;
   flex-direction: row;
@@ -167,13 +167,13 @@
   gap: var(--space-2);
 }
 
-.input-wrapper:focus-within {
+.chat-input-wrapper:focus-within {
   border-color: var(--accent);
   background: rgba(0, 0, 0, 0.6);
   box-shadow: 0 0 0 1px rgba(0, 255, 214, 0.2);
 }
 
-.input-wrapper input {
+.chat-input-wrapper input {
   flex: 1;
   background: transparent;
   border: none;
