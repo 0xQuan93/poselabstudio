@@ -1,12 +1,21 @@
 import { Handler } from '@netlify/functions';
 
-const DISCORD_CLIENT_ID = process.env.VITE_DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-
 export const handler: Handler = async (event) => {
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  // Support both standard and Vite-prefixed env vars
+  const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
+  const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    console.error('Missing Discord credentials in environment variables');
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' }),
+    };
   }
 
   try {
