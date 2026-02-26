@@ -8,7 +8,8 @@
 }
 
 .studio-feed-header {
-  padding: 0.75rem 2rem;
+  height: 60px; /* Explicit height for alignment */
+  padding: 0 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -17,6 +18,7 @@
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   z-index: 10;
+  box-sizing: border-box;
 }
 
 .studio-feed-header h2 {

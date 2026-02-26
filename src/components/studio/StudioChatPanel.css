@@ -17,14 +17,17 @@
 
 .chat-header {
   flex-shrink: 0;
-  height: 57px; /* Match tabs height */
-  padding: 0 var(--space-4);
+  height: 60px; /* Explicit height for alignment */
+  padding: 0 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
-  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(10, 10, 12, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   z-index: 20;
+  box-sizing: border-box;
 }
 
 
