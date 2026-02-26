@@ -76,8 +76,8 @@ export const handler: Handler = async (event) => {
       statusCode: 302,
       headers: {
         Location: '/?login=success',
-        // Max-Age 30 days
-        'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; SameSite=Lax; Max-Age=2592000`
+        // Max-Age 30 days. Secure is required for iframe/embedded contexts. SameSite=None allows cross-site usage.
+        'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; Secure; SameSite=None; Max-Age=2592000`
       }
     };
   } catch (err) {
