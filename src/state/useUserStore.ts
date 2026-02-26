@@ -20,7 +20,7 @@ interface UserState {
   deductLp: (amount: number) => void;
   
   // Gamification
-  recordDailyLogin: () => number; // Returns LP granted (0 if already claimed)
+  recordDailyLogin: () => Promise<number>; // Returns LP granted (0 if already claimed)
   recordExploration: (milestoneId: string, lpReward?: number) => number; // Returns LP granted
   
   // Sync wrapper
@@ -102,30 +102,35 @@ export const useUserStore = create<UserState>()(
         }
       },
       
-      recordDailyLogin: () => {
+      recordDailyLogin: async () => {
         const state = get();
-        if (!state.user) return 0;
-        
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        if (state.user.lastLoginDate === today) {
-          return 0; // Already claimed today
-        }
-        
-        const reward = 50; // 50 LP for daily login
-        const newLp = state.user.lp + reward;
-        
-        set({
-          user: {
-            ...state.user,
-            lp: newLp,
-            lastLoginDate: today
+        if (!state.user || !state.user.discordId) return 0;
+
+        try {
+          const response = await fetch('/.netlify/functions/bot-lp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'daily_login',
+              discordUserId: state.user.discordId
+            })
+          });
+
+          if (!response.ok) return 0;
+          
+          const data = await response.json();
+          if (data.success && data.reward > 0) {
+             set({ user: { ...state.user, lp: data.lp } });
+             return data.reward;
+          } else if (data.reason === 'cooldown') {
+             // Optional: You could update state to show a toast via a return value
+             console.log('Daily login already claimed. Next claim in:', data.timeLeft);
+             return 0;
           }
-        });
-        
-        if (state.user.discordId) {
-           state.syncLpToBot(newLp, state.user.discordId);
+        } catch (e) {
+           console.error("Failed to claim daily login", e);
         }
-        return reward;
+        return 0;
       },
       
       recordExploration: (milestoneId: string, lpReward = 10) => {

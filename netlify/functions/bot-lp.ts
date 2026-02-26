@@ -72,6 +72,42 @@ export const handler: Handler = async (event) => {
     }
   };
 
+  const checkDailyLoginStatus = async (discordUserId: string): Promise<{ allowed: boolean, lastLoginTime?: number }> => {
+    try {
+      const messages = await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages?limit=100`);
+      const now = Date.now();
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+      for (const msg of messages) {
+        if (msg.author.bot && msg.content.includes(`[DAILY_LOGIN] | USER:${discordUserId}`)) {
+           // Parse timestamp from message content
+           // Format: [DAILY_LOGIN] | USER:123 | TS:1700000000000
+           const match = msg.content.match(/TS:(\d+)/);
+           let lastLoginTime = 0;
+           
+           if (match && match[1]) {
+             lastLoginTime = parseInt(match[1], 10);
+           } else {
+             // Fallback to message creation time if regex fails (e.g. old format)
+             lastLoginTime = new Date(msg.timestamp).getTime();
+           }
+
+           const diff = now - lastLoginTime;
+           if (diff < ONE_DAY_MS) {
+             return { allowed: false, lastLoginTime };
+           }
+           // If we found an older one, we can assume newer ones would have been found first 
+           // since messages are returned newest first.
+           return { allowed: true, lastLoginTime };
+        }
+      }
+      return { allowed: true };
+    } catch (error) {
+      console.error('Failed to check daily login:', error);
+      return { allowed: true }; 
+    }
+  };
+
   // 3. Define Roles Logic
   const ROLE_THRESHOLDS = [
     { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
@@ -96,6 +132,61 @@ export const handler: Handler = async (event) => {
       return { statusCode: 200, body: JSON.stringify({ discordUserId, lp: currentLp }) };
     } 
     
+    if (action === 'daily_login') {
+      const { allowed, lastLoginTime } = await checkDailyLoginStatus(discordUserId);
+      const now = Date.now();
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+      if (!allowed) {
+        const timeLeft = lastLoginTime ? (lastLoginTime + ONE_DAY_MS) - now : 0;
+        return { 
+          statusCode: 200, 
+          body: JSON.stringify({ 
+            success: false, 
+            reason: 'cooldown', 
+            timeLeft 
+          }) 
+        };
+      }
+
+      // Record new daily login
+      const content = `[DAILY_LOGIN] | USER:${discordUserId} | TS:${now} | DATE:${new Date().toISOString()}`;
+      try {
+        await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', { content });
+      } catch (e) {
+        console.error('Failed to log daily login message', e);
+      }
+
+      // Add LP
+      const reward = 50;
+      const currentLp = await getLatestLpFromChannel(discordUserId);
+      const newLp = currentLp + reward;
+      const newLevel = Math.floor(newLp / 100) + 1;
+
+      await writeLpToChannel(discordUserId, newLp);
+
+      // Check Roles
+      for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
+        if (newLp >= threshold && roleId) {
+          try {
+            await fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`, 'PUT');
+          } catch (roleError) {
+             console.error(`Failed to assign ${name}`, roleError);
+          }
+        }
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          reward,
+          lp: newLp,
+          level: newLevel
+        })
+      };
+    }
+
     if (action === 'write' || action === 'add') {
       if (typeof lpAmount !== 'number') {
          return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid lpAmount' }) };

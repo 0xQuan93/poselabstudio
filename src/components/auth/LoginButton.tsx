@@ -54,8 +54,8 @@ export const LoginButton = () => {
             useUserStore.getState().fetchLpFromBot(decoded.discordId);
           }
           
-          setTimeout(() => {
-            const reward = useUserStore.getState().recordDailyLogin();
+          setTimeout(async () => {
+            const reward = await useUserStore.getState().recordDailyLogin();
             if (reward > 0) {
               addToast(`Daily Login: +${reward} LP! 🔥`, 'success');
             }
