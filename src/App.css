@@ -230,6 +230,8 @@
   grid-template-rows: 1fr;
   flex: 1;
   overflow: hidden;
+  /* Ensure min-height: 0 so it can shrink */
+  min-height: 0;
 }
 
 /* Studio layout now follows the same grid structure with a sidebar */

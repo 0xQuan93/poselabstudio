@@ -35,6 +35,7 @@ export const StudioChatPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [memberCount, setMemberCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -52,6 +53,10 @@ export const StudioChatPanel = () => {
       
       const data = await response.json();
       
+      if (data.memberCount) {
+        setMemberCount(data.memberCount);
+      }
+
       const mappedMessages: Message[] = data.messages.map((msg: DiscordMessage) => {
         // Construct avatar URL
         let avatarUrl = undefined;
@@ -161,7 +166,7 @@ export const StudioChatPanel = () => {
         </div>
         <div className="online-count">
           <Users size={16} />
-          <span>24</span>
+          <span>{memberCount > 0 ? memberCount.toLocaleString() : '...'}</span>
         </div>
       </div>
       

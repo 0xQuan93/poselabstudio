@@ -5,6 +5,7 @@ const STUDIO_CHAT_CHANNEL_ID = '1475638321685336290';
 
 export const handler: Handler = async (event) => {
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
+  const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID || process.env.VITE_DISCORD_GUILD_ID;
 
   if (!DISCORD_BOT_TOKEN) {
     return {
@@ -12,6 +13,7 @@ export const handler: Handler = async (event) => {
       body: JSON.stringify({ error: 'Missing DISCORD_BOT_TOKEN' }),
     };
   }
+
 
   const fetchDiscordAPI = async (endpoint: string, method: string = 'GET', body?: any) => {
     const url = `https://discord.com/api/v10${endpoint}`;
@@ -36,12 +38,23 @@ export const handler: Handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      // Fetch messages
-      // Limit to 50 messages
-      const messages = await fetchDiscordAPI(`/channels/${STUDIO_CHAT_CHANNEL_ID}/messages?limit=50`);
+      // Fetch messages and guild info in parallel
+      const [messages, guildInfo] = await Promise.all([
+        fetchDiscordAPI(`/channels/${STUDIO_CHAT_CHANNEL_ID}/messages?limit=50`),
+        // Get guild info with approximate member counts (requires privileged intent? usually works for bot in guild)
+        // If fails, we can try without with_counts=true
+        DISCORD_GUILD_ID 
+          ? fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}?with_counts=true`).catch(() => null)
+          : Promise.resolve(null)
+      ]);
+
       return {
         statusCode: 200,
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ 
+          messages, 
+          memberCount: guildInfo?.approximate_member_count || 0,
+          presenceCount: guildInfo?.approximate_presence_count || 0
+        }),
       };
     } else if (event.httpMethod === 'POST') {
       // Send message
