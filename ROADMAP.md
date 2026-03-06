@@ -71,19 +71,34 @@ This document outlines the planned upgrades and feature requests for PoseLab, fo
 **Goal:** Ship a creator-ready streaming pipeline.
 - [x] **Virtual Camera Output:** Facilitated via "Stream Mode" (Clean UI + Transparent Background) for OBS Browser Source.
 - [x] **Virtual Camera Input:** Select specific camera device (e.g. OBS Virtual Camera) for mocap input.
-- [ ] **Audio Sync:** Optionally capture mic audio with the render stream.
+- [x] **Audio Sync:** Optionally capture mic audio with the render stream.
 
 ### 2. ♾️ Evergreen Utility
 **Goal:** Make PoseLab a daily driver for creators.
-- [ ] **Preset Library Sync:** Save/share presets between devices.
+- [x] **Preset Library Sync:** Save/share presets between devices.
 - [x] **Batch Exporting:** Queue multiple poses/animations for overnight renders.
-- [ ] **Quickshot Templates:** Reusable layout presets for shorts, thumbnails, and panels.
+- [x] **Quickshot Templates:** Reusable layout presets for shorts, thumbnails, and panels.
 
 ### 3. 🧩 Workflow Reliability
 **Goal:** Reduce friction in production workflows.
 - [x] **State Recovery:** Autosave projects and recover after crashes.
-- [ ] **Asset Validation:** Detect missing textures, Mixamo mismatches, and invalid files.
-- [ ] **Performance Budgeting:** Clear warnings when scenes exceed real-time constraints.
+- [x] **Asset Validation:** Detect missing textures, Mixamo mismatches, and invalid files.
+- [x] **Performance Budgeting:** Clear warnings when scenes exceed real-time constraints.
+
+---
+
+## 🥽 XR & AR Integration (v1.8)
+**Goal:** Merge the virtual and physical worlds by overlaying avatars onto the real world via webcam and WebXR.
+
+### 🎭 Face Overlay (Snapchat Style)
+- [ ] **Background Passthrough:** Render webcam feed as `scene.background` using `THREE.VideoTexture`.
+- [ ] **Head-Only Mode:** Logic to hide avatar body meshes while keeping the head/neck and hair active for a seamless "face swap" effect.
+- [ ] **3D Spatial Alignment:** Project 2D MediaPipe face landmarks into 3D Three.js space with distance estimation for accurate anchoring.
+
+### 🧍 Full-Body AR Overlay
+- [ ] **Root Anchoring:** Anchor avatar hips to the projected 3D position of the user's pelvis for "magic mirror" style tracking.
+- [ ] **Ground Plane Shadows:** Implement a transparent shadow catcher plane to visually ground the avatar in the real-world environment.
+- [ ] **WebXR Immersive-AR:** Leverage native browser AR (ARCore/ARKit) for stable floor tracking, hit testing, and real-world occlusion on supported mobile devices.
 
 ---
 
@@ -96,7 +111,7 @@ This document outlines the planned upgrades and feature requests for PoseLab, fo
 
 ### 🏪 Creator Marketplace
 **Goal:** A platform for users to share and sell poses.
-- [ ] **Database Integration:** User profiles, wallets, and asset registry.
+- [ ] **Database Integration:** User profiles, and asset registry.
 - [ ] **Auto-Marketplace:** Default flow for free users (uploads to public pool).
 - [ ] **Creator Pages:** Personalized storefronts for Premium users.
 
@@ -155,6 +170,8 @@ This document outlines the planned upgrades and feature requests for PoseLab, fo
 | **Multiplayer Co-op** | ✅ Done (v1.5) | High |
 | **Voice Chat** | ✅ Done (v1.5) | High |
 | **Live Streaming & Virtual Camera** | ✅ Done (v1.7) | **Critical** |
+| **Face Overlay (AR)** | 🚧 Planned (v1.8) | **High** |
+| **Full-Body AR** | 🚧 Planned (v1.8) | **High** |
 | **Evergreen Utility (Batch Export/Templates)** | 🚧 Planned | **High** |
 | **State Recovery & Validation** | 🚧 Planned | **High** |
 | **Monetization / Gating** | 🚧 Planned | Medium |

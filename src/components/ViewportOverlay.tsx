@@ -29,13 +29,15 @@ import {
   StopCircle,
   Clock,
   Dna,
-  DiceFive
+  DiceFive,
+  DiscordLogo
 } from '@phosphor-icons/react';
 import { useAvatarSource } from '../state/useAvatarSource';
 import { useAvatarListStore } from '../state/useAvatarListStore';
 import { live2dManager } from '../live2d/live2dManager';
 import { getPoseLabTimestamp } from '../utils/exportNaming';
 import { SparkleField, useSparkles } from './SparkleField';
+import { useUserStore } from '../state/useUserStore';
 
 type AspectRatio = '16:9' | '1:1' | '9:16';
 
@@ -57,11 +59,13 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
   const { isPoppedOut, togglePopOut } = usePopOutViewport(activeCssOverlay);
   const { avatarType, setRemoteUrl } = useAvatarSource();
   const { fetchAvatars, getRandomAvatar, isLoading: isAvatarListLoading } = useAvatarListStore();
+  const { user } = useUserStore();
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [showClock, setShowClock] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const [isFocusSprintActive, setIsFocusSprintActive] = useState(false);
   const [showFocusGallery, setShowFocusGallery] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [focusSecondsLeft, setFocusSecondsLeft] = useState(30);
   const [focusCaptureIndex, setFocusCaptureIndex] = useState(0);
   // const [focusShotsCaptured, setFocusShotsCaptured] = useState(0); // Removing unused state to fix lint error
@@ -370,6 +374,61 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
     setFocusCaptureIndex((prev) => (prev + 1) % autoCaptures.length);
   };
 
+  const handlePublishToDiscord = async () => {
+    if (!user) {
+      addToast('You must be logged in to publish to Discord Studio', 'warning');
+      return;
+    }
+
+    setIsPublishing(true);
+    addToast('Publishing to Studio...', 'info');
+
+    try {
+      const dataUrl = autoCaptures[focusCaptureIndex];
+
+      const sizeInBytes = Math.ceil((dataUrl.length - 'data:image/png;base64,'.length) * 3 / 4);
+      if (sizeInBytes > 4.5 * 1024 * 1024) {
+        throw new Error(`Image too large (${(sizeInBytes / 1024 / 1024).toFixed(2)}MB).`);
+      }
+
+      const currentLevel = Math.floor((user?.lp || 0) / 100) + 1;
+
+      const response = await fetch('/.netlify/functions/publish-pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: dataUrl,
+          creatorName: user.username || 'Anonymous Creator',
+          creatorAvatarUrl: user.avatarUrl,
+          creatorId: user.id,
+          description: `Level ${currentLevel} Creator | Mode: Sprint Capture`
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Failed to publish';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.details 
+            ? `${errorData.error}: ${errorData.details}`
+            : (errorData.error || errorMessage);
+        } catch (e) {
+          console.error('Non-JSON error response:', errorText);
+          errorMessage = `Server Error (${response.status}): ${errorText.substring(0, 100)}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      addToast('✅ Successfully published to Discord Studio!', 'success');
+    } catch (error: any) {
+      console.error('Publish error:', error);
+      addToast(error.message || 'Failed to publish to Discord', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleRandomAvatar = () => {
     const avatar = getRandomAvatar();
     if (avatar) {
@@ -666,6 +725,15 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
                     </button>
                     <button className="primary" onClick={handleDownloadAll}>
                       Download All
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={handlePublishToDiscord}
+                      disabled={isPublishing}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', borderColor: '#5865F2', color: '#5865F2' }}
+                    >
+                      <DiscordLogo size={16} weight="fill" />
+                      {isPublishing ? 'Publishing...' : 'Publish'}
                     </button>
                     <button className="secondary" onClick={() => setShowFocusGallery(false)}>
                       Close

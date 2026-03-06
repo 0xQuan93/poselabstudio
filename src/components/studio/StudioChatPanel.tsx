@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { PaperPlaneRight, Hash, Users, Smiley } from '@phosphor-icons/react';
 import { useUserStore } from '../../state/useUserStore';
+import { liveKitManager } from '../../multiplayer/livekitManager';
+import { ActionParser } from '../../ai/utils/ActionParser';
 import './StudioChatPanel.css';
 
 interface Message {
@@ -32,7 +34,6 @@ interface DiscordMessage {
 
 export const StudioChatPanel = () => {
   const { user } = useUserStore();
-  // Initialize with a welcome message so the chat isn't empty on first load
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -50,6 +51,8 @@ export const StudioChatPanel = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [memberCount, setMemberCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastProcessedMsgTime = useRef<number>(Date.now());
+  const seenLiveKitMessages = useRef<Set<string>>(new Set());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -58,6 +61,30 @@ export const StudioChatPanel = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // LiveKit real-time chat integration
+  useEffect(() => {
+    const unsubscribe = liveKitManager.onMessage((peerId, message) => {
+      if (message.type === 'chat') {
+        // Prevent echoing our own broadcast
+        const msgKey = `${peerId}-${message.timestamp}`;
+        if (seenLiveKitMessages.current.has(msgKey)) return;
+        seenLiveKitMessages.current.add(msgKey);
+
+        setMessages(prev => [...prev, {
+          id: `lk-${message.timestamp}-${peerId}`,
+          author: {
+            id: peerId,
+            username: message.displayName,
+            isBot: false
+          },
+          content: message.text,
+          timestamp: new Date(message.timestamp)
+        }]);
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   const fetchMessages = async () => {
     try {
@@ -71,29 +98,24 @@ export const StudioChatPanel = () => {
       }
 
       const mappedMessages: Message[] = data.messages.map((msg: DiscordMessage) => {
-        // Construct avatar URL
         let avatarUrl = undefined;
         if (msg.author.avatar) {
           avatarUrl = `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`;
         } else {
-          // Default avatar based on discriminator
-          const discriminator = parseInt(msg.author.discriminator) % 5;
-          avatarUrl = `https://cdn.discordapp.com/embed/avatars/${discriminator}.png`;
+          const discriminator = parseInt(msg.author.discriminator) || 0;
+          avatarUrl = `https://cdn.discordapp.com/embed/avatars/${discriminator % 5}.png`;
         }
 
-        // Handle Bot Proxy Messages (format: "**Username**: Message")
         let displayUsername = msg.author.username;
         let displayContent = msg.content;
         let isBot = msg.author.bot;
 
-        // Simple check if it looks like a proxied message from our bot
-        // This is a heuristic; in a real app we might use a specific bot ID check or metadata
         if (msg.author.bot && msg.content.startsWith('**') && msg.content.includes('**: ')) {
           const match = msg.content.match(/^\*\*(.*?)\*\*: (.*)$/s);
           if (match) {
             displayUsername = match[1];
             displayContent = match[2];
-            isBot = false; // Treat as user message visually
+            isBot = false;
           }
         }
 
@@ -108,9 +130,34 @@ export const StudioChatPanel = () => {
           content: displayContent,
           timestamp: new Date(msg.timestamp)
         };
-      }).reverse(); // Discord returns newest first, we want oldest first for chat log
+      }).reverse();
 
-      setMessages(mappedMessages);
+      setMessages(prevMessages => {
+        // Merge Discord messages with LiveKit messages, preferring Discord IDs for stability
+        const newMap = new Map<string, Message>();
+        prevMessages.forEach(m => newMap.set(m.id, m));
+        
+        let highestTime = lastProcessedMsgTime.current;
+
+        mappedMessages.forEach(m => {
+          // Add or overwrite with Discord authoritative message
+          newMap.set(m.id, m);
+
+          // Process AI Commands for NEW messages
+          const msgTime = m.timestamp.getTime();
+          if (msgTime > lastProcessedMsgTime.current) {
+            highestTime = Math.max(highestTime, msgTime);
+            if (m.content.includes('<command>')) {
+               ActionParser.execute(m.content, () => {}).catch(e => console.error("ActionParser error:", e));
+            }
+          }
+        });
+
+        lastProcessedMsgTime.current = highestTime;
+        
+        return Array.from(newMap.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      });
+
     } catch (error) {
       console.error('Error fetching chat:', error);
     } finally {
@@ -118,10 +165,10 @@ export const StudioChatPanel = () => {
     }
   };
 
-  // Poll for new messages every 5 seconds
+  // Poll for new messages every 10 seconds (reduced from 5s for efficiency, since LK handles instant chat)
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
+    const interval = setInterval(fetchMessages, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -129,10 +176,10 @@ export const StudioChatPanel = () => {
     if (!inputValue.trim()) return;
 
     const contentToSend = inputValue;
-    setInputValue(''); // Clear input immediately
+    setInputValue(''); 
 
-    // Optimistic update
-    const tempId = Date.now().toString();
+    const tempId = `local-${Date.now()}`;
+    const timestamp = Date.now();
     const optimisticMessage: Message = {
       id: tempId,
       author: {
@@ -142,10 +189,21 @@ export const StudioChatPanel = () => {
         isBot: false,
       },
       content: contentToSend,
-      timestamp: new Date(),
+      timestamp: new Date(timestamp),
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
+
+    // Broadcast instantly to LiveKit peers in the room
+    const msgKey = `${user?.id || 'guest'}-${timestamp}`;
+    seenLiveKitMessages.current.add(msgKey);
+    liveKitManager.broadcast({
+      type: 'chat',
+      text: contentToSend,
+      displayName: user?.username || 'Guest',
+      peerId: user?.id || 'guest',
+      timestamp
+    });
 
     try {
       await fetch('/.netlify/functions/studio-chat', {
@@ -160,13 +218,10 @@ export const StudioChatPanel = () => {
         }),
       });
       
-      // Fetch specifically to get the real message and replace/update
-      // fetchMessages(); // Let the poller handle it or do it here
-      setTimeout(fetchMessages, 500); // Small delay to ensure Discord processed it
+      // Fetch specifically to get the real Discord message ID
+      setTimeout(fetchMessages, 500); 
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Remove optimistic message on failure? Or show error state.
-      // For now, simple console error.
     }
   };
 
@@ -184,7 +239,7 @@ export const StudioChatPanel = () => {
       </div>
       
       <div className="chat-messages">
-        {isLoading && messages.length === 0 ? (
+        {isLoading && messages.length === 1 ? (
           <div className="chat-loading">Loading chat...</div>
         ) : (
           messages.map((msg) => (

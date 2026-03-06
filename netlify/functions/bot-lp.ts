@@ -66,10 +66,25 @@ export const handler: Handler = async (event) => {
       return 0;
     };
 
-    const writeLpToChannel = async (discordUserId: string, newLp: number) => {
+    const writeLpToChannel = async (discordUserId: string, newLp: number, levelUpMessage?: string) => {
       const content = `[LP_LEDGER] | USER:${discordUserId} | TOTAL:${newLp}`;
+      const payload: any = { content };
+      
+      if (levelUpMessage) {
+        payload.embeds = [{
+          title: "🌟 Level Up!",
+          description: levelUpMessage,
+          color: 0xFFD700, // Gold
+          fields: [
+            { name: "New LP Total", value: `${newLp} LP`, inline: true },
+            { name: "Level", value: `${Math.floor(newLp / 100) + 1}`, inline: true }
+          ],
+          timestamp: new Date().toISOString()
+        }];
+      }
+
       try {
-        await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', { content });
+        await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', payload);
       } catch (error) {
         console.error('Failed to write LP to channel:', error);
       }
@@ -111,6 +126,24 @@ export const handler: Handler = async (event) => {
       { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH || process.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
     ];
 
+    const assignRoles = async (discordUserId: string, newLp: number) => {
+      let newlyAssignedRole = null;
+      for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
+        if (newLp >= threshold && roleId) {
+          try {
+            // Discord PUT is idempotent, but we don't know if they already had it unless we fetch member info.
+            // To be safe and avoid spam, we'll just assign it. A better way would be to check current roles.
+            await fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`, 'PUT');
+            // If we wanted to announce only NEW roles, we'd need to compare against their previous LP or fetch their roles first.
+            // For now, we ensure they have the role.
+          } catch (roleError) {
+             console.error(`Failed to assign ${name}`, roleError);
+          }
+        }
+      }
+      return newlyAssignedRole;
+    };
+
     // 4. Main Handler Logic
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, body: 'Method Not Allowed' };
@@ -144,29 +177,40 @@ export const handler: Handler = async (event) => {
         };
       }
 
-      const content = `[DAILY_LOGIN] | USER:${discordUserId} | TS:${now} | DATE:${new Date().toISOString()}`;
-      try {
-        await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', { content });
-      } catch (e) {
-        console.error('Failed to log daily login message', e);
-      }
-
       const reward = 50;
       const currentLp = await getLatestLpFromChannel(discordUserId);
       const newLp = currentLp + reward;
       const newLevel = Math.floor(newLp / 100) + 1;
+      const oldLevel = Math.floor(currentLp / 100) + 1;
 
-      await writeLpToChannel(discordUserId, newLp);
+      const content = `[DAILY_LOGIN] | USER:${discordUserId} | TS:${now} | DATE:${new Date().toISOString()}`;
+      const payload: any = {
+        content,
+        embeds: [{
+          title: "🎁 Daily Login Reward Claimed!",
+          description: `<@${discordUserId}> claimed their daily Lab Points!`,
+          color: 0x00FF00, // Green
+          fields: [
+            { name: "Reward", value: `+${reward} LP`, inline: true },
+            { name: "Total LP", value: `${newLp}`, inline: true }
+          ],
+          timestamp: new Date().toISOString()
+        }]
+      };
 
-      for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
-        if (newLp >= threshold && roleId) {
-          try {
-            await fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`, 'PUT');
-          } catch (roleError) {
-             console.error(`Failed to assign ${name}`, roleError);
-          }
-        }
+      try {
+        await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', payload);
+      } catch (e) {
+        console.error('Failed to log daily login message', e);
       }
+
+      let levelUpMessage = undefined;
+      if (newLevel > oldLevel) {
+        levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
+      }
+
+      await writeLpToChannel(discordUserId, newLp, levelUpMessage);
+      await assignRoles(discordUserId, newLp);
 
       return {
         statusCode: 200,
@@ -184,26 +228,22 @@ export const handler: Handler = async (event) => {
          return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid lpAmount' }) };
       }
 
+      const currentLp = await getLatestLpFromChannel(discordUserId);
       let newLp = lpAmount;
       if (action === 'add') {
-         const currentLp = await getLatestLpFromChannel(discordUserId);
          newLp = currentLp + lpAmount;
       }
 
       const newLevel = Math.floor(newLp / 100) + 1;
+      const oldLevel = Math.floor(currentLp / 100) + 1;
       
-      await writeLpToChannel(discordUserId, newLp);
-
-      for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
-        if (newLp >= threshold && roleId) {
-          try {
-            await fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`, 'PUT');
-            console.log(`Ensured role ${name} (${roleId}) for user ${discordUserId}`);
-          } catch (roleError) {
-            console.error(`Failed to assign ${name} role:`, roleError);
-          }
-        }
+      let levelUpMessage = undefined;
+      if (newLevel > oldLevel) {
+        levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
       }
+
+      await writeLpToChannel(discordUserId, newLp, levelUpMessage);
+      await assignRoles(discordUserId, newLp);
 
       return { 
         statusCode: 200, 
