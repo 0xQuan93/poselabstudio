@@ -44,7 +44,7 @@
   background: var(--color-surface);
   border: var(--border-default);
   border-left: none;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -123,7 +123,7 @@
   width: 12px;
   height: 12px;
   border: 1px solid var(--color-void);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: var(--text-muted);
   position: relative;
   transition: var(--transition-all);
@@ -149,7 +149,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: var(--color-void);
   border: 1px solid var(--color-void);
   color: var(--text-primary);
@@ -191,7 +191,7 @@
 .ai-chat-history::-webkit-scrollbar-thumb {
   background: var(--text-muted);
   border: 1px solid var(--color-abyss);
-  border-radius: 0;
+  border-radius: var(--radius-md);
 }
 
 /* Message Bubbles */
@@ -203,7 +203,7 @@
   position: relative;
   animation: ai-slide-up var(--duration-fast) var(--ease-out);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
 }
 
 @keyframes ai-slide-up {
@@ -235,7 +235,7 @@
   background: var(--accent);
   border: 1px solid var(--text-primary);
   padding: var(--space-2) var(--space-4);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -283,7 +283,7 @@
   flex-direction: column;
   gap: var(--space-4);
   background: var(--color-surface);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: var(--border-default);
   box-shadow: var(--shadow-sm);
 }
@@ -320,7 +320,7 @@
   border: var(--border-default);
   color: var(--error);
   padding: var(--space-2) var(--space-3);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   font-size: var(--text-xs);
   font-weight: 700;
   text-transform: uppercase;
@@ -341,7 +341,7 @@
   background: var(--accent);
   color: var(--color-void);
   border: 1px solid var(--text-primary);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: 900;
   text-transform: uppercase;

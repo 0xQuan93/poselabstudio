@@ -36,7 +36,7 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   background: var(--glass-bg);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);
   animation: floatUp 4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
@@ -160,14 +160,14 @@
   padding: var(--space-4);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-2xl);
 }
 
 .photo-preview-content img {
   max-width: 100%;
   max-height: calc(90vh - 100px);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   border: var(--border-default);
 }
@@ -180,7 +180,7 @@
 
 .photo-preview-actions button {
   padding: var(--space-3) var(--space-6);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   font-family: var(--font-display);
   font-weight: var(--weight-medium);
   font-size: var(--text-sm);
@@ -225,7 +225,7 @@
   gap: var(--space-2); /* Reduced gap */
   padding: var(--space-2) var(--space-3); /* Reduced padding */
   background: var(--glass-bg);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);
   pointer-events: auto;
@@ -236,7 +236,7 @@
 .session-bar button {
   width: 36px; /* Reduced size */
   height: 36px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: var(--glass-hover);
   border: 1px solid var(--glass-border);
   font-size: 1.1rem; /* Slightly smaller icon */
@@ -301,7 +301,7 @@
   gap: var(--space-2);
   padding: var(--space-3);
   background: var(--glass-bg);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-xl);
   animation: popIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -313,7 +313,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: radial-gradient(circle at 50% 0%, rgba(0, 255, 214, 0.08), transparent 70%);
   pointer-events: none;
 }
@@ -326,7 +326,7 @@
   padding: var(--space-2) !important;
   background: transparent !important;
   border: 1px solid transparent !important;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   width: auto !important;
   height: auto !important;
   transition: var(--transition-all) !important;
@@ -378,7 +378,7 @@
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: var(--error);
   color: #fff;
   font-size: 0.6rem;
@@ -414,7 +414,7 @@
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-2xl);
   pointer-events: auto;
@@ -475,7 +475,7 @@
 .chat-header button {
   width: 28px;
   height: 28px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: var(--glass-hover);
   border: var(--border-default);
   color: var(--text-tertiary);
@@ -526,7 +526,7 @@
   flex-direction: column;
   gap: 2px;
   padding: var(--space-2) var(--space-3);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   max-width: 85%;
   position: relative;
   transition: var(--transition-all);
@@ -584,7 +584,7 @@
 .chat-input-form input {
   flex: 1;
   padding: var(--space-2) var(--space-3);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: rgba(0, 0, 0, 0.2);
   border: var(--border-default);
   color: var(--text-primary);
@@ -607,7 +607,7 @@
 .chat-input-form button {
   width: 36px;
   height: 36px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-600) 100%);
   border: var(--border-default);
   color: var(--color-abyss);

@@ -8,7 +8,7 @@
   align-items: center;
   background: rgba(0, 0, 0, 0.4);
   padding: 4px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: var(--border-default);
   height: 32px;
   box-sizing: border-box;
@@ -23,7 +23,7 @@
   color: white;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   transition: background 0.2s;
 }
 
@@ -34,7 +34,7 @@
 .user-avatar-small {
   width: 24px;
   height: 24px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: #333;
   display: flex;
@@ -54,7 +54,7 @@
   color: #aaa;
   cursor: pointer;
   padding: 6px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,7 +72,7 @@
   color: white;
   border: var(--border-default);
   padding: 8px 16px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-weight: 600;
   transition: background 0.2s;

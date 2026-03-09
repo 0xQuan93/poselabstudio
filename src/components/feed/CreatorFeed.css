@@ -85,7 +85,7 @@
 }
 .studio-feed-content::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 0;
+  border-radius: var(--radius-md);
 }
 .studio-feed-content::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
@@ -95,7 +95,7 @@
 .feed-item {
   background: rgba(20, 20, 25, 0.6);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -147,7 +147,7 @@
 .feed-item-creator-avatar {
   width: 28px;
   height: 28px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background-color: rgba(255, 255, 255, 0.1);
   display: flex;
@@ -199,7 +199,7 @@
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   padding: 0.5rem 1rem;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   font-size: 0.9rem;
   font-weight: 600;
   transition: all 0.2s;
@@ -244,7 +244,7 @@
   padding: 4rem;
   grid-column: 1 / -1; /* Span all columns */
   background: rgba(10, 10, 12, 0.4);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: 1px dashed rgba(255, 255, 255, 0.1);
 }
 

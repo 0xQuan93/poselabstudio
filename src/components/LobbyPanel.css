@@ -15,7 +15,7 @@
 .lobby-status-bar {
   background: rgba(15, 23, 42, 0.9);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   padding: 0.5rem 1rem;
   display: flex;
   align-items: center;
@@ -42,7 +42,7 @@
   width: 8px;
   height: 8px;
   background: #00ff9d;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: 0 0 8px #00ff9d;
   animation: pulse-live 2s infinite;
 }
@@ -71,7 +71,7 @@
   height: 400px;
   background: rgba(15, 23, 42, 0.95);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   margin-bottom: 0.5rem; /* Space between chat and status bar */
   display: flex;
   flex-direction: column;
@@ -106,7 +106,7 @@
 
 .lobby-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 0;
+  border-radius: var(--radius-md);
 }
 
 .lobby-empty-state {
@@ -146,7 +146,7 @@
   flex: 1;
   background: rgba(255, 255, 255, 0.05);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
   color: #fff;
   font-size: 0.9rem;
@@ -164,7 +164,7 @@
 .lobby-input-area button {
   background: linear-gradient(135deg, #1c6cff, #6c2bff);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: white;
   font-weight: 600;
   padding: 0 1rem;

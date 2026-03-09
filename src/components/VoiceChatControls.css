@@ -3,7 +3,7 @@
 .voice-chat-controls {
   padding: 0.85rem;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   border: var(--border-default);
 }
 
@@ -23,7 +23,7 @@
 .voice-status {
   font-size: 0.65rem;
   padding: 3px 8px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: rgba(0, 255, 157, 0.12);
   color: var(--success);
   border: var(--border-default);
@@ -51,7 +51,7 @@
   flex: 1;
   padding: 0.6rem 0.85rem;
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, #1c6cff, #6c2bff);
   color: white;
   font-size: 0.75rem;
@@ -88,7 +88,7 @@
   height: 40px;
   padding: 0;
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.06);
   border: var(--border-default);
   color: var(--text-primary);
@@ -130,7 +130,7 @@
 .voice-volume-control input[type="range"] {
   width: 100%;
   height: 6px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.08);
   appearance: none;
   cursor: pointer;
@@ -140,7 +140,7 @@
   appearance: none;
   width: 8px;
   height: 16px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, #1c6cff, #6c2bff);
   cursor: pointer;
   transition: transform 0.15s ease;
@@ -155,7 +155,7 @@
   padding: 0.5rem;
   background: rgba(0, 255, 157, 0.06);
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   text-align: center;
   margin-bottom: 0.5rem;
 }
@@ -190,7 +190,7 @@
   width: 4px;
   height: 5px;
   background: linear-gradient(180deg, #00ffd6, #6c2bff);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   animation: wave 0.5s ease-in-out infinite;
 }
 
@@ -224,7 +224,7 @@
   height: 34px;
   padding: 0;
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: rgba(15, 18, 28, 0.85);
   border: var(--border-default);
   color: #e6f3ff;
@@ -290,7 +290,7 @@
   min-width: 15px;
   height: 15px;
   padding: 0 4px;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, #1c6cff, #6c2bff);
   color: white;
   font-size: 0.6rem;

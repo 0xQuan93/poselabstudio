@@ -17,7 +17,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-5);
@@ -28,7 +28,7 @@
   line-height: var(--leading-none);
   text-decoration: none;
   border: var(--border-default);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: transform var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
   box-shadow: var(--shadow-sm);
@@ -161,11 +161,11 @@
   position: relative;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(0, 255, 214, 0.3);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   transition: transform var(--duration-fast), box-shadow var(--duration-fast);
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -236,7 +236,7 @@
   padding: var(--space-5);
   box-shadow: var(--shadow-md);
   transition: transform var(--duration-fast), box-shadow var(--duration-fast);
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -281,7 +281,7 @@
   border: var(--border-default);
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration-fast), box-shadow var(--duration-fast);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%);
 }
 
 .input::placeholder { color: var(--text-muted); }

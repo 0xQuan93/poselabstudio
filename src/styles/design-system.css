@@ -138,14 +138,14 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* Radii - 0px for brutalism */
+  /* Radii - Slight softening for Neo-Brutalism */
   --radius-none: 0;
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-full: 0; /* Forced to 0 for brutalism */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 12px;
+  --radius-full: 9999px;
 
   /* Motion */
   --duration-fast: 150ms;
