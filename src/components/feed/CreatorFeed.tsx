@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useToastStore } from '../../state/useToastStore';
 import { useUserStore } from '../../state/useUserStore';
-import { Fire, ArrowClockwise, WarningCircle, User } from '@phosphor-icons/react';
+import { Fire, ArrowClockwise, WarningCircle, User, X } from '@phosphor-icons/react';
 import './CreatorFeed.css';
 
 interface FeedItem {
@@ -22,6 +22,7 @@ export const CreatorFeed = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [upvotedItems, setUpvotedItems] = useState<Set<string>>(new Set());
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const { addToast } = useToastStore();
   const { user, updateLp } = useUserStore();
 
@@ -150,7 +151,11 @@ export const CreatorFeed = () => {
           feed.map((item) => (
             <div key={item.id} className="feed-item">
               {item.imageUrl && (
-                <div className="feed-item-image">
+                <div 
+                  className="feed-item-image" 
+                  onClick={() => setSelectedImage(item.imageUrl)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <img src={item.imageUrl} alt={item.title} loading="lazy" />
                 </div>
               )}
@@ -182,6 +187,15 @@ export const CreatorFeed = () => {
           ))
         )}
       </div>
+
+      {selectedImage && (
+        <div className="feed-image-modal-overlay" onClick={() => setSelectedImage(null)}>
+          <button className="feed-image-modal-close" onClick={() => setSelectedImage(null)}>
+            <X size={24} weight="bold" />
+          </button>
+          <img src={selectedImage} alt="Full view" className="feed-image-modal-content" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 };

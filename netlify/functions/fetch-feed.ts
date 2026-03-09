@@ -3,17 +3,17 @@ import { Handler } from '@netlify/functions';
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
-  const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID || process.env.VITE_DISCORD_STUDIO_CHANNEL_ID;
+  const DISCORD_POSE_CHANNEL_ID = process.env.DISCORD_POSE_CHANNEL_ID || process.env.VITE_DISCORD_POSE_CHANNEL_ID;
 
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  if (!DISCORD_BOT_TOKEN || !DISCORD_STUDIO_CHANNEL_ID) {
+  if (!DISCORD_BOT_TOKEN || !DISCORD_POSE_CHANNEL_ID) {
     console.error('Discord bot credentials not configured.');
     const missing = [];
     if (!DISCORD_BOT_TOKEN) missing.push('DISCORD_BOT_TOKEN');
-    if (!DISCORD_STUDIO_CHANNEL_ID) missing.push('DISCORD_STUDIO_CHANNEL_ID');
+    if (!DISCORD_POSE_CHANNEL_ID) missing.push('DISCORD_POSE_CHANNEL_ID');
     
     return { 
       statusCode: 500, 
@@ -26,7 +26,7 @@ export const handler: Handler = async (event) => {
 
   try {
     // Fetch the last 50 messages from the channel
-    const response = await fetch(`https://discord.com/api/v10/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages?limit=50`, {
+    const response = await fetch(`https://discord.com/api/v10/channels/${DISCORD_POSE_CHANNEL_ID}/messages?limit=50`, {
       method: 'GET',
       headers: {
         'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
@@ -63,6 +63,15 @@ export const handler: Handler = async (event) => {
            address = address.replace(/`/g, '');
         }
 
+        // Extract creator ID from the new layout (Discord mention in content)
+        let parsedCreatorId = creatorIdField?.value || null;
+        if (!parsedCreatorId && msg.content) {
+          const mentionMatch = msg.content.match(/<@(\d+)>/);
+          if (mentionMatch) {
+            parsedCreatorId = mentionMatch[1];
+          }
+        }
+
         return {
           id: msg.id,
           title: embed.title,
@@ -70,7 +79,7 @@ export const handler: Handler = async (event) => {
           imageUrl: embed.image?.proxy_url || embed.image?.url || embed.thumbnail?.proxy_url,
           creatorName: creatorField?.value || embed.author?.name || 'Anonymous',
           creatorAvatarUrl: embed.author?.icon_url || null,
-          creatorId: creatorIdField?.value || null,
+          creatorId: parsedCreatorId,
           creatorAddress: address,
           upvotes: upvotes,
           timestamp: msg.timestamp

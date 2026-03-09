@@ -244,6 +244,12 @@
 .layout.studio-layout {
 }
 
+@media (max-width: 960px) {
+  .layout.studio-layout {
+    flex-direction: column;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    VIEWPORT (3D Canvas Area)
    ═══════════════════════════════════════════════════════════════════════════ */

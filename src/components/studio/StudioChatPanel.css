@@ -2,11 +2,21 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  width: 100%;
+  width: 380px;
+  flex-shrink: 0;
   background: var(--glass-bg, rgba(20, 20, 25, 0.7));
   border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   overflow: hidden;
   box-sizing: border-box;
+}
+
+@media (max-width: 960px) {
+  .studio-chat-panel {
+    width: 100%;
+    height: 45vh; /* Take up bottom portion of screen */
+    border-left: none;
+    border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  }
 }
 
 .studio-chat-panel * {
@@ -45,8 +55,8 @@
 }
 
 .chat-messages {
-  flex: 0 1 auto;
-  margin-top: auto;
+  flex: 1 1 auto;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
