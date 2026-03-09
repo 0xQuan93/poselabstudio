@@ -75,7 +75,7 @@ function Section({
           justifyContent: 'space-between',
           background: 'var(--glass-bg)',
           border: '1px solid var(--glass-border)',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           padding: '0.75rem 1rem',
           color: 'var(--text-primary)',
           cursor: 'pointer',
@@ -100,7 +100,7 @@ function Section({
         <div style={{ 
           padding: '1rem',
           background: 'var(--glass-bg)',
-          borderRadius: '0 0 8px 8px',
+          borderRadius: '0 0 var(--radius-md) var(--radius-md)',
           marginTop: '-4px',
           borderLeft: '1px solid var(--glass-border)',
           borderRight: '1px solid var(--glass-border)',
@@ -747,7 +747,7 @@ export function SceneTab() {
                     alignItems: 'flex-start',
                     background: 'rgba(255,255,255,0.04)',
                     border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-md)',
                     padding: '0.6rem',
                   }}
                 >
@@ -1136,7 +1136,7 @@ export function SceneTab() {
                 style={{
                   background: 'rgba(255,255,255,0.03)',
                   border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-md)',
                   padding: '0.75rem',
                   marginBottom: '0.5rem',
                 }}
@@ -1472,7 +1472,7 @@ export function SceneTab() {
             marginTop: '1rem', 
             padding: '1rem', 
             background: 'rgba(255, 255, 255, 0.03)', 
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-subtle)'
           }}>
             <div style={{ marginBottom: '0.75rem', fontSize: '0.85rem', color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1686,7 +1686,7 @@ function IntroSection() {
           disabled={!isAvatarReady || isPlaying}
           style={{
             padding: '0.75rem 1rem',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-md)',
             background: isPlaying 
               ? 'rgba(255, 255, 255, 0.1)' 
               : 'linear-gradient(135deg, rgba(0, 255, 214, 0.2), rgba(0, 200, 180, 0.15))',

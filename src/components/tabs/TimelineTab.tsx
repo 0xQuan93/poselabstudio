@@ -172,7 +172,7 @@ export function TimelineTab() {
             <Stop size={16} weight="fill" />
           </button>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0 0.5rem', borderRadius: '8px', flex: '1 1 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0 0.5rem', borderRadius: 'var(--radius-md)', flex: '1 1 auto' }}>
              <span className="small muted" style={{ fontSize: '0.75rem' }}>DUR:</span>
              <input 
                type="number" 
@@ -191,7 +191,7 @@ export function TimelineTab() {
           style={{ 
             height: '60px', 
             background: 'rgba(0,0,0,0.3)', 
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-md)',
             position: 'relative',
             cursor: 'pointer',
             marginBottom: '1rem',

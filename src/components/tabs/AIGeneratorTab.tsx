@@ -397,7 +397,7 @@ export function AIGeneratorTab() {
             </Button>
 
             {showModels && (
-              <div className="code-block" style={{ fontSize: '0.7rem', maxHeight: '100px', overflowY: 'auto', marginBottom: '12px', padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="code-block" style={{ fontSize: '0.7rem', maxHeight: '100px', overflowY: 'auto', marginBottom: '12px', padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ color: 'var(--accent)', fontWeight: 'bold', marginBottom: '4px' }}>AVAILABLE ENDPOINTS:</div>
                 {availableModels.length > 0 ? (
                   availableModels.map(m => <div key={m} style={{ opacity: 0.8 }}>• {m}</div>)
@@ -410,7 +410,7 @@ export function AIGeneratorTab() {
             {rawResponse && (
               <div style={{ marginTop: '8px' }}>
                 <div style={{ color: 'var(--accent)', fontWeight: 'bold', fontSize: '0.7rem', marginBottom: '4px' }}>RAW TELEMETRY:</div>
-                <pre style={{ fontSize: '0.65rem', maxHeight: '150px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '4px', margin: 0, fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
+                <pre style={{ fontSize: '0.65rem', maxHeight: '150px', overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: 'var(--radius-md)', margin: 0, fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
                   {rawResponse}
                 </pre>
               </div>

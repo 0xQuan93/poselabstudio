@@ -78,7 +78,7 @@ function PresetSection({
         <div style={{ 
           padding: '0.5rem',
           background: 'rgba(0, 0, 0, 0.2)',
-          borderRadius: '0 0 8px 8px',
+          borderRadius: '0 0 var(--radius-md) var(--radius-md)',
           marginTop: '-4px',
           borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
           borderRight: '1px solid rgba(255, 255, 255, 0.1)',
