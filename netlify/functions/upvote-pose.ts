@@ -3,17 +3,17 @@ import { Handler } from '@netlify/functions';
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
-  const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID || process.env.VITE_DISCORD_STUDIO_CHANNEL_ID;
+  const DISCORD_POSE_CHANNEL_ID = process.env.DISCORD_POSE_CHANNEL_ID || process.env.VITE_DISCORD_POSE_CHANNEL_ID;
 
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  if (!DISCORD_BOT_TOKEN || !DISCORD_STUDIO_CHANNEL_ID) {
+  if (!DISCORD_BOT_TOKEN || !DISCORD_POSE_CHANNEL_ID) {
     console.error('Discord bot credentials not configured.');
     const missing = [];
     if (!DISCORD_BOT_TOKEN) missing.push('DISCORD_BOT_TOKEN');
-    if (!DISCORD_STUDIO_CHANNEL_ID) missing.push('DISCORD_STUDIO_CHANNEL_ID');
+    if (!DISCORD_POSE_CHANNEL_ID) missing.push('DISCORD_POSE_CHANNEL_ID');
     
     return { 
       statusCode: 500, 
@@ -33,7 +33,7 @@ export const handler: Handler = async (event) => {
 
     // Add a fire reaction to the message
     // Emoji is URI encoded: 🔥 -> %F0%9F%94%A5
-    const response = await fetch(`https://discord.com/api/v10/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages/${messageId}/reactions/%F0%9F%94%A5/@me`, {
+    const response = await fetch(`https://discord.com/api/v10/channels/${DISCORD_POSE_CHANNEL_ID}/messages/${messageId}/reactions/%F0%9F%94%A5/@me`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bot ${DISCORD_BOT_TOKEN}`
