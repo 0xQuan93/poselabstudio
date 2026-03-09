@@ -30,7 +30,8 @@ import {
   Clock,
   Dna,
   DiceFive,
-  DiscordLogo
+  DiscordLogo,
+  GridFour
 } from '@phosphor-icons/react';
 import { useAvatarSource } from '../state/useAvatarSource';
 import { useAvatarListStore } from '../state/useAvatarListStore';
@@ -38,6 +39,7 @@ import { live2dManager } from '../live2d/live2dManager';
 import { getPoseLabTimestamp } from '../utils/exportNaming';
 import { SparkleField, useSparkles } from './SparkleField';
 import { useUserStore } from '../state/useUserStore';
+import { toggleLabGrid } from '../three/backgrounds';
 
 type AspectRatio = '16:9' | '1:1' | '9:16';
 
@@ -62,6 +64,7 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
   const { user } = useUserStore();
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [showClock, setShowClock] = useState(true);
+  const [gridVisible, setGridVisible] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const [isFocusSprintActive, setIsFocusSprintActive] = useState(false);
   const [showFocusGallery, setShowFocusGallery] = useState(false);
@@ -86,6 +89,15 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
+
+  const handleToggleGrid = () => {
+    const newVisible = !gridVisible;
+    setGridVisible(newVisible);
+    const scene = sceneManager.getScene();
+    if (scene) {
+      toggleLabGrid(scene, newVisible);
+    }
+  };
 
   useEffect(() => {
     // Ensure avatar list is loaded
@@ -460,6 +472,15 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
             disabled={isAvatarListLoading}
           >
             <DiceFive size={18} weight="duotone" className={isAvatarListLoading ? "spin" : ""} />
+          </button>
+
+          <button
+            className={`icon-button ${gridVisible ? 'active' : ''}`}
+            onClick={handleToggleGrid}
+            title="Toggle Viewport Grid"
+            aria-label="Toggle Grid"
+          >
+            <GridFour size={18} weight={gridVisible ? "fill" : "duotone"} />
           </button>
           
           <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)', margin: '0 8px' }}></div>

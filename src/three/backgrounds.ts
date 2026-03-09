@@ -215,8 +215,11 @@ function applyTextureToStudio(scene: THREE.Scene, texture: THREE.Texture | null,
     material.color.setHex(0xffffff);
     
     // PREVENT DISTORTION: Adjust UVs based on texture aspect ratio
-    if (texture.image && texture.image.width > 0) {
-      const imgAspect = texture.image.width / texture.image.height;
+    const img: any = texture.image;
+    if (img && (img.width || img.videoWidth) && (img.height || img.videoHeight)) {
+      const width = img.width || img.videoWidth;
+      const height = img.height || img.videoHeight;
+      const imgAspect = width / height;
       
       // The cyclorama is a cylinder with circumference ~94.2 and height 20 (ratio ~4.7)
       // We want the image to look natural. 
@@ -233,7 +236,7 @@ function applyTextureToStudio(scene: THREE.Scene, texture: THREE.Texture | null,
         const repeatS = 94.24 / (20 * imgAspect);
         texture.wrapS = THREE.RepeatWrapping;
         texture.repeat.set(repeatS, 1);
-        texture.offset.set(0, 0);
+        texture.offset.set(0.5 - (repeatS / 2), 0);
       }
     }
     
@@ -247,6 +250,16 @@ function applyTextureToStudio(scene: THREE.Scene, texture: THREE.Texture | null,
   } else {
     // Transparent case
     group.visible = false;
+  }
+}
+
+export function toggleLabGrid(scene: THREE.Scene, visible: boolean) {
+  const group = scene.getObjectByName(STUDIO_MESH_NAME) as THREE.Group;
+  if (group) {
+    const grid = group.children.find(child => child instanceof THREE.GridHelper);
+    if (grid) {
+      grid.visible = visible;
+    }
   }
 }
 
