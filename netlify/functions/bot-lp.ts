@@ -8,13 +8,15 @@ export const handler: Handler = async (event) => {
     const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || process.env.VITE_DISCORD_BOT_TOKEN;
     const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID || process.env.VITE_DISCORD_GUILD_ID;
     const DISCORD_STUDIO_CHANNEL_ID = process.env.DISCORD_STUDIO_CHANNEL_ID || process.env.VITE_DISCORD_STUDIO_CHANNEL_ID;
+    const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
 
-    if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID || !DISCORD_STUDIO_CHANNEL_ID) {
-      console.error('Server configuration error: Missing Discord Bot Token, Guild ID, or Channel ID');
+    if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID || !DISCORD_STUDIO_CHANNEL_ID || !DISCORD_CLIENT_ID) {
+      console.error('Server configuration error: Missing Discord Bot Token, Guild ID, Channel ID, or Client ID');
       const missing = [];
       if (!DISCORD_BOT_TOKEN) missing.push('DISCORD_BOT_TOKEN');
       if (!DISCORD_GUILD_ID) missing.push('DISCORD_GUILD_ID');
       if (!DISCORD_STUDIO_CHANNEL_ID) missing.push('DISCORD_STUDIO_CHANNEL_ID');
+      if (!DISCORD_CLIENT_ID) missing.push('DISCORD_CLIENT_ID');
       
       return {
         statusCode: 500,
@@ -72,7 +74,7 @@ export const handler: Handler = async (event) => {
 
         for (const msg of messages) {
           // Verify that this message was posted by our specific Bot ID to prevent spoofing
-          if (msg.author.id !== '1475626548055904376') continue;
+          if (msg.author.id !== DISCORD_CLIENT_ID) continue;
 
           if (!foundLp && msg.content.includes(`[LP_LEDGER] | USER:${discordUserId}`)) {
             const match = msg.content.match(/TOTAL:(\d+)/);
