@@ -17,15 +17,15 @@ interface UserState {
   isAuthenticated: boolean;
   
   setUser: (user: UserProfile | null) => void;
-  updateLp: (amount: number) => void;
-  deductLp: (amount: number) => void;
+  updateLp: (amount: number, reason?: string) => void;
+  deductLp: (amount: number, reason?: string) => void;
   
   // Gamification
   recordDailyLogin: () => Promise<number>; // Returns LP granted (0 if already claimed)
   recordExploration: (milestoneId: string, lpReward?: number) => number; // Returns LP granted
   
   // Sync wrapper
-  syncLpToBot: (newTotalLp: number, discordId: string) => Promise<void>;
+  addLpToBot: (amount: number, discordId: string, reason?: string) => Promise<void>;
   fetchLpFromBot: (discordId: string) => Promise<void>;
   
   logout: () => void;
@@ -37,19 +37,30 @@ export const useUserStore = create<UserState>()(
       user: null,
       isAuthenticated: false,
 
-      syncLpToBot: async (newTotalLp: number, discordId: string) => {
+      addLpToBot: async (amount: number, discordId: string, reason?: string) => {
         try {
-          await fetch('/.netlify/functions/bot-lp', {
+          const response = await fetch('/.netlify/functions/bot-lp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action: 'write',
+              action: 'add',
               discordUserId: discordId,
-              lpAmount: newTotalLp
+              lpAmount: amount,
+              reason: reason
             })
           });
+          if (response.ok) {
+            const data = await response.json();
+            // Source of Truth: Set the user's LP to the newly calculated total from the Discord Ledger
+            if (data.success && typeof data.lp === 'number') {
+              const state = get();
+              if (state.user) {
+                set({ user: { ...state.user, lp: data.lp } });
+              }
+            }
+          }
         } catch (e) {
-          console.error("Failed to sync LP to Discord Bot", e);
+          console.error("Failed to add LP to Discord Bot", e);
         }
       },
 
@@ -79,27 +90,29 @@ export const useUserStore = create<UserState>()(
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       
-      updateLp: (amount) => {
+      updateLp: (amount, reason) => {
         const state = get();
         if (!state.user) return;
-        const newLp = state.user.lp + amount;
         
+        // Optimistic UI update
+        const newLp = state.user.lp + amount;
         set({ user: { ...state.user, lp: newLp } });
         
         if (state.user.discordId) {
-           state.syncLpToBot(newLp, state.user.discordId);
+           state.addLpToBot(amount, state.user.discordId, reason || 'update_lp');
         }
       },
       
-      deductLp: (amount) => {
+      deductLp: (amount, reason) => {
         const state = get();
         if (!state.user) return;
-        const newLp = Math.max(0, state.user.lp - amount);
         
+        // Optimistic UI update
+        const newLp = Math.max(0, state.user.lp - amount);
         set({ user: { ...state.user, lp: newLp } });
         
         if (state.user.discordId) {
-           state.syncLpToBot(newLp, state.user.discordId);
+           state.addLpToBot(-amount, state.user.discordId, reason || 'deduct_lp');
         }
       },
       
@@ -124,7 +137,10 @@ export const useUserStore = create<UserState>()(
              set({ user: { ...state.user, lp: data.lp } });
              return data.reward;
           } else if (data.reason === 'cooldown') {
-             // Optional: You could update state to show a toast via a return value
+             // Synchronize LP even on cooldown
+             if (typeof data.lp === 'number') {
+               set({ user: { ...state.user, lp: data.lp } });
+             }
              console.log('Daily login already claimed. Next claim in:', data.timeLeft);
              return 0;
           }
@@ -143,8 +159,8 @@ export const useUserStore = create<UserState>()(
           return 0; // Already explored this feature
         }
         
+        // Optimistic update
         const newLp = state.user.lp + lpReward;
-        
         set({
           user: {
             ...state.user,
@@ -157,7 +173,7 @@ export const useUserStore = create<UserState>()(
         });
         
         if (state.user.discordId) {
-           state.syncLpToBot(newLp, state.user.discordId);
+           state.addLpToBot(lpReward, state.user.discordId, milestoneId);
         }
         return lpReward;
       },

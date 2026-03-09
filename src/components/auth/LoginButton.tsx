@@ -50,17 +50,16 @@ export const LoginButton = () => {
             explorationMilestones
           });
 
-          // Fetch fresh LP from the Discord channel backend
+          // Fetch LP sync data and daily reward directly through the daily login check
           if (decoded.discordId) {
-            useUserStore.getState().fetchLpFromBot(decoded.discordId);
+            useUserStore.getState().recordDailyLogin().then(reward => {
+              if (reward > 0) {
+                setTimeout(() => {
+                  addToast(`Daily Login: +${reward} LP! 🔥`, 'success');
+                }, 1000); // Slight delay so toast doesn't get buried
+              }
+            });
           }
-          
-          setTimeout(async () => {
-            const reward = await useUserStore.getState().recordDailyLogin();
-            if (reward > 0) {
-              addToast(`Daily Login: +${reward} LP! 🔥`, 'success');
-            }
-          }, 1000); // Slight delay so toast doesn't get buried
         }
       } catch (err) {
         console.error('Failed to parse session cookie', err);

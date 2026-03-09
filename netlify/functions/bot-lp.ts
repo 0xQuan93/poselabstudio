@@ -49,25 +49,65 @@ export const handler: Handler = async (event) => {
       return response.status === 204 ? null : await response.json();
     };
 
-    const getLatestLpFromChannel = async (discordUserId: string): Promise<number> => {
-      try {
-        const messages = await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages?limit=100`);
+    const getUserLedgerData = async (discordUserId: string) => {
+      let lp = 0;
+      let lastLoginTime = 0;
+      let foundLp = false;
+      let foundLogin = false;
+      let lastMessageId = undefined;
+      const now = Date.now();
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const startTime = Date.now();
+
+      while (true) {
+        // Stop if we take too long to prevent Netlify function timeout (10s max)
+        if (Date.now() - startTime > 8500) {
+          console.warn(`Timeout reached while searching ledger for user ${discordUserId}.`);
+          break;
+        }
+
+        const query = lastMessageId ? `?limit=100&before=${lastMessageId}` : '?limit=100';
+        const messages = await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages${query}`);
+        if (!messages || messages.length === 0) break;
+
         for (const msg of messages) {
-          if (msg.author.bot && msg.content.includes(`[LP_LEDGER] | USER:${discordUserId} | TOTAL:`)) {
+          // Verify that this message was posted by our specific Bot ID to prevent spoofing
+          if (msg.author.id !== '1475626548055904376') continue;
+
+          if (!foundLp && msg.content.includes(`[LP_LEDGER] | USER:${discordUserId}`)) {
             const match = msg.content.match(/TOTAL:(\d+)/);
             if (match && match[1]) {
-              return parseInt(match[1], 10);
+              lp = parseInt(match[1], 10);
+              foundLp = true;
             }
           }
+
+          if (!foundLogin && msg.content.includes(`[DAILY_LOGIN] | USER:${discordUserId}`)) {
+             const match = msg.content.match(/TS:(\d+)/);
+             if (match && match[1]) {
+               lastLoginTime = parseInt(match[1], 10);
+             } else {
+               lastLoginTime = new Date(msg.timestamp).getTime();
+             }
+             foundLogin = true;
+          }
+
+          if (foundLp && foundLogin) break;
         }
-      } catch (error) {
-        console.error('Failed to read LP from channel:', error);
+
+        if (foundLp && foundLogin) break;
+        lastMessageId = messages[messages.length - 1].id;
       }
-      return 0;
+
+      return { 
+        lp, 
+        lastLoginTime, 
+        allowedDaily: (now - lastLoginTime) >= ONE_DAY_MS 
+      };
     };
 
-    const writeLpToChannel = async (discordUserId: string, newLp: number, levelUpMessage?: string) => {
-      const content = `[LP_LEDGER] | USER:${discordUserId} | TOTAL:${newLp}`;
+    const writeLpToChannel = async (discordUserId: string, newLp: number, reason: string, levelUpMessage?: string) => {
+      const content = `[LP_LEDGER] | USER:${discordUserId} | REASON:${reason} | TOTAL:${newLp}`;
       const payload: any = { content };
       
       if (levelUpMessage) {
@@ -87,36 +127,6 @@ export const handler: Handler = async (event) => {
         await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', payload);
       } catch (error) {
         console.error('Failed to write LP to channel:', error);
-      }
-    };
-
-    const checkDailyLoginStatus = async (discordUserId: string): Promise<{ allowed: boolean, lastLoginTime?: number }> => {
-      try {
-        const messages = await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages?limit=100`);
-        const now = Date.now();
-        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-        for (const msg of messages) {
-          if (msg.author.bot && msg.content.includes(`[DAILY_LOGIN] | USER:${discordUserId}`)) {
-             const match = msg.content.match(/TS:(\d+)/);
-             let lastLoginTime = 0;
-             if (match && match[1]) {
-               lastLoginTime = parseInt(match[1], 10);
-             } else {
-               lastLoginTime = new Date(msg.timestamp).getTime();
-             }
-
-             const diff = now - lastLoginTime;
-             if (diff < ONE_DAY_MS) {
-               return { allowed: false, lastLoginTime };
-             }
-             return { allowed: true, lastLoginTime };
-          }
-        }
-        return { allowed: true };
-      } catch (error) {
-        console.error('Failed to check daily login:', error);
-        return { allowed: true }; 
       }
     };
 
@@ -149,36 +159,36 @@ export const handler: Handler = async (event) => {
       return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    const { action, discordUserId, lpAmount } = JSON.parse(event.body || '{}');
+    const { action, discordUserId, lpAmount, reason } = JSON.parse(event.body || '{}');
 
     if (!discordUserId) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing discordUserId' }) };
     }
 
     if (action === 'read') {
-      const currentLp = await getLatestLpFromChannel(discordUserId);
+      const { lp: currentLp } = await getUserLedgerData(discordUserId);
       return { statusCode: 200, body: JSON.stringify({ discordUserId, lp: currentLp }) };
     } 
     
     if (action === 'daily_login') {
-      const { allowed, lastLoginTime } = await checkDailyLoginStatus(discordUserId);
+      const { lp: currentLp, allowedDaily, lastLoginTime } = await getUserLedgerData(discordUserId);
       const now = Date.now();
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-      if (!allowed) {
+      if (!allowedDaily) {
         const timeLeft = lastLoginTime ? (lastLoginTime + ONE_DAY_MS) - now : 0;
         return { 
           statusCode: 200, 
           body: JSON.stringify({ 
             success: false, 
             reason: 'cooldown', 
-            timeLeft 
+            timeLeft,
+            lp: currentLp
           }) 
         };
       }
 
       const reward = 50;
-      const currentLp = await getLatestLpFromChannel(discordUserId);
       const newLp = currentLp + reward;
       const newLevel = Math.floor(newLp / 100) + 1;
       const oldLevel = Math.floor(currentLp / 100) + 1;
@@ -209,7 +219,7 @@ export const handler: Handler = async (event) => {
         levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
       }
 
-      await writeLpToChannel(discordUserId, newLp, levelUpMessage);
+      await writeLpToChannel(discordUserId, newLp, 'daily_login', levelUpMessage);
       await assignRoles(discordUserId, newLp);
 
       return {
@@ -228,7 +238,7 @@ export const handler: Handler = async (event) => {
          return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid lpAmount' }) };
       }
 
-      const currentLp = await getLatestLpFromChannel(discordUserId);
+      const { lp: currentLp } = await getUserLedgerData(discordUserId);
       let newLp = lpAmount;
       if (action === 'add') {
          newLp = currentLp + lpAmount;
@@ -242,7 +252,8 @@ export const handler: Handler = async (event) => {
         levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
       }
 
-      await writeLpToChannel(discordUserId, newLp, levelUpMessage);
+      const txReason = reason || action;
+      await writeLpToChannel(discordUserId, newLp, txReason, levelUpMessage);
       await assignRoles(discordUserId, newLp);
 
       return { 
