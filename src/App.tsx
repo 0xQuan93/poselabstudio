@@ -114,8 +114,12 @@ function App() {
     if (intervalMs <= 0) return undefined;
 
     const saveSnapshot = () => {
-      const project = projectManager.serializeProject('Autosave');
-      autosaveManager.addAutosave(project, autosaveMaxEntries);
+      const project = projectManager.serializeProject('Autosave', false);
+      try {
+        autosaveManager.addAutosave(project, autosaveMaxEntries);
+      } catch (e) {
+        console.warn('Autosave failed:', e);
+      }
     };
 
     saveSnapshot();

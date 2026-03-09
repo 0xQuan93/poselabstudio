@@ -36,7 +36,23 @@ export const autosaveManager = {
     };
     const existing = autosaveManager.getAutosaves();
     const next = [entry, ...existing].slice(0, Math.max(1, maxEntries));
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch (e: any) {
+      // If quota is exceeded (e.g. from previous heavy autosaves), clear all and retry with just the latest
+      if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+        console.warn('LocalStorage quota exceeded. Clearing old autosaves to free space...');
+        try {
+          window.localStorage.removeItem(STORAGE_KEY);
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify([entry]));
+        } catch (retryError) {
+          console.error('Failed to save autosave even after clearing space:', retryError);
+        }
+      } else {
+        console.error('Failed to save autosave:', e);
+      }
+    }
     return entry;
   },
 

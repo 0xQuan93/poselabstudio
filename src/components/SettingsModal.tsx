@@ -327,7 +327,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <button
                 className="secondary"
                 onClick={() => {
-                  const project = projectManager.serializeProject('Autosave');
+                  const project = projectManager.serializeProject('Autosave', false);
                   autosaveManager.addAutosave(project, autosaveMaxEntries);
                   refreshAutosaves();
                   addToast('Autosave snapshot created', 'success');

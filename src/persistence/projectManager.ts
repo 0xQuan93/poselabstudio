@@ -17,7 +17,7 @@ export class ProjectManager {
   /**
    * Serialize the current application state into a Project object
    */
-  serializeProject(name: string = 'Untitled Project'): ProjectState {
+  serializeProject(name: string = 'Untitled Project', includeAssets: boolean = true): ProjectState {
     const reactionState = useReactionStore.getState();
     const timelineState = useTimelineStore.getState();
     const avatarSource = useAvatarSource.getState();
@@ -39,7 +39,10 @@ export class ProjectManager {
     const customEnv = environmentManager.getCustomData();
     
     // Get 3D environments
-    const environments3d = environment3DManager.getSerializeableData();
+    const environments3d = environment3DManager.getSerializeableData().map(env => ({
+      ...env,
+      data: includeAssets ? env.data : undefined
+    }));
     
     // Get overlay info
     const overlay = sceneManager.getOverlayInfo();
@@ -55,7 +58,7 @@ export class ProjectManager {
 
     // Handle Live2D assets if active
     let live2dData = undefined;
-    if (avatarSource.avatarType === 'live2d' && avatarSource.live2dSource) {
+    if (avatarSource.avatarType === 'live2d' && avatarSource.live2dSource && includeAssets) {
       live2dData = {
         manifestPath: avatarSource.live2dSource.manifestPath,
         assets: avatarSource.live2dSource.assets.map(asset => ({
@@ -84,10 +87,10 @@ export class ProjectManager {
       },
       scene: {
         backgroundId,
-        customBackgroundData: sceneSettings.customBackgroundData,
+        customBackgroundData: includeAssets ? sceneSettings.customBackgroundData : undefined,
         customBackgroundType: sceneSettings.customBackgroundType,
         overlay: overlay.url ? { url: overlay.url, opacity: overlay.opacity } : undefined,
-        customEnvironmentData: customEnv.data,
+        customEnvironmentData: includeAssets ? customEnv.data : undefined,
         customEnvironmentType: customEnv.type,
         environments3d,
         camera: {
