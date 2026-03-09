@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useAvatarSource } from '../state/useAvatarSource';
 import { useReactionStore } from '../state/useReactionStore';
 import { useToastStore } from '../state/useToastStore';
@@ -19,7 +19,8 @@ import {
   Broadcast,
   Fire,
   List
-} from '@phosphor-icons/react';import { useUIStore } from '../state/useUIStore';
+} from '@phosphor-icons/react';
+import { useUIStore } from '../state/useUIStore';
 
 import { LoginButton } from './auth/LoginButton';
 
@@ -43,9 +44,27 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const sidebarOpen = useUIStore((state) => state.sidebarOpen);
   const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
 
+  // Easter egg
+  useEffect(() => {
+    let keys = '';
+    const handleKeyDown = (e: KeyboardEvent) => {
+      keys += e.key;
+      if (keys.length > 2) keys = keys.slice(1);
+      if (keys === '89') {
+        useUserStore.getState().recordGamifiedAction('easter_egg_89').then(reward => {
+          if (reward > 0) {
+            useToastStore.getState().addToast(`🥚 EASTER EGG FOUND! +${reward} LP!`, 'success');
+          }
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleModeChange = (newMode: 'reactions' | 'poselab' | 'studio') => {
     onModeChange(newMode);
-    
+
     // Reward for exploring different modes
     if (user) {
       recordExploration(`explore_mode_${newMode}`).then(reward => {
@@ -63,7 +82,7 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
       sceneManager.resetCamera();
       // And reset avatar pose if loaded
       avatarManager.resetPose();
-      
+
       addToast('Scene reset to default', 'info');
     }
   };
@@ -71,13 +90,18 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const handleVRMUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     if (!file.name.toLowerCase().endsWith('.vrm')) {
       addToast('Please select a VRM file', 'error');
       return;
     }
-    
+
     setFileSource(file);
+    useUserStore.getState().recordGamifiedAction('first_avatar_load').then(reward => {
+      if (reward > 0) {
+        addToast(`+${reward} LP for loading your first avatar!`, 'success');
+      }
+    });
   };
 
   const handleLive2dUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,6 +119,11 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
       const label = files.find((file) => file.name.toLowerCase().endsWith('.model3.json'))?.name ?? 'Live2D Avatar';
       await setLive2dSource(files, label);
       addToast('Live2D avatar loaded successfully', 'success');
+      useUserStore.getState().recordGamifiedAction('first_avatar_load').then(reward => {
+        if (reward > 0) {
+          addToast(`+${reward} LP for loading your first avatar!`, 'success');
+        }
+      });
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Failed to load Live2D assets', 'error');
     }

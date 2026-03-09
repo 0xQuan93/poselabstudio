@@ -6,6 +6,7 @@ import { useAnimationStore } from '../../state/useAnimationStore';
 import { useToastStore } from '../../state/useToastStore';
 import { useUIStore } from '../../state/useUIStore';
 import { useReactionStore } from '../../state/useReactionStore';
+import { useUserStore } from '../../state/useUserStore';
 import { convertAnimationToScenePaths } from '../../pose-lab/convertAnimationToScenePaths';
 import { CalibrationWizard } from '../CalibrationWizard';
 import { sceneManager } from '../../three/sceneManager';
@@ -325,6 +326,13 @@ export function MocapTab() {
       avatarManager.setInteraction(true);
       setIsActive(true);
       setError(null);
+      
+      useUserStore.getState().recordGamifiedAction('first_mocap').then(reward => {
+        if (reward > 0) {
+           useToastStore.getState().addToast(`+${reward} LP for starting Mocap!`, 'success');
+        }
+      });
+
       if (liveShutdownRef.current && !liveModeEnabledRef.current) {
         managerRef.current.stop();
         setIsActive(false);

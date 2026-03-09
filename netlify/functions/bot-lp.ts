@@ -163,11 +163,20 @@ export const handler: Handler = async (event) => {
       return { statusCode: 200, body: JSON.stringify({ discordUserId, lp: currentLp, actionTimestamps }) };
     } 
     
+    const ONE_HUNDRED_YEARS = 100 * 365 * 24 * 60 * 60 * 1000;
     const ALLOWED_ACTIONS: Record<string, { reward: number, cooldownMs: number, label: string }> = {
       'daily_login': { reward: 50, cooldownMs: 24 * 60 * 60 * 1000, label: "Daily Login" },
-      'explore_app': { reward: 20, cooldownMs: 24 * 60 * 60 * 1000, label: "Exploring the App" },
-      'visit_tabs': { reward: 20, cooldownMs: 24 * 60 * 60 * 1000, label: "Visiting Tabs" },
-      'use_sprint': { reward: 30, cooldownMs: 24 * 60 * 60 * 1000, label: "Using Sprint Mode" }
+      'use_sprint': { reward: 30, cooldownMs: 24 * 60 * 60 * 1000, label: "Using Sprint Mode" },
+      'feed_upvote_daily': { reward: 10, cooldownMs: 24 * 60 * 60 * 1000, label: "Studio Feed Upvote" },
+      'export_daily': { reward: 20, cooldownMs: 24 * 60 * 60 * 1000, label: "Daily Export" },
+      'publish_daily': { reward: 40, cooldownMs: 24 * 60 * 60 * 1000, label: "Published to Studio" },
+      'explore_app': { reward: 20, cooldownMs: ONE_HUNDRED_YEARS, label: "Exploring the App" },
+      'visit_tabs': { reward: 20, cooldownMs: ONE_HUNDRED_YEARS, label: "Visiting Tabs" },
+      'first_avatar_load': { reward: 50, cooldownMs: ONE_HUNDRED_YEARS, label: "First Avatar Load" },
+      'first_mocap': { reward: 50, cooldownMs: ONE_HUNDRED_YEARS, label: "First Mocap Session" },
+      'first_multiplayer': { reward: 100, cooldownMs: ONE_HUNDRED_YEARS, label: "First Multiplayer Session" },
+      'profile_setup': { reward: 30, cooldownMs: ONE_HUNDRED_YEARS, label: "Profile Customization" },
+      'easter_egg_89': { reward: 89, cooldownMs: ONE_HUNDRED_YEARS, label: "Secret 89 Easter Egg" }
     };
 
     if (action === 'grant_action') {

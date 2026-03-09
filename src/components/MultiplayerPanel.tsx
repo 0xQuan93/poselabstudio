@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useMultiplayerStore, useIsInSession, usePeerCount } from '../state/useMultiplayerStore';
+import { useUserStore } from '../state/useUserStore';
 import { peerManager } from '../multiplayer/peerManager';
 import { syncManager } from '../multiplayer/syncManager';
 import { useToastStore } from '../state/useToastStore';
@@ -66,6 +67,11 @@ export function MultiplayerPanel({ compact = false }: MultiplayerPanelProps) {
       syncManager.initialize();
       addToast('Session created! Share the link to invite others.', 'success');
       console.log('[MultiplayerPanel] Session created:', id);
+      useUserStore.getState().recordGamifiedAction('first_multiplayer').then(reward => {
+        if (reward > 0) {
+          addToast(`+${reward} LP for starting your first multiplayer session!`, 'success');
+        }
+      });
     } catch (err) {
       console.error('[MultiplayerPanel] Failed to create session:', err);
       addToast(`Failed to create session: ${(err as Error).message}`, 'error');
@@ -82,11 +88,16 @@ export function MultiplayerPanel({ compact = false }: MultiplayerPanelProps) {
       // Initialize syncManager BEFORE joining so it can receive messages immediately
       syncManager.initialize();
       await peerManager.joinSession(joinRoomId.trim(), localDisplayName);
-      
       // Clear room from URL after joining
       const url = new URL(window.location.href);
       url.searchParams.delete('room');
       window.history.replaceState({}, '', url.toString());
+
+      useUserStore.getState().recordGamifiedAction('first_multiplayer').then(reward => {
+        if (reward > 0) {
+          addToast(`+${reward} LP for joining your first multiplayer session!`, 'success');
+        }
+      });
       
       addToast(`Joined session: ${joinRoomId}`, 'success');
       setShowJoinInput(false);

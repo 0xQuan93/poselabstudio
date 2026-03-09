@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useUserStore } from '../../state/useUserStore';
+import { useToastStore } from '../../state/useToastStore';
 import { X, DiscordLogo, Medal, Circuitry, Lightning } from '@phosphor-icons/react';
 import { isEmbeddedApp } from '../../hooks/useDiscordActivity';
 import './ProfileModal.css';
@@ -16,6 +18,16 @@ const ROLE_DEFINITIONS = [
 
 export const ProfileModal = ({ isOpen, onClose }: ProfileModalProps) => {
   const { user } = useUserStore();
+
+  useEffect(() => {
+    if (isOpen) {
+      useUserStore.getState().recordGamifiedAction('profile_setup').then(reward => {
+        if (reward > 0) {
+          useToastStore.getState().addToast(`+${reward} LP for viewing your profile!`, 'success');
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

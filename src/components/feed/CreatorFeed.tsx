@@ -77,6 +77,12 @@ export const CreatorFeed = () => {
       if (!response.ok) {
         throw new Error('Failed to record upvote');
       }
+
+      useUserStore.getState().recordGamifiedAction('feed_upvote_daily').then(reward => {
+        if (reward > 0) {
+          useToastStore.getState().addToast(`+${reward} LP for your daily upvote!`, 'info');
+        }
+      });
     } catch (err) {
       console.error(err);
       // Revert optimistic update on failure

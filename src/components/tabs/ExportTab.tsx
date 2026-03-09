@@ -500,6 +500,11 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
       }
 
       addToast('✅ Successfully published to Discord Studio!', 'success');
+      useUserStore.getState().recordGamifiedAction('publish_daily').then(reward => {
+        if (reward > 0) {
+          useToastStore.getState().addToast(`+${reward} LP for publishing to Studio!`, 'info');
+        }
+      });
     } catch (error: any) {
       console.error('Publish error:', error);
       addToast(error.message || 'Failed to publish to Discord', 'error');
@@ -518,6 +523,12 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
     } else {
       handleExportJSON();
     }
+
+    useUserStore.getState().recordGamifiedAction('export_daily').then(reward => {
+      if (reward > 0) {
+        useToastStore.getState().addToast(`+${reward} LP for your first export today!`, 'info');
+      }
+    });
   };
 
   return (
