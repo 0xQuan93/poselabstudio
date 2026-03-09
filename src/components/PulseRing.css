@@ -41,7 +41,7 @@
 }
 
 .pulse-ring-violet .pulse-ring-element {
-  border-color: var(--violet);
+  border-color: transparent;
 }
 
 .pulse-ring-solar .pulse-ring-element {

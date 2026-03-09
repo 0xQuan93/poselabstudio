@@ -73,7 +73,7 @@
 
   /* Shadows - Precise Hard Shadows */
   --shadow-color: var(--accent);
-  --shadow-offset-color: var(--violet);
+  --shadow-offset-color: transparent;
   --shadow-xs: 2px 2px 0px var(--shadow-color);
   --shadow-sm: 4px 4px 0px var(--shadow-color);
   --shadow-md: 4px 4px 0px var(--shadow-offset-color);
@@ -81,7 +81,7 @@
   --shadow-xl: 8px 8px 0px var(--shadow-offset-color);
   --shadow-2xl: 12px 12px 0px var(--shadow-offset-color);
   --shadow-glow: 4px 4px 0px var(--accent);
-  --shadow-glow-strong: 6px 6px 0px var(--violet);
+  --shadow-glow-strong: 0 0 0 transparent;
 
   /* Fonts */
   --font-display: 'Orbitron', system-ui, sans-serif;

@@ -187,7 +187,7 @@
 
 /* Color variants */
 .pulse-ring-violet .pulse-ring {
-  border-color: var(--violet);
+  border-color: transparent;
 }
 
 .pulse-ring-solar .pulse-ring {
@@ -236,7 +236,7 @@
   right: -40px;
   width: 150px;
   height: 150px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, transparent 70%);
+  background: transparent;
   filter: none;
   pointer-events: none;
   transition: opacity var(--duration-normal) var(--ease-out);

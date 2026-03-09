@@ -275,7 +275,7 @@
   position: absolute;
   inset: -30%;
   background: radial-gradient(circle at 20% 20%, rgba(0, 255, 214, 0.12), transparent 45%),
-    radial-gradient(circle at 80% 30%, rgba(124, 58, 237, 0.12), transparent 50%),
+    radial-gradient(circle at 80% 30%, rgba(0, 255, 214, 0.08), transparent 50%),
     radial-gradient(circle at 50% 80%, rgba(249, 115, 22, 0.1), transparent 55%);
   opacity: 0.4;
   filter: none;
@@ -309,7 +309,7 @@
   background: conic-gradient(
     from 0deg,
     rgba(0, 255, 214, 0.1),
-    rgba(124, 58, 237, 0.1),
+    rgba(0, 255, 214, 0.05),
     rgba(0, 255, 214, 0.1)
   );
   opacity: 0.18;
@@ -2287,7 +2287,7 @@
   height: 44px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-accent);
-  background: linear-gradient(135deg, rgba(0, 255, 214, 0.15), rgba(124, 58, 237, 0.15));
+  background: linear-gradient(135deg, rgba(0, 255, 214, 0.15), rgba(0, 255, 214, 0.05));
   color: var(--accent);
   cursor: pointer;
   display: flex;
@@ -2299,7 +2299,7 @@
 
 .sprint-button-glow:hover {
   transform: scale(1.15) rotate(5deg);
-  background: linear-gradient(135deg, rgba(0, 255, 214, 0.3), rgba(124, 58, 237, 0.3));
+  background: linear-gradient(135deg, rgba(0, 255, 214, 0.3), rgba(0, 255, 214, 0.1));
   box-shadow: var(--shadow-md);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.5);
