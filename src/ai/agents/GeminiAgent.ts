@@ -180,7 +180,7 @@ export class GeminiAgent implements IAgent {
 
     // 1. Get Dynamic Assets
     const poses = Object.keys(poseLibrary).join(', ');
-    const backgrounds = [...backgroundOptions.map(b => b.id), ...Object.keys(HDRI_PRESETS).filter(k => k !== 'none')].join(', ');
+    const backgrounds = ['custom', ...backgroundOptions.map(b => b.id), ...Object.keys(HDRI_PRESETS).filter(k => k !== 'none')].join(', ');
     const cameraPresets = ['headshot', 'portrait', 'medium', 'full-body', 'wide', 'low-angle', 'high-angle', 'over-shoulder', 'orbit-slow', 'orbit-fast', 'dolly-in', 'dolly-out'].join(', ');
 
     // 2. Get Current Script Context

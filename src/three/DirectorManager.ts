@@ -88,7 +88,18 @@ class DirectorManager {
     avatarManager.applyExpression(shot.expressionId);
 
     // 2. Apply Background
-    await sceneManager.setBackground(shot.backgroundId, true); // Force background change
+    if ((shot.backgroundId as string) === 'custom') {
+      const { customBackgroundUrl, customBackgroundData, customBackgroundType } = useSceneSettingsStore.getState();
+      const bgUrl = customBackgroundUrl || (customBackgroundData ? `data:${customBackgroundType || 'image/png'};base64,${customBackgroundData}` : null);
+      if (bgUrl) {
+        await sceneManager.setBackground(bgUrl, true);
+      } else {
+        // Fallback if custom background is specified but no data is found
+        await sceneManager.setBackground('midnight-circuit', true); 
+      }
+    } else {
+      await sceneManager.setBackground(shot.backgroundId, true); // Force background change
+    }
 
     // 3. Set Camera
     // Use sceneManager's presets for consistent framing
