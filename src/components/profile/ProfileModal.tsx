@@ -9,9 +9,9 @@ interface ProfileModalProps {
 }
 
 const ROLE_DEFINITIONS = [
-  { id: import.meta.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech', color: '#ffd700', icon: <Medal size={20} weight="fill" /> }, // Gold
-  { id: import.meta.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech', color: '#c0c0c0', icon: <Circuitry size={20} weight="bold" /> }, // Silver
-  { id: import.meta.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech', color: '#cd7f32', icon: <Lightning size={20} weight="bold" /> } // Bronze
+  { threshold: 5000, id: import.meta.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech', color: '#ffd700', icon: <Medal size={20} weight="fill" /> }, // Gold
+  { threshold: 2500, id: import.meta.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech', color: '#c0c0c0', icon: <Circuitry size={20} weight="bold" /> }, // Silver
+  { threshold: 500, id: import.meta.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech', color: '#cd7f32', icon: <Lightning size={20} weight="bold" /> } // Bronze
 ];
 
 export const ProfileModal = ({ isOpen, onClose }: ProfileModalProps) => {
@@ -23,9 +23,9 @@ export const ProfileModal = ({ isOpen, onClose }: ProfileModalProps) => {
   const currentLevel = Math.floor(lp / 100) + 1;
   const progress = lp % 100;
   
-  // Find highest role
+  // Find highest role based on actual LP or Discord roles
   const userRoles = user?.roles || [];
-  const currentRole = ROLE_DEFINITIONS.find(r => userRoles.includes(r.id));
+  const currentRole = ROLE_DEFINITIONS.find(r => lp >= r.threshold || userRoles.includes(r.id));
 
   return (
     <div className="modal-backdrop">

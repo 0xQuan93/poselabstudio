@@ -1,4 +1,6 @@
 import { useUIStore } from '../state/useUIStore';
+import { useUserStore } from '../state/useUserStore';
+import { useToastStore } from '../state/useToastStore';
 import { PresetsTab } from './tabs/PresetsTab';
 import { PoseExpressionTab } from './tabs/PoseExpressionTab';
 import { SceneTab } from './tabs/SceneTab';
@@ -28,6 +30,20 @@ interface ControlPanelProps {
 export function ControlPanel({ mode }: ControlPanelProps) {
   const { reactionTab, setReactionTab, poseLabTab, setPoseLabTab } = useUIStore();
 
+  const handleTabClick = (tabType: 'reaction' | 'poselab', tabName: any) => {
+    if (tabType === 'reaction') {
+      setReactionTab(tabName);
+    } else {
+      setPoseLabTab(tabName);
+    }
+    
+    useUserStore.getState().recordExploration('visit_tabs').then(reward => {
+      if (reward > 0) {
+        useToastStore.getState().addToast(`+${reward} LP for exploring tabs!`, 'info');
+      }
+    });
+  };
+
   if (mode === 'studio') return null;
 
   if (mode === 'reactions') {
@@ -36,35 +52,35 @@ export function ControlPanel({ mode }: ControlPanelProps) {
         <div className="control-panel__tabs">
           <button
             className={reactionTab === 'presets' ? 'active' : ''}
-            onClick={() => setReactionTab('presets')}
+            onClick={() => handleTabClick('reaction', 'presets')}
           >
             <Sliders size={16} weight="duotone" />
             <span>Presets</span>
           </button>
           <button
             className={reactionTab === 'pose' ? 'active' : ''}
-            onClick={() => setReactionTab('pose')}
+            onClick={() => handleTabClick('reaction', 'pose')}
           >
             <PersonArmsSpread size={16} weight="duotone" />
             <span>Pose</span>
           </button>
           <button
             className={reactionTab === 'scene' ? 'active' : ''}
-            onClick={() => setReactionTab('scene')}
+            onClick={() => handleTabClick('reaction', 'scene')}
           >
             <Gear size={16} weight="duotone" />
             <span>Scene</span>
           </button>
           <button
             className={reactionTab === 'training' ? 'active' : ''}
-            onClick={() => setReactionTab('training')}
+            onClick={() => handleTabClick('reaction', 'training')}
           >
             <GraduationCap size={16} weight="duotone" />
             <span>Training</span>
           </button>
           <button
             className={reactionTab === 'export' ? 'active' : ''}
-            onClick={() => setReactionTab('export')}
+            onClick={() => handleTabClick('reaction', 'export')}
           >
             <Export size={16} weight="duotone" />
             <span>Export</span>
@@ -88,35 +104,35 @@ export function ControlPanel({ mode }: ControlPanelProps) {
       <div className="control-panel__tabs" data-tutorial-id="poselab-tabs">
         <button
           className={poseLabTab === 'animations' ? 'active' : ''}
-          onClick={() => setPoseLabTab('animations')}
+          onClick={() => handleTabClick('poselab', 'animations')}
         >
           <Play size={16} weight="duotone" />
           <span>Anims</span>
         </button>
         <button
           className={poseLabTab === 'poses' ? 'active' : ''}
-          onClick={() => setPoseLabTab('poses')}
+          onClick={() => handleTabClick('poselab', 'poses')}
         >
           <UserFocus size={16} weight="duotone" />
           <span>Poses</span>
         </button>
         <button
           className={poseLabTab === 'mocap' ? 'active' : ''}
-          onClick={() => setPoseLabTab('mocap')}
+          onClick={() => handleTabClick('poselab', 'mocap')}
         >
           <VideoCamera size={16} weight="duotone" />
           <span>Mocap</span>
         </button>
         <button
           className={poseLabTab === 'director' ? 'active' : ''}
-          onClick={() => setPoseLabTab('director')}
+          onClick={() => handleTabClick('poselab', 'director')}
         >
           <FilmStrip size={16} weight="duotone" />
           <span>Director</span>
         </button>
         <button
           className={poseLabTab === 'export' ? 'active' : ''}
-          onClick={() => setPoseLabTab('export')}
+          onClick={() => handleTabClick('poselab', 'export')}
         >
           <FloppyDisk size={16} weight="duotone" />
           <span>Save</span>

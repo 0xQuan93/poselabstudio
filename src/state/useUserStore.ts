@@ -17,15 +17,13 @@ interface UserState {
   isAuthenticated: boolean;
   
   setUser: (user: UserProfile | null) => void;
-  updateLp: (amount: number, reason?: string) => void;
-  deductLp: (amount: number, reason?: string) => void;
   
   // Gamification
-  recordDailyLogin: () => Promise<number>; // Returns LP granted (0 if already claimed)
-  recordExploration: (milestoneId: string, lpReward?: number) => number; // Returns LP granted
+  recordGamifiedAction: (actionName: string) => Promise<number>; // Returns LP granted
+  recordDailyLogin: () => Promise<number>; 
+  recordExploration: (milestoneId: string) => Promise<number>; 
   
   // Sync wrapper
-  addLpToBot: (amount: number, discordId: string, reason?: string) => Promise<void>;
   fetchLpFromBot: (discordId: string) => Promise<void>;
   
   logout: () => void;
@@ -36,33 +34,6 @@ export const useUserStore = create<UserState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
-
-      addLpToBot: async (amount: number, discordId: string, reason?: string) => {
-        try {
-          const response = await fetch('/.netlify/functions/bot-lp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'add',
-              discordUserId: discordId,
-              lpAmount: amount,
-              reason: reason
-            })
-          });
-          if (response.ok) {
-            const data = await response.json();
-            // Source of Truth: Set the user's LP to the newly calculated total from the Discord Ledger
-            if (data.success && typeof data.lp === 'number') {
-              const state = get();
-              if (state.user) {
-                set({ user: { ...state.user, lp: data.lp } });
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Failed to add LP to Discord Bot", e);
-        }
-      },
 
       fetchLpFromBot: async (discordId: string) => {
         try {
@@ -90,33 +61,7 @@ export const useUserStore = create<UserState>()(
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       
-      updateLp: (amount, reason) => {
-        const state = get();
-        if (!state.user) return;
-        
-        // Optimistic UI update
-        const newLp = state.user.lp + amount;
-        set({ user: { ...state.user, lp: newLp } });
-        
-        if (state.user.discordId) {
-           state.addLpToBot(amount, state.user.discordId, reason || 'update_lp');
-        }
-      },
-      
-      deductLp: (amount, reason) => {
-        const state = get();
-        if (!state.user) return;
-        
-        // Optimistic UI update
-        const newLp = Math.max(0, state.user.lp - amount);
-        set({ user: { ...state.user, lp: newLp } });
-        
-        if (state.user.discordId) {
-           state.addLpToBot(-amount, state.user.discordId, reason || 'deduct_lp');
-        }
-      },
-      
-      recordDailyLogin: async () => {
+      recordGamifiedAction: async (actionName: string) => {
         const state = get();
         if (!state.user || !state.user.discordId) return 0;
 
@@ -125,7 +70,8 @@ export const useUserStore = create<UserState>()(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action: 'daily_login',
+              action: 'grant_action',
+              actionName,
               discordUserId: state.user.discordId
             })
           });
@@ -141,41 +87,42 @@ export const useUserStore = create<UserState>()(
              if (typeof data.lp === 'number') {
                set({ user: { ...state.user, lp: data.lp } });
              }
-             console.log('Daily login already claimed. Next claim in:', data.timeLeft);
+             console.log(`${actionName} already claimed. Cooldown active.`);
              return 0;
           }
         } catch (e) {
-           console.error("Failed to claim daily login", e);
+           console.error(`Failed to claim gamified action: ${actionName}`, e);
         }
         return 0;
       },
       
-      recordExploration: (milestoneId: string, lpReward = 10) => {
+      recordDailyLogin: async () => {
+         return await get().recordGamifiedAction('daily_login');
+      },
+      
+      recordExploration: async (milestoneId: string) => {
         const state = get();
         if (!state.user) return 0;
         
         const milestones = state.user.explorationMilestones || {};
         if (milestones[milestoneId]) {
-          return 0; // Already explored this feature
+          return 0; // Local check to save a request
         }
         
-        // Optimistic update
-        const newLp = state.user.lp + lpReward;
+        // Optimistic local cache update so we don't spam requests
         set({
           user: {
             ...state.user,
-            lp: newLp,
             explorationMilestones: {
               ...milestones,
               [milestoneId]: true
             }
           }
         });
-        
-        if (state.user.discordId) {
-           state.addLpToBot(lpReward, state.user.discordId, milestoneId);
-        }
-        return lpReward;
+
+        // Use the general visit_tabs or explore_app action
+        const actionName = milestoneId.includes('tab') ? 'visit_tabs' : 'explore_app';
+        return await get().recordGamifiedAction(actionName);
       },
 
       logout: () => set({ user: null, isAuthenticated: false }),

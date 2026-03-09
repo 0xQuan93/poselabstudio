@@ -24,7 +24,7 @@ export const CreatorFeed = () => {
   const [upvotedItems, setUpvotedItems] = useState<Set<string>>(new Set());
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const { addToast } = useToastStore();
-  const { user, updateLp } = useUserStore();
+  const { user } = useUserStore();
 
   const fetchFeed = async () => {
     setIsLoading(true);
@@ -36,16 +36,6 @@ export const CreatorFeed = () => {
       }
       const data = await response.json();
       setFeed(data.feed);
-
-      // Sync LP based on total upvotes received across all published poses
-      if (user) {
-        const userPosts = data.feed.filter((item: FeedItem) => item.creatorId === user.id);
-        const totalUpvotes = userPosts.reduce((sum: number, item: FeedItem) => sum + item.upvotes, 0);
-        // Let's say 1 upvote = 10 LP
-        if (updateLp) {
-          updateLp(totalUpvotes * 10);
-        }
-      }
 
     } catch (err: any) {
       console.error(err);

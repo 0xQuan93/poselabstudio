@@ -48,10 +48,11 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
     
     // Reward for exploring different modes
     if (user) {
-      const reward = recordExploration(`explore_mode_${newMode}`, 20);
-      if (reward > 0) {
-        addToast(`Explorer Bonus: +${reward} LP for visiting ${newMode}! 🔥`, 'success');
-      }
+      recordExploration(`explore_mode_${newMode}`).then(reward => {
+        if (reward > 0) {
+          addToast(`Explorer Bonus: +${reward} LP for visiting ${newMode}! 🔥`, 'success');
+        }
+      });
     }
   };
 

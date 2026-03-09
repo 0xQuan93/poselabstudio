@@ -360,6 +360,13 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
       stopFocusSprint(true);
       triggerSparkles(); // Celebrate with kawaii sparkles!
       addToast('PoseLab Sprint complete — review your captures.', 'success');
+      
+      // Gamification Reward
+      useUserStore.getState().recordGamifiedAction('use_sprint').then(reward => {
+        if (reward > 0) {
+          addToast(`+${reward} LP for using Sprint Mode!`, 'info');
+        }
+      });
     }, focusDurationMs);
   };
 

@@ -41,7 +41,6 @@ export const handler: Handler = async (event) => {
         options.body = JSON.stringify(body);
       }
       
-      // console.log(`Fetching Discord API: ${method} ${endpoint}`);
       const response = await fetch(url, options);
       if (!response.ok && response.status !== 204) {
         const text = await response.text();
@@ -53,12 +52,9 @@ export const handler: Handler = async (event) => {
 
     const getUserLedgerData = async (discordUserId: string) => {
       let lp = 0;
-      let lastLoginTime = 0;
+      let actionTimestamps: Record<string, number> = {};
       let foundLp = false;
-      let foundLogin = false;
       let lastMessageId = undefined;
-      const now = Date.now();
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       const startTime = Date.now();
 
       while (true) {
@@ -77,39 +73,37 @@ export const handler: Handler = async (event) => {
           if (msg.author.id !== DISCORD_CLIENT_ID) continue;
 
           if (!foundLp && msg.content.includes(`[LP_LEDGER] | USER:${discordUserId}`)) {
-            const match = msg.content.match(/TOTAL:(\d+)/);
-            if (match && match[1]) {
-              lp = parseInt(match[1], 10);
-              foundLp = true;
+            const matchTotal = msg.content.match(/TOTAL:(\d+)/);
+            if (matchTotal && matchTotal[1]) {
+              lp = parseInt(matchTotal[1], 10);
             }
+            const matchActions = msg.content.match(/ACTIONS:(\{.*\})/);
+            if (matchActions && matchActions[1]) {
+              try {
+                actionTimestamps = JSON.parse(matchActions[1]);
+              } catch (e) {}
+            } else {
+               // Fallback to check if they had a DAILY_LOGIN message in the past to prevent reset (legacy support)
+               const matchLegacyLogin = msg.content.match(/\[DAILY_LOGIN\].*TS:(\d+)/);
+               if (matchLegacyLogin && matchLegacyLogin[1]) {
+                  actionTimestamps['daily_login'] = parseInt(matchLegacyLogin[1], 10);
+               }
+            }
+            foundLp = true;
           }
 
-          if (!foundLogin && msg.content.includes(`[DAILY_LOGIN] | USER:${discordUserId}`)) {
-             const match = msg.content.match(/TS:(\d+)/);
-             if (match && match[1]) {
-               lastLoginTime = parseInt(match[1], 10);
-             } else {
-               lastLoginTime = new Date(msg.timestamp).getTime();
-             }
-             foundLogin = true;
-          }
-
-          if (foundLp && foundLogin) break;
+          if (foundLp) break;
         }
 
-        if (foundLp && foundLogin) break;
+        if (foundLp) break;
         lastMessageId = messages[messages.length - 1].id;
       }
 
-      return { 
-        lp, 
-        lastLoginTime, 
-        allowedDaily: (now - lastLoginTime) >= ONE_DAY_MS 
-      };
+      return { lp, actionTimestamps };
     };
 
-    const writeLpToChannel = async (discordUserId: string, newLp: number, reason: string, levelUpMessage?: string) => {
-      const content = `[LP_LEDGER] | USER:${discordUserId} | REASON:${reason} | TOTAL:${newLp}`;
+    const writeLpToChannel = async (discordUserId: string, newLp: number, reason: string, actionTimestamps: any, levelUpMessage?: string) => {
+      const content = `[LP_LEDGER] | USER:${discordUserId} | REASON:${reason} | TOTAL:${newLp} | ACTIONS:${JSON.stringify(actionTimestamps)}`;
       const payload: any = { content };
       
       if (levelUpMessage) {
@@ -133,9 +127,9 @@ export const handler: Handler = async (event) => {
     };
 
     const ROLE_THRESHOLDS = [
-      { threshold: 100, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH || process.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
-      { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH || process.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech' },
-      { threshold: 1000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH || process.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
+      { threshold: 500, roleId: process.env.DISCORD_ROLE_ID_GENERAL_TECH || process.env.VITE_DISCORD_ROLE_ID_GENERAL_TECH, name: 'General Tech' },
+      { threshold: 2500, roleId: process.env.DISCORD_ROLE_ID_LAB_TECH || process.env.VITE_DISCORD_ROLE_ID_LAB_TECH, name: 'Lab Tech' },
+      { threshold: 5000, roleId: process.env.DISCORD_ROLE_ID_STUDIO_TECH || process.env.VITE_DISCORD_ROLE_ID_STUDIO_TECH, name: 'Studio Tech' }
     ];
 
     const assignRoles = async (discordUserId: string, newLp: number) => {
@@ -143,11 +137,7 @@ export const handler: Handler = async (event) => {
       for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
         if (newLp >= threshold && roleId) {
           try {
-            // Discord PUT is idempotent, but we don't know if they already had it unless we fetch member info.
-            // To be safe and avoid spam, we'll just assign it. A better way would be to check current roles.
             await fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`, 'PUT');
-            // If we wanted to announce only NEW roles, we'd need to compare against their previous LP or fetch their roles first.
-            // For now, we ensure they have the role.
           } catch (roleError) {
              console.error(`Failed to assign ${name}`, roleError);
           }
@@ -161,46 +151,66 @@ export const handler: Handler = async (event) => {
       return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    const { action, discordUserId, lpAmount, reason } = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
+    const { action, discordUserId, actionName } = body;
 
     if (!discordUserId) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing discordUserId' }) };
     }
 
     if (action === 'read') {
-      const { lp: currentLp } = await getUserLedgerData(discordUserId);
-      return { statusCode: 200, body: JSON.stringify({ discordUserId, lp: currentLp }) };
+      const { lp: currentLp, actionTimestamps } = await getUserLedgerData(discordUserId);
+      return { statusCode: 200, body: JSON.stringify({ discordUserId, lp: currentLp, actionTimestamps }) };
     } 
     
-    if (action === 'daily_login') {
-      const { lp: currentLp, allowedDaily, lastLoginTime } = await getUserLedgerData(discordUserId);
-      const now = Date.now();
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const ALLOWED_ACTIONS: Record<string, { reward: number, cooldownMs: number, label: string }> = {
+      'daily_login': { reward: 50, cooldownMs: 24 * 60 * 60 * 1000, label: "Daily Login" },
+      'explore_app': { reward: 20, cooldownMs: 24 * 60 * 60 * 1000, label: "Exploring the App" },
+      'visit_tabs': { reward: 20, cooldownMs: 24 * 60 * 60 * 1000, label: "Visiting Tabs" },
+      'use_sprint': { reward: 30, cooldownMs: 24 * 60 * 60 * 1000, label: "Using Sprint Mode" }
+    };
 
-      if (!allowedDaily) {
-        const timeLeft = lastLoginTime ? (lastLoginTime + ONE_DAY_MS) - now : 0;
+    if (action === 'grant_action') {
+      if (!actionName || !ALLOWED_ACTIONS[actionName]) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Invalid or non-grantable action' }) };
+      }
+      
+      const { lp: currentLp, actionTimestamps } = await getUserLedgerData(discordUserId);
+      const actionConfig = ALLOWED_ACTIONS[actionName];
+      const lastTime = actionTimestamps[actionName] || 0;
+      const now = Date.now();
+      
+      if (now - lastTime < actionConfig.cooldownMs) {
         return { 
           statusCode: 200, 
           body: JSON.stringify({ 
             success: false, 
             reason: 'cooldown', 
-            timeLeft,
-            lp: currentLp
+            timeLeft: (lastTime + actionConfig.cooldownMs) - now,
+            lp: currentLp,
+            actionTimestamps
           }) 
         };
       }
 
-      const reward = 50;
+      const reward = actionConfig.reward;
       const newLp = currentLp + reward;
+      actionTimestamps[actionName] = now;
+      
       const newLevel = Math.floor(newLp / 100) + 1;
       const oldLevel = Math.floor(currentLp / 100) + 1;
 
-      const content = `[DAILY_LOGIN] | USER:${discordUserId} | TS:${now} | DATE:${new Date().toISOString()}`;
+      let levelUpMessage = undefined;
+      if (newLevel > oldLevel) {
+        levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
+      }
+
+      // We still post a reward claimed message if we want gamification feedback
       const payload: any = {
-        content,
+        content: `[ACTION_LOG] | USER:${discordUserId} | ACTION:${actionName} | REWARD:${reward}`,
         embeds: [{
-          title: "🎁 Daily Login Reward Claimed!",
-          description: `<@${discordUserId}> claimed their daily Lab Points!`,
+          title: `🎁 Reward Claimed: ${actionConfig.label}!`,
+          description: `<@${discordUserId}> claimed their Lab Points!`,
           color: 0x00FF00, // Green
           fields: [
             { name: "Reward", value: `+${reward} LP`, inline: true },
@@ -213,15 +223,10 @@ export const handler: Handler = async (event) => {
       try {
         await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages`, 'POST', payload);
       } catch (e) {
-        console.error('Failed to log daily login message', e);
+        console.error('Failed to log gamification message', e);
       }
 
-      let levelUpMessage = undefined;
-      if (newLevel > oldLevel) {
-        levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
-      }
-
-      await writeLpToChannel(discordUserId, newLp, 'daily_login', levelUpMessage);
+      await writeLpToChannel(discordUserId, newLp, actionName, actionTimestamps, levelUpMessage);
       await assignRoles(discordUserId, newLp);
 
       return {
@@ -230,46 +235,13 @@ export const handler: Handler = async (event) => {
           success: true,
           reward,
           lp: newLp,
-          level: newLevel
+          level: newLevel,
+          actionTimestamps
         })
       };
     }
 
-    if (action === 'write' || action === 'add') {
-      if (typeof lpAmount !== 'number') {
-         return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid lpAmount' }) };
-      }
-
-      const { lp: currentLp } = await getUserLedgerData(discordUserId);
-      let newLp = lpAmount;
-      if (action === 'add') {
-         newLp = currentLp + lpAmount;
-      }
-
-      const newLevel = Math.floor(newLp / 100) + 1;
-      const oldLevel = Math.floor(currentLp / 100) + 1;
-      
-      let levelUpMessage = undefined;
-      if (newLevel > oldLevel) {
-        levelUpMessage = `<@${discordUserId}> has advanced to **Level ${newLevel}**!`;
-      }
-
-      const txReason = reason || action;
-      await writeLpToChannel(discordUserId, newLp, txReason, levelUpMessage);
-      await assignRoles(discordUserId, newLp);
-
-      return { 
-        statusCode: 200, 
-        body: JSON.stringify({ 
-          success: true, 
-          discordUserId, 
-          lp: newLp,
-          level: newLevel
-        }) 
-      };
-    }
-
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid action. Must be read, write, or add' }) };
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid action. Must be read or grant_action' }) };
 
   } catch (error: any) {
     console.error('Bot LP Error:', error);
