@@ -213,6 +213,30 @@ function applyTextureToStudio(scene: THREE.Scene, texture: THREE.Texture | null,
   if (texture) {
     material.map = texture;
     material.color.setHex(0xffffff);
+    
+    // PREVENT DISTORTION: Adjust UVs based on texture aspect ratio
+    if (texture.image && texture.image.width > 0) {
+      const imgAspect = texture.image.width / texture.image.height;
+      
+      // The cyclorama is a cylinder with circumference ~94.2 and height 20 (ratio ~4.7)
+      // We want the image to look natural. 
+      // If it's a 360 panorama (usually 2:1), we wrap it.
+      // If it's a standard image (16:9, 4:3), we scale it to fit height and repeat it or center it.
+      
+      if (Math.abs(imgAspect - 2) < 0.1) {
+        // Looks like a panorama
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.repeat.set(1, 1);
+      } else {
+        // Standard image - scale to fit height (20) and calculate how many times it wraps
+        // Circumference / (Height * imgAspect) = how many horizontal repeats to maintain ratio
+        const repeatS = 94.24 / (20 * imgAspect);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.repeat.set(repeatS, 1);
+        texture.offset.set(0, 0);
+      }
+    }
+    
     material.needsUpdate = true;
     group.visible = true;
   } else if (color) {

@@ -501,11 +501,11 @@ class SceneManager {
         ? containerRatio / targetRatio 
         : targetRatio / containerRatio;
 
-    // If 'cover' would crop more than 20% of the image (cropRatio > 1.2), 
-    // strictly enforce 'contain' so the user can accurately frame extreme aspect ratios (like 9:16 or 1:1).
-    // Otherwise, use 'cover' to immersively fill the viewport and eliminate small letterbox bars.
-    if (cropRatio > 1.2) {
-      // Contain
+    // Increased threshold from 1.2 to 1.5 to be more aggressive with 'Cover' mode.
+    // This prioritizes filling the user's screen (immersive fill) over strict framing 
+    // for most common screen/window sizes.
+    if (cropRatio > 1.5) {
+      // Contain: Strictly preserve framing for extreme mismatches (e.g. 9:16 on a 21:9 screen)
       if (containerRatio > targetRatio) {
         canvasWidth = containerHeight * targetRatio;
         canvasHeight = containerHeight;
@@ -514,7 +514,7 @@ class SceneManager {
         canvasHeight = containerWidth / targetRatio;
       }
     } else {
-      // Cover
+      // Cover: Fill the viewport completely for a seamless look
       if (containerRatio > targetRatio) {
         canvasWidth = containerWidth;
         canvasHeight = containerWidth / targetRatio;
@@ -528,9 +528,10 @@ class SceneManager {
     this.canvas.style.width = `${canvasWidth}px`;
     this.canvas.style.height = `${canvasHeight}px`;
     
-    // Update renderer and camera to match
+    // CRITICAL: Use the actual canvas aspect ratio for the camera to ensure ZERO distortion
+    const actualAspect = canvasWidth / canvasHeight;
     this.renderer.setSize(canvasWidth, canvasHeight, false);
-    this.camera.aspect = targetRatio;
+    this.camera.aspect = actualAspect;
     this.camera.updateProjectionMatrix();
     
     // Resize post-processing composer
