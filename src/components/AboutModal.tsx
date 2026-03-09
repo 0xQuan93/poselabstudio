@@ -67,7 +67,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
             </li>
             <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <FilmSlate size={18} weight="duotone" style={{ color: 'var(--accent)' }} />
-              <span><strong>FBX/GLTF Import:</strong> Mixamo animation retargeting</span>
+              <span><strong>FBX/GLTF Loading:</strong> Mixamo animation retargeting</span>
             </li>
             <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Camera size={18} weight="duotone" style={{ color: 'var(--accent)' }} />

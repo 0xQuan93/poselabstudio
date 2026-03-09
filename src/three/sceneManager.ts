@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three-stdlib';
 import { VRMHumanBoneName } from '@pixiv/three-vrm';
-import { applyBackground, type AnimatedBackground } from './backgrounds';
+import { applyBackground, toggleLabEnvironment, type AnimatedBackground } from './backgrounds';
 import type { BackgroundId } from '../types/reactions';
 import { useSettingsStore } from '../state/useSettingsStore';
 import { perfMonitor } from '../perf/perfMonitor';
@@ -496,14 +496,32 @@ class SceneManager {
     
     const containerRatio = containerWidth / containerHeight;
     
-    if (containerRatio > targetRatio) {
-      // Container is wider than target, constrain by height
-      canvasWidth = containerHeight * targetRatio;
-      canvasHeight = containerHeight;
+    // Calculate how much we'd have to crop to use 'cover'
+    const cropRatio = containerRatio > targetRatio 
+        ? containerRatio / targetRatio 
+        : targetRatio / containerRatio;
+
+    // If 'cover' would crop more than 20% of the image (cropRatio > 1.2), 
+    // strictly enforce 'contain' so the user can accurately frame extreme aspect ratios (like 9:16 or 1:1).
+    // Otherwise, use 'cover' to immersively fill the viewport and eliminate small letterbox bars.
+    if (cropRatio > 1.2) {
+      // Contain
+      if (containerRatio > targetRatio) {
+        canvasWidth = containerHeight * targetRatio;
+        canvasHeight = containerHeight;
+      } else {
+        canvasWidth = containerWidth;
+        canvasHeight = containerWidth / targetRatio;
+      }
     } else {
-      // Container is taller than target, constrain by width
-      canvasWidth = containerWidth;
-      canvasHeight = containerWidth / targetRatio;
+      // Cover
+      if (containerRatio > targetRatio) {
+        canvasWidth = containerWidth;
+        canvasHeight = containerWidth / targetRatio;
+      } else {
+        canvasWidth = containerHeight * targetRatio;
+        canvasHeight = containerHeight;
+      }
     }
     
     // Update canvas CSS size (visual size)
@@ -657,6 +675,7 @@ class SceneManager {
 
     // 2. Handle HDRI Environments
     if (HDRI_PRESETS[id]) {
+      toggleLabEnvironment(this.scene, false); // Hide 3D lab so HDRI background is visible
       await store.setEnvironmentPreset(id);
       store.setEnvironment({ enabled: true });
       return;
@@ -729,7 +748,11 @@ class SceneManager {
     const originalClearColor = new THREE.Color();
     const originalClearAlpha = this.renderer.getClearAlpha();
     this.renderer.getClearColor(originalClearColor);
-    
+
+    // Save 3D Lab environment visibility state
+    const labGroup = this.scene.getObjectByName('Project89_Lab_Environment');
+    const originalLabVisible = labGroup ? labGroup.visible : false;
+
     // Save camera/controls state if we're reframing
     const originalCameraPos = this.camera.position.clone();
     const originalTarget = this.controls?.target.clone();
@@ -737,14 +760,14 @@ class SceneManager {
     const originalFar = this.camera.far;
     const originalMinDist = this.controls?.minDistance;
     const originalMaxDist = this.controls?.maxDistance;
-    
-    // If transparent background requested, temporarily remove background and set transparent clear
+
+    // If transparent background requested, temporarily remove background, set transparent clear, and hide Lab mesh
     if (transparentBackground) {
       this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0); // Fully transparent
-      console.log('[SceneManager] Background removed and clear color set to transparent');
-    }
-    
+      if (labGroup) labGroup.visible = false;
+      console.log('[SceneManager] Background removed, Lab hidden, clear color set to transparent');
+    }    
     try {
       // If custom resolution requested, render to an off-screen canvas
       if (options?.width || options?.height || fitToFrame) {
@@ -812,6 +835,7 @@ class SceneManager {
         // Restore background and clear color
         this.scene.background = originalBackground;
         this.renderer.setClearColor(originalClearColor, originalClearAlpha);
+        if (labGroup && transparentBackground) labGroup.visible = originalLabVisible;
         
         return dataUrl;
       }

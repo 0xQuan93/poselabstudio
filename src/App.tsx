@@ -16,6 +16,7 @@ import { initAvatarBridge } from './multiplayer/avatarBridge';
 import { ConnectionProgressPanel } from './components/ConnectionProgressPanel';
 import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
+import { TickerTape } from './components/TickerTape';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
 import { GearSix, X } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
@@ -32,7 +33,7 @@ const IS_DEV = import.meta.env.DEV;
 
 function App() {
   const { isReady, error, discordSdk } = useDiscordActivity();
-  const { mode, setMode, mobileDrawerOpen, setMobileDrawerOpen, focusModeActive } = useUIStore();
+  const { mode, setMode, mobileDrawerOpen, setMobileDrawerOpen, focusModeActive, sidebarOpen } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
@@ -180,7 +181,7 @@ function App() {
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
       <AppHeader mode={mode} onModeChange={setMode} />
       
-      <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''}`}>
+      <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''} ${!sidebarOpen ? 'sidebar-closed' : ''}`}>
         <div 
           className="studio-mode-wrapper" 
           style={{ 
@@ -205,7 +206,7 @@ function App() {
         </section>
 
         {!isMobile && (
-          <div style={{ display: mode === 'studio' ? 'none' : 'contents' }}>
+          <div className={`desktop-sidebar ${!sidebarOpen ? 'closed' : ''}`} style={{ display: mode === 'studio' ? 'none' : 'block' }}>
             <ControlPanel mode={mode === 'studio' ? 'reactions' : mode} />
           </div>
         )}
@@ -254,6 +255,7 @@ function App() {
       <SessionHUD />
       <MobileWelcomeModal />
       {/* <LobbyPanel /> */}
+      <TickerTape />
     </div>
   );
 }

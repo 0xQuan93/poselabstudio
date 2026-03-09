@@ -38,7 +38,7 @@ export function ToastHost() {
   return (
     <div aria-live="polite" aria-atomic="true" className="toast-host" style={{
         position: 'fixed',
-        bottom: '20px',
+        bottom: '48px',
         right: '20px',
         display: 'flex',
         flexDirection: 'column',

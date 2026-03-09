@@ -1,8 +1,8 @@
 .panel {
   background-color: var(--color-surface);
-  border-radius: 0.5rem;
+  border-radius: 0;
   border: 1px solid var(--color-border);
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .panel__header {

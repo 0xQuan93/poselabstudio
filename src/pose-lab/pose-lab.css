@@ -41,7 +41,7 @@
 .step-number {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 0;
   background: rgba(0, 217, 255, 0.2);
   border: 2px solid #00d9ff;
   display: flex;
@@ -60,7 +60,7 @@
 /* Drop Zones */
 .drop-zone {
   border: 2px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
+  border-radius: 0;
   padding: 2rem;
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
@@ -115,8 +115,8 @@
 .pose-lab__canvas {
   width: 100%;
   aspect-ratio: 1 / 1;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.3);
 }
@@ -124,8 +124,8 @@
 /* Status Card */
 .status-card {
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  border: var(--border-default);
+  border-radius: 0;
   padding: 1.5rem;
   text-align: center;
 }
@@ -139,8 +139,8 @@
 /* Animation Controls */
 .pose-lab__animation-controls {
   background: rgba(0, 217, 255, 0.05);
-  border: 1px solid rgba(0, 217, 255, 0.2);
-  border-radius: 16px;
+  border: var(--border-default);
+  border-radius: 0;
   padding: 1.5rem;
   margin: 2rem 0;
 }
@@ -162,8 +162,8 @@
 .pose-lab__button,
 .pose-lab__actions button {
   padding: 1rem 2rem;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0;
+  border: var(--border-default);
   background: rgba(255, 255, 255, 0.08);
   color: inherit;
   cursor: pointer;

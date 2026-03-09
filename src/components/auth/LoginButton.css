@@ -8,8 +8,8 @@
   align-items: center;
   background: rgba(0, 0, 0, 0.4);
   padding: 4px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0;
+  border: var(--border-default);
   height: 32px;
   box-sizing: border-box;
 }
@@ -19,11 +19,11 @@
   align-items: center;
   gap: 8px;
   background: transparent;
-  border: none;
+  border: var(--border-default);
   color: white;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 16px;
+  border-radius: 0;
   transition: background 0.2s;
 }
 
@@ -34,7 +34,7 @@
 .user-avatar-small {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: 0;
   overflow: hidden;
   background: #333;
   display: flex;
@@ -50,11 +50,11 @@
 
 .logout-btn {
   background: transparent;
-  border: none;
+  border: var(--border-default);
   color: #aaa;
   cursor: pointer;
   padding: 6px;
-  border-radius: 50%;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -70,9 +70,9 @@
 .login-btn {
   background: var(--primary-color, #646cff);
   color: white;
-  border: none;
+  border: var(--border-default);
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
   font-weight: 600;
   transition: background 0.2s;

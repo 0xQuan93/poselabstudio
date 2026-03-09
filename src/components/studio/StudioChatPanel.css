@@ -5,8 +5,6 @@
   width: 100%;
   background: var(--glass-bg, rgba(20, 20, 25, 0.7));
   border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -22,10 +20,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: var(--border-default);
   background: rgba(10, 10, 12, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   z-index: 20;
   box-sizing: border-box;
 }
@@ -70,7 +66,7 @@
 }
 .chat-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  border-radius: 0;
 }
 .chat-messages::-webkit-scrollbar-track {
   background: transparent;
@@ -86,11 +82,11 @@
 .message-avatar {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 0;
   overflow: hidden;
   flex-shrink: 0;
   background: var(--surface-ui);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: var(--border-default);
 }
 
 .message-avatar img {
@@ -163,9 +159,9 @@
   flex-direction: row;
   align-items: center;
   background: rgba(0, 0, 0, 0.4); /* Darker and more integrated */
-  border-radius: var(--radius-xl, 16px);
+  border-radius: 0;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: var(--border-default);
   transition: all 0.2s ease;
   min-height: 48px; /* Slightly taller for comfort */
   gap: var(--space-2);
@@ -174,13 +170,13 @@
 .chat-input-wrapper:focus-within {
   border-color: var(--accent);
   background: rgba(0, 0, 0, 0.6);
-  box-shadow: 0 0 0 1px rgba(0, 255, 214, 0.2);
+  box-shadow: var(--shadow-md);
 }
 
 .chat-input-wrapper input {
   flex: 1;
   background: transparent;
-  border: none;
+  border: var(--border-default);
   padding: var(--space-2) var(--space-2);
   color: var(--text-primary);
   outline: none;
@@ -190,13 +186,13 @@
 
 .emoji-btn {
   background: transparent;
-  border: none;
+  border: var(--border-default);
   color: var(--text-tertiary);
   cursor: pointer;
   padding: var(--space-2);
   display: flex;
   align-items: center;
-  border-radius: var(--radius-full, 50%);
+  border-radius: 0;
   transition: all 0.2s;
 }
 
@@ -208,8 +204,8 @@
 .send-btn {
   background: var(--accent);
   color: #000;
-  border: none;
-  border-radius: var(--radius-full, 50%);
+  border: var(--border-default);
+  border-radius: 0;
   width: 32px;
   height: 32px; /* Smaller, fits inside input */
   display: flex;
@@ -223,7 +219,7 @@
 .send-btn:hover {
   transform: translateY(-1px);
   filter: brightness(1.1);
-  box-shadow: 0 0 10px rgba(0, 255, 214, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .send-btn:disabled {

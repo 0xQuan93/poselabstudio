@@ -192,8 +192,8 @@ export function AnimationsTab() {
 
       {/* --- IMPORT --- */}
       <div className="tab-section">
-        <h3>Import Animation</h3>
-        <p className="muted small">Import FBX or GLTF animation from Mixamo</p>
+        <h3>Load Animation</h3>
+        <p className="muted small">Load FBX or GLTF animation from Mixamo</p>
         
         {!isAvatarReady && (
           <div className="status-card" style={{ marginBottom: '1rem' }}>

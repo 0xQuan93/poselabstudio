@@ -1,24 +1,19 @@
 /**
- * PoseLab - Main Stylesheet
+ * PoseLab - Main Stylesheet (Neo-Brutalism)
  * ═══════════════════════════════════════════════════════════════════════════
  * Imports the design system and applies global overrides
  */
 
-/* Import Design System */
 @import './styles/design-system.css';
 @import './styles/components.css';
 @import './styles/viewport-effects.css';
 @import './styles/effects.css';
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   LEGACY TOKEN ALIASES (for backward compatibility)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 :root {
   /* Map old tokens to new system */
   --bg-surface: var(--color-surface);
   --bg-panel: var(--color-elevated);
-  --bg-card: var(--glass-bg);
+  --bg-card: var(--color-card);
   
   --text-primary: var(--text-primary);
   --text-secondary: var(--text-secondary);
@@ -29,35 +24,20 @@
   --brand-error: var(--error);
   --brand-success: var(--success);
   --border-color: var(--border-default);
-  
-  /* Typography - with robust fallbacks for when Google Fonts are blocked */
-  --font-display: 'Orbitron', 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', 'Monaco', monospace;
 }
 
-/* Ensure text is always visible even if custom fonts fail */
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Force text color inheritance and prevent black text */
 html {
-  /* color: #ffffff;  Removed to allow theme override */
   color-scheme: dark;
 }
 
-/* Explicit text color fallback for all elements */
 body, body * {
   color: inherit;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   GLOBAL BODY STYLES
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 body {
   font-family: var(--font-body);
@@ -69,13 +49,9 @@ body {
   overflow-x: hidden;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   POSELAB WORKSPACE STYLES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 .pose-lab {
   min-height: 100vh;
-  background: var(--gradient-mesh);
+  background: var(--color-abyss);
   color: var(--text-primary);
   padding: var(--space-6);
   display: flex;
@@ -84,128 +60,111 @@ body {
   font-family: var(--font-body);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   GLOBAL BUTTON OVERRIDES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Global Buttons Override */
 button {
   font-family: var(--font-body);
-  border: none;
+  border: var(--border-default);
   cursor: pointer;
-  transition: var(--transition-all);
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  border-radius: 0;
 }
 
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-/* Primary buttons get the aurora treatment */
 button.primary,
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-600) 100%);
-  color: var(--text-on-accent);
-  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--color-void);
   padding: var(--space-3) var(--space-5);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
   font-size: var(--text-sm);
-  box-shadow: 
-    0 1px 2px rgba(0, 0, 0, 0.4),
-    0 4px 16px rgba(0, 255, 214, 0.25);
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+  border: var(--border-default);
 }
 
 button.primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 
-    0 2px 4px rgba(0, 0, 0, 0.4),
-    0 8px 24px rgba(0, 255, 214, 0.35);
+  background: var(--text-primary);
+  color: var(--color-void);
+  border-color: var(--text-primary);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-lg);
+  background: var(--text-primary);
+  color: var(--color-void);
+  border-color: var(--text-primary);
 }
 
 button.primary:active:not(:disabled),
 .btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translate(0, 0);
+  box-shadow: var(--shadow-xs);
 }
 
-/* Secondary buttons get glass treatment */
 button.secondary,
 .btn-secondary {
-  background: var(--glass-bg);
+  background: var(--color-surface);
   color: var(--text-primary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: var(--border-default);
   padding: var(--space-3) var(--space-5);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-bold);
   font-size: var(--text-sm);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
 }
 
 button.secondary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled) {
-  background: var(--glass-hover);
-  border-color: var(--border-emphasis);
+  background: var(--text-primary);
+  color: var(--color-void);
+  border-color: var(--text-primary);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-lg);
 }
 
 button.secondary.active {
-  background: rgba(0, 255, 214, 0.08);
-  border-color: var(--border-accent);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--color-void);
+  border-color: var(--text-primary);
 }
 
-*:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   INPUT OVERRIDES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-input,
-select,
-textarea {
-  font-family: var(--font-body);
+/* Inputs */
+input, select, textarea {
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-primary);
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: var(--border-default);
   padding: var(--space-3) var(--space-4);
-  transition: var(--transition-all);
+  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+  border-radius: 0;
 }
 
-input::placeholder,
-textarea::placeholder {
+input::placeholder, textarea::placeholder {
   color: var(--text-muted);
 }
 
-input:hover,
-select:hover,
-textarea:hover {
-  border-color: var(--border-emphasis);
-}
-
-input:focus,
-select:focus,
-textarea:focus {
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 255, 214, 0.15);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-md);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   RANGE INPUT (SLIDER) OVERRIDES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Range Input */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: none;
-  border-radius: var(--radius-full);
+  height: 12px;
+  background: var(--color-surface);
+  border: var(--border-subtle);
+  border-radius: 0;
   padding: 0;
   cursor: pointer;
 }
@@ -213,93 +172,73 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 20px;
   background: var(--accent);
-  border-radius: 50%;
+  border: none;
+  border-radius: 0;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 255, 214, 0.3);
-  transition: var(--transition-transform);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--duration-fast);
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  box-shadow: 0 2px 12px rgba(0, 255, 214, 0.5);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-sm);
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--accent);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 255, 214, 0.3);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   CHECKBOX & RADIO OVERRIDES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Checkbox & Radio */
 input[type="checkbox"],
 input[type="radio"] {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   accent-color: var(--accent);
   cursor: pointer;
+  border: var(--border-default);
+  border-radius: 0;
+  appearance: none;
+  background: var(--color-surface);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   LINK STYLES
-   ═══════════════════════════════════════════════════════════════════════════ */
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: var(--accent);
+  border-color: var(--text-primary);
+}
 
 a {
   color: var(--accent);
   text-decoration: none;
-  transition: var(--transition-colors);
+  border-bottom: 2px solid transparent;
+  transition: border-color var(--duration-fast);
+  font-weight: 700;
 }
 
 a:hover {
-  color: var(--accent-300);
-  text-decoration: underline;
+  border-bottom-color: var(--accent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CODE BLOCKS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-code,
-pre {
+code, pre {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
 
 code {
   padding: var(--space-1) var(--space-2);
-  background: rgba(0, 255, 214, 0.08);
-  color: var(--accent);
-  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--color-void);
+  border: 1px solid var(--text-primary);
 }
 
 pre {
   padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: var(--border-default);
+  box-shadow: var(--shadow-md);
   overflow-x: auto;
 }
 
-pre code {
-  padding: 0;
-  background: transparent;
-  color: inherit;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   UTILITY CLASSES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Text colors */
+/* Utility Classes */
 .text-accent { color: var(--accent); }
 .text-violet { color: var(--violet); }
 .text-solar { color: var(--solar); }
@@ -309,22 +248,18 @@ pre code {
 .text-muted { color: var(--text-muted); }
 .text-secondary { color: var(--text-secondary); }
 
-/* Backgrounds */
-.bg-glass { background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); }
-.bg-surface { background: var(--color-surface); }
-.bg-elevated { background: var(--color-elevated); }
+.bg-glass { background: var(--color-surface); border: var(--border-default); box-shadow: var(--shadow-lg); }
+.bg-surface { background: var(--color-surface); border: var(--border-default); }
+.bg-elevated { background: var(--color-elevated); border: var(--border-default); }
 
-/* Borders */
-.border-subtle { border-color: var(--border-subtle); }
-.border-accent { border-color: var(--border-accent); }
+.border-subtle { border: var(--border-subtle); }
+.border-accent { border: var(--border-accent); }
 
-/* Spacing helpers */
+/* Spacing and Flex */
 .mt-auto { margin-top: auto; }
 .mb-auto { margin-bottom: auto; }
 .ml-auto { margin-left: auto; }
 .mr-auto { margin-right: auto; }
-
-/* Flex utilities */
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
 .flex-wrap { flex-wrap: wrap; }
@@ -340,52 +275,32 @@ pre code {
 .gap-4 { gap: var(--space-4); }
 .gap-6 { gap: var(--space-6); }
 .gap-8 { gap: var(--space-8); }
-
-/* Width utilities */
 .w-full { width: 100%; }
-
-/* Display utilities */
 .hidden { display: none; }
 .block { display: block; }
 .inline { display: inline; }
 .inline-block { display: inline-block; }
 .inline-flex { display: inline-flex; }
 .grid { display: grid; }
-
-/* Text utilities */
 .text-center { text-align: center; }
 .text-left { text-align: left; }
 .text-right { text-align: right; }
-.truncate { 
-  overflow: hidden; 
-  text-overflow: ellipsis; 
-  white-space: nowrap; 
-}
-
-/* Cursor utilities */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cursor-pointer { cursor: pointer; }
 .cursor-not-allowed { cursor: not-allowed; }
-
-/* Opacity utilities */
 .opacity-0 { opacity: 0; }
 .opacity-50 { opacity: 0.5; }
 .opacity-75 { opacity: 0.75; }
 .opacity-100 { opacity: 1; }
-
-/* Transition utilities */
 .transition-all { transition: var(--transition-all); }
 .transition-colors { transition: var(--transition-colors); }
 .transition-transform { transition: var(--transition-transform); }
-
-/* Shadow utilities */
-.shadow-sm { box-shadow: var(--shadow-sm); }
-.shadow-md { box-shadow: var(--shadow-md); }
-.shadow-lg { box-shadow: var(--shadow-lg); }
-.shadow-glow { box-shadow: var(--shadow-glow); }
-
-/* Border radius utilities */
-.rounded-sm { border-radius: var(--radius-sm); }
-.rounded-md { border-radius: var(--radius-md); }
-.rounded-lg { border-radius: var(--radius-lg); }
-.rounded-xl { border-radius: var(--radius-xl); }
-.rounded-full { border-radius: var(--radius-full); }
+.shadow-sm { box-shadow: var(--shadow-sm); border: var(--border-default); }
+.shadow-md { box-shadow: var(--shadow-md); border: var(--border-default); }
+.shadow-lg { box-shadow: var(--shadow-lg); border: var(--border-default); }
+.shadow-glow { box-shadow: var(--shadow-glow); border: var(--border-accent); }
+.rounded-sm { border-radius: 0; }
+.rounded-md { border-radius: 0; }
+.rounded-lg { border-radius: 0; }
+.rounded-xl { border-radius: 0; }
+.rounded-full { border-radius: 0; }

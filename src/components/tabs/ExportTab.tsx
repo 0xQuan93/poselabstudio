@@ -718,7 +718,7 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
       </div>
 
       <div className="tab-section" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem' }}>
-        <h3>Project & System</h3>
+        <h3>Session & System</h3>
         <div className="actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <button 
             className="secondary" 

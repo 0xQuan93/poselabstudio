@@ -464,7 +464,7 @@ export function AIGeneratorTab() {
           <div style={{ display: 'flex', gap: '8px' }}>
             <label className="btn btn--secondary btn--small" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', height: '32px' }}>
               <UploadSimple size={16} weight="bold" />
-              <span>Import</span>
+              <span>Load</span>
               <input type="file" accept=".json" onChange={handleImportLibrary} style={{ display: 'none' }} />
             </label>
             <Button 
@@ -482,7 +482,7 @@ export function AIGeneratorTab() {
         {customPoses.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', border: '2px dashed rgba(255,255,255,0.05)', borderRadius: 'var(--radius-lg)', color: 'var(--text-muted)' }}>
             <Robot size={32} weight="duotone" style={{ opacity: 0.3, marginBottom: '12px' }} />
-            <div className="small">Neural archive empty. Generate or import data.</div>
+            <div className="small">Neural archive empty. Generate or load data.</div>
           </div>
         ) : (
           <div className="pose-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

@@ -94,7 +94,7 @@
 
 .shot-item__name-input {
   background: transparent;
-  border: none;
+  border: var(--border-default);
   color: var(--text-bright);
   font-size: 1rem;
   font-weight: bold;
@@ -135,7 +135,7 @@
 
 .shot-item__select {
   padding: 0.6rem 0.8rem;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--surface-raised, #1a1a1a);
   border: 1px solid var(--border-subtle, #333);
   color: var(--text-bright, #fff);
@@ -193,7 +193,7 @@
   text-align: center; 
   padding: 60px 20px;
   border: 2px dashed var(--border-subtle);
-  border-radius: 16px;
+  border-radius: 0;
   background: rgba(255,255,255,0.02);
   display: flex;
   flex-direction: column;
@@ -202,7 +202,7 @@
 
 .empty-state__icon-container {
   width: 64px; height: 64px; 
-  border-radius: 50%;
+  border-radius: 0;
   background: rgba(255,255,255,0.05);
   display: flex;
   align-items: center;
@@ -228,12 +228,11 @@
   bottom: 0;
   background: var(--surface-overlay);
   /* Ensure backdrop filter for glass effect if supported */
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border-subtle); 
+  border-top: var(--border-default); 
   padding: 20px;
   /* Adjust margins to align with tab padding */
   margin: 20px -20px -20px -20px;
-  box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+  box-shadow: var(--shadow-md);
   z-index: 100; /* Ensure it stays above other content */
   border-bottom-left-radius: 12px;
   border-bottom-right-radius: 12px;

@@ -9,6 +9,7 @@ interface UIState {
   reactionTab: ReactionTab;
   poseLabTab: PoseLabTab;
   mobileDrawerOpen: boolean;
+  sidebarOpen: boolean;
   
   // Tutorial State
   isTutorialActive: boolean;
@@ -27,6 +28,7 @@ interface UIState {
   setReactionTab: (tab: ReactionTab) => void;
   setPoseLabTab: (tab: PoseLabTab) => void;
   setMobileDrawerOpen: (open: boolean) => void;
+  setSidebarOpen: (open: boolean) => void;
   
   startTutorial: () => void;
   endTutorial: () => void;
@@ -48,6 +50,7 @@ export const useUIStore = create<UIState>((set) => ({
   reactionTab: 'presets',
   poseLabTab: 'animations', // Default will be changed to 'timeline' via logic or init
   mobileDrawerOpen: false,
+  sidebarOpen: true,
   
   isTutorialActive: false,
   currentTutorialStep: 0,
@@ -63,6 +66,7 @@ export const useUIStore = create<UIState>((set) => ({
   setReactionTab: (tab) => set({ reactionTab: tab }),
   setPoseLabTab: (tab) => set({ poseLabTab: tab }),
   setMobileDrawerOpen: (open) => set({ mobileDrawerOpen: open }),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
   
   startTutorial: () => set({ isTutorialActive: true, currentTutorialStep: 0 }),
   endTutorial: () => set({ isTutorialActive: false, currentTutorialStep: 0 }),

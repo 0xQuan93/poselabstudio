@@ -154,11 +154,93 @@ export function getBackgroundDefinition(id: BackgroundId | string): BackgroundDe
   return backgroundDefinitions.find((entry) => entry.id === id) ?? backgroundDefinitions[0];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Lab 3D Environment (Cyclorama)
+// ═══════════════════════════════════════════════════════════════════════════
+const STUDIO_MESH_NAME = 'Project89_Lab_Environment';
+
+function getOrCreateStudioMesh(scene: THREE.Scene): THREE.Group {
+  let group = scene.getObjectByName(STUDIO_MESH_NAME) as THREE.Group;
+  if (!group) {
+    group = new THREE.Group();
+    group.name = STUDIO_MESH_NAME;
+    
+    // Create a large cylindrical cyclorama for the background image
+    const geometry = new THREE.CylinderGeometry(15, 15, 20, 64, 1, true);
+    const material = new THREE.MeshBasicMaterial({ 
+      side: THREE.BackSide,
+      toneMapped: false // keep colors pure like the UI
+    });
+    const cyclorama = new THREE.Mesh(geometry, material);
+    cyclorama.name = 'Cyclorama';
+    cyclorama.position.y = 5; // lift up slightly
+    cyclorama.scale.x = -1; // Flip horizontally so BackSide textures read correctly
+    
+    // Create a glossy/tech floor
+    const floorGeo = new THREE.PlaneGeometry(30, 30);
+    const floorMat = new THREE.MeshStandardMaterial({ 
+      color: 0x0a0a0a,
+      roughness: 0.2,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.95
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    floor.receiveShadow = true;
+    
+    // Create a strict architectural grid on the floor
+    const grid = new THREE.GridHelper(30, 30, 0x00ffd6, 0x22222a);
+    grid.position.y = 0.01;
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.4;
+    
+    group.add(cyclorama);
+    group.add(floor);
+    group.add(grid);
+
+    scene.add(group);
+  }
+  return group;
+}
+
+function applyTextureToStudio(scene: THREE.Scene, texture: THREE.Texture | null, color: THREE.Color | null) {
+  const group = getOrCreateStudioMesh(scene);
+  const cyclorama = group.getObjectByName('Cyclorama') as THREE.Mesh;
+  const material = cyclorama.material as THREE.MeshBasicMaterial;
+  
+  if (texture) {
+    material.map = texture;
+    material.color.setHex(0xffffff);
+    material.needsUpdate = true;
+    group.visible = true;
+  } else if (color) {
+    material.map = null;
+    material.color.copy(color);
+    material.needsUpdate = true;
+    group.visible = true;
+  } else {
+    // Transparent case
+    group.visible = false;
+  }
+}
+
+export function toggleLabEnvironment(scene: THREE.Scene, visible: boolean) {
+  const group = scene.getObjectByName(STUDIO_MESH_NAME) as THREE.Group;
+  if (group) {
+    group.visible = visible;
+  }
+}
+
 export async function applyBackground(scene: THREE.Scene, id: BackgroundId | string): Promise<AnimatedBackground | null> {
+  // Always clear the actual scene.background so our 3D lab environment is visible
+  scene.background = null;
+
   // Special case for Transparent
   if (id === 'transparent') {
-    scene.background = null;
-    console.log('[Background] Applied transparent');
+    applyTextureToStudio(scene, null, null);
+    console.log('[Background] Applied transparent (hid Lab environment)');
     return null;
   }
 
@@ -185,7 +267,7 @@ export async function applyBackground(scene: THREE.Scene, id: BackgroundId | str
         console.log('[Background] Detected GIF:', imageUrl);
         const gifTexture = new GifTexture();
         await gifTexture.load(imageUrl);
-        scene.background = gifTexture.texture;
+        applyTextureToStudio(scene, gifTexture.texture, null);
         
         return {
           texture: gifTexture.texture,
@@ -207,7 +289,7 @@ export async function applyBackground(scene: THREE.Scene, id: BackgroundId | str
         
         const videoTexture = new THREE.VideoTexture(video);
         videoTexture.colorSpace = THREE.SRGBColorSpace;
-        scene.background = videoTexture;
+        applyTextureToStudio(scene, videoTexture, null);
         
         return {
           texture: videoTexture,
@@ -251,8 +333,8 @@ export async function applyBackground(scene: THREE.Scene, id: BackgroundId | str
         textureCache.set(imageUrl, texture);
       }
       
-      scene.background = texture;
-      console.log('[Background] Applied image:', imageUrl);
+      applyTextureToStudio(scene, texture, null);
+      console.log('[Background] Applied image to Lab:', imageUrl);
       return null;
     } catch (error) {
       console.warn('[Background] Image load failed, using color fallback', error);
@@ -260,8 +342,8 @@ export async function applyBackground(scene: THREE.Scene, id: BackgroundId | str
   }
   
   // Fallback to solid color
-  scene.background = new THREE.Color(definition.color);
-  console.log('[Background] Applied color:', definition.color);
+  applyTextureToStudio(scene, null, new THREE.Color(definition.color));
+  console.log('[Background] Applied color to Lab:', definition.color);
   return null;
 }
 

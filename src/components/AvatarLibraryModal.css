@@ -9,7 +9,7 @@
 .avatar-card {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 0.5rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -26,7 +26,7 @@
 
 .avatar-thumbnail {
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 0;
   overflow: hidden;
   background: #000;
   position: relative;
@@ -74,7 +74,7 @@
   height: 40px;
   border: 4px solid rgba(255, 255, 255, 0.1);
   border-left-color: var(--accent);
-  border-radius: 50%;
+  border-radius: 0;
   animation: spin 1s linear infinite;
 }
 

@@ -9,17 +9,17 @@ import { avatarManager } from '../three/avatarManager';
 import { AboutModal } from './AboutModal';
 import { SettingsModal } from './SettingsModal';
 import { projectManager } from '../persistence/projectManager';
-import { 
-  GearSix, 
-  FloppyDisk, 
-  FolderOpen, 
+import {
+  GearSix,
+  FloppyDisk,
+  FolderOpen,
   Question,
   Atom,
   Flask,
   Broadcast,
-  Fire
-} from '@phosphor-icons/react';
-import { useUIStore } from '../state/useUIStore';
+  Fire,
+  List
+} from '@phosphor-icons/react';import { useUIStore } from '../state/useUIStore';
 
 import { LoginButton } from './auth/LoginButton';
 
@@ -40,6 +40,8 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const { recordExploration, user } = useUserStore();
   const resetSceneSettings = useSceneSettingsStore((state) => state.resetAll);
   const setStreamMode = useUIStore((state) => state.setStreamMode);
+  const sidebarOpen = useUIStore((state) => state.sidebarOpen);
+  const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
 
   const handleModeChange = (newMode: 'reactions' | 'poselab' | 'studio') => {
     onModeChange(newMode);
@@ -267,6 +269,16 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
           </button>
           
           <div className="hide-mobile" style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+          
+          <button 
+            className={`icon-button hide-mobile ${sidebarOpen ? 'active' : ''}`}
+            style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '0.5rem' }}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            title="Toggle Sidebar"
+          >
+            <List size={20} weight="duotone" />
+          </button>
+
           <LoginButton />
         </div>
       </header>

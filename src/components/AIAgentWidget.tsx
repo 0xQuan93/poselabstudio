@@ -239,7 +239,7 @@ export function AIAgentWidget() {
               <Button 
                 type="submit" 
                 disabled={!isAIActive || isLoading || !inputText.trim()}
-                style={{ width: '44px', height: '44px', borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: '44px', height: '44px', borderRadius: '0', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <PaperPlaneTilt size={20} weight="fill" />
               </Button>

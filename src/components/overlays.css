@@ -7,7 +7,7 @@
   background: transparent;
   pointer-events: none;
   z-index: 10;
-  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.9);
+  box-shadow: var(--shadow-md);
   mix-blend-mode: color-dodge;
   animation: glitch-anim 2.5s infinite;
   overflow: hidden;
@@ -101,7 +101,7 @@
   z-index: 13;
   animation: crt-flicker 0.15s infinite, crt-scan 8s linear infinite;
   overflow: hidden;
-  box-shadow: inset 0 0 100px rgba(0,0,0,0.5);
+  box-shadow: var(--shadow-md);
 }
 
 .overlay-crt::after {

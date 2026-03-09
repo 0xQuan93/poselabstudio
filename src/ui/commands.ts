@@ -19,7 +19,7 @@ export const commands: Action[] = [
     name: "Project: Save (.pose)",
     shortcut: ["ctrl+s"],
     keywords: "save export project",
-    section: "Project",
+    section: "Session",
     perform: () => {
         projectManager.downloadProject("My Project");
         getToast().addToast("Project saved", "success");
@@ -30,7 +30,7 @@ export const commands: Action[] = [
     name: "Project: Load (.pose)",
     shortcut: ["ctrl+o"],
     keywords: "load open import project",
-    section: "Project",
+    section: "Session",
     perform: () => {
         // Create a hidden file input to trigger upload
         const input = document.createElement('input');

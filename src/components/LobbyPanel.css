@@ -14,15 +14,14 @@
 
 .lobby-status-bar {
   background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
+  border: var(--border-default);
+  border-radius: 0;
   padding: 0.5rem 1rem;
   display: flex;
   align-items: center;
   gap: 1rem;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
   transition: all 0.2s ease;
   min-width: 160px;
 }
@@ -43,7 +42,7 @@
   width: 8px;
   height: 8px;
   background: #00ff9d;
-  border-radius: 50%;
+  border-radius: 0;
   box-shadow: 0 0 8px #00ff9d;
   animation: pulse-live 2s infinite;
 }
@@ -71,14 +70,13 @@
   width: 320px;
   height: 400px;
   background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  border: var(--border-default);
+  border-radius: 0;
   margin-bottom: 0.5rem; /* Space between chat and status bar */
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
   animation: slide-up 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   /* Reverse order so status bar is at bottom in DOM flow but visually chat is above */
   order: -1; 
@@ -108,7 +106,7 @@
 
 .lobby-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .lobby-empty-state {
@@ -139,7 +137,7 @@
 .lobby-input-area {
   padding: 0.75rem;
   background: rgba(0, 0, 0, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: var(--border-default);
   display: flex;
   gap: 0.5rem;
 }
@@ -147,8 +145,8 @@
 .lobby-input-area input {
   flex: 1;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border: var(--border-default);
+  border-radius: 0;
   padding: 0.5rem 0.75rem;
   color: #fff;
   font-size: 0.9rem;
@@ -160,13 +158,13 @@
 .lobby-input-area input:focus {
   background: rgba(255, 255, 255, 0.1);
   border-color: #00ffd6;
-  box-shadow: 0 0 0 2px rgba(0, 255, 214, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .lobby-input-area button {
   background: linear-gradient(135deg, #1c6cff, #6c2bff);
-  border: none;
-  border-radius: 8px;
+  border: var(--border-default);
+  border-radius: 0;
   color: white;
   font-weight: 600;
   padding: 0 1rem;
