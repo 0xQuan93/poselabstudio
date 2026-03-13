@@ -11,6 +11,7 @@
 
 .studio-feed-header {
   height: 60px; /* Explicit height for alignment */
+  flex-shrink: 0; /* Prevent header from squishing */
   padding: 0 2rem;
   display: flex;
   justify-content: space-between;
@@ -43,6 +44,7 @@
   overflow: hidden;
   white-space: nowrap;
   display: flex;
+  flex-shrink: 0; /* Prevent ticker from squishing */
   z-index: 9;
 }
 
@@ -72,11 +74,22 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2rem;
+  overflow-x: hidden;
+  padding: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 2rem;
-  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-auto-rows: max-content; /* Force rows to respect content height perfectly */
+  gap: 1.5rem;
+  align-content: start; /* Pack items to the top without stretching rows vertically */
+}
+
+/* Mobile specific grid adjustment */
+@media (max-width: 600px) {
+  .studio-feed-content {
+    grid-template-columns: 1fr; /* Force exactly one column on small screens */
+    padding: 1rem;
+    gap: 1rem;
+  }
 }
 
 /* Scrollbar styles */
@@ -104,6 +117,7 @@
   flex-direction: column;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   box-shadow: var(--shadow-md);
+  height: 100%; /* Fill the grid cell naturally */
 }
 
 .feed-item:hover {
@@ -114,7 +128,7 @@
 
 .feed-item-image {
   width: 100%;
-  aspect-ratio: 1; /* Default to square, image object-fit will handle the rest */
+  aspect-ratio: 1; /* Cleanest, native way to enforce a square */
   background: linear-gradient(135deg, rgba(30, 30, 35, 0.8), rgba(15, 15, 18, 0.9));
   display: flex;
   align-items: center;
@@ -122,13 +136,13 @@
   overflow: hidden;
   position: relative;
   border-bottom: var(--border-default);
-  flex-shrink: 0;
+  flex-shrink: 0; /* Absolutely forbid the image area from being squished */
 }
 
 .feed-item-image img {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* Keeps the whole image visible (e.g. 9:16 won't be cropped) */
+  object-fit: contain; /* Keep the whole image visible without distortion */
   transition: transform 0.5s ease;
 }
 
@@ -139,7 +153,10 @@
 .feed-item-details {
   padding: 1.25rem;
   background: rgba(15, 15, 18, 0.4);
-  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* Pushes the actions down if the card stretches */
+  flex-shrink: 0; /* Forbid the details/upvote area from being squished */
 }
 
 .feed-item-creator-info {
@@ -193,6 +210,7 @@
   align-items: center;
   padding-top: 1rem;
   border-top: var(--border-default);
+  margin-top: auto; /* Ensure actions sit at the absolute bottom of the card */
 }
 
 .action-btn {
