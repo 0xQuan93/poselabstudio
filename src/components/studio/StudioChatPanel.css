@@ -1,6 +1,7 @@
 .studio-chat-panel {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   height: 100%;
   width: 380px;
   flex-shrink: 0;
@@ -13,6 +14,7 @@
 @media (max-width: 960px) {
   .studio-chat-panel {
     width: 100%;
+    flex: none; /* override flex: 1 on mobile to use fixed height */
     height: 45vh; /* Take up bottom portion of screen */
     border-left: none;
     border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
@@ -55,7 +57,7 @@
 }
 
 .chat-messages {
-  flex: 1 1 auto;
+  flex: 1; /* force it to take all remaining space */
   margin-top: 0;
   display: flex;
   flex-direction: column;
@@ -161,6 +163,7 @@
   align-items: center;
   gap: var(--space-2);
   z-index: 10;
+  margin-top: auto; /* force push to the bottom if container expands */
 }
 
 .chat-input-wrapper {
