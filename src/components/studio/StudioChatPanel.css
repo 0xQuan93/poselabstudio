@@ -57,17 +57,14 @@
 }
 
 .chat-messages {
-  flex: 1; /* force it to take all remaining space */
-  margin-top: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   padding: var(--space-4);
-  /* Ensure padding-bottom allows messages to be visible above input if necessary,
-     but layout is flex so they naturally sit above. */
   padding-bottom: var(--space-4); 
   gap: var(--space-4);
-  min-height: 0; /* Crucial for scrolling inside flex */
+  min-height: 0;
 }
 
 
@@ -163,7 +160,6 @@
   align-items: center;
   gap: var(--space-2);
   z-index: 10;
-  margin-top: auto; /* force push to the bottom if container expands */
 }
 
 .chat-input-wrapper {
