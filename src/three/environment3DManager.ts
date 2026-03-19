@@ -11,6 +11,9 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
+import { Node, NodeLoader } from './nodeLoader';
+import { PhysicsLayers } from './physicsLayers';
+
 // ======================
 // Types & Configuration
 // ======================
@@ -30,8 +33,11 @@ export interface LoadedEnvironment {
   url: string;
   data?: string; // Base64 for persistence
   group: THREE.Group;
+  rootNode: Node; // The root node after parsing
   settings: Environment3DSettings;
   colliders: THREE.Mesh[];
+  rigidbodies: Node[];
+  lods: Node[];
 }
 
 export const DEFAULT_ENV_3D_SETTINGS: Environment3DSettings = {
@@ -129,22 +135,31 @@ class Environment3DManager {
             scale: autoScale,
           };
 
-          this.applySettings(group, settings);
-
+          const rootNode = NodeLoader.glbToNodes(gltf);
           const colliders: THREE.Mesh[] = [];
+          const rigidbodies: Node[] = [];
+          const lods: Node[] = [];
 
-          // Setup shadows and colliders for all meshes
-          group.traverse((child) => {
+          // Setup shadows and extract metadata from nodes
+          rootNode.traverse((node) => {
+            const child = node.object3d;
             if (child instanceof THREE.Mesh) {
               child.castShadow = settings.castShadow;
               child.receiveShadow = settings.receiveShadow;
               
-              // Generate BVH collider for each mesh
-              if (child.geometry) {
+              // Generate BVH collider for each mesh if it's a collider node or environment
+              if (child.geometry && (node.type === 'collider' || node.type === 'mesh')) {
                 // @ts-ignore
                 child.geometry.computeBoundsTree();
                 colliders.push(child);
               }
+            }
+
+            if (node.type === 'rigidbody') {
+              rigidbodies.push(node);
+            }
+            if (node.type === 'lod' || node.lod) {
+              lods.push(node);
             }
           });
 
@@ -157,8 +172,11 @@ class Environment3DManager {
             url,
             data: base64Data,
             group,
+            rootNode,
             settings,
             colliders,
+            rigidbodies,
+            lods
           };
 
           this.environments.set(id, environment);

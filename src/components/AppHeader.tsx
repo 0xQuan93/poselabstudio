@@ -18,9 +18,11 @@ import {
   Flask,
   Broadcast,
   Fire,
-  List
+  List,
+  Monitor
 } from '@phosphor-icons/react';
 import { useUIStore } from '../state/useUIStore';
+import { vrManager } from '../three/vrManager';
 
 import { LoginButton } from './auth/LoginButton';
 
@@ -35,6 +37,8 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const projectInputRef = useRef<HTMLInputElement>(null);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [vrSupported, setVrSupported] = useState(false);
+  const [inVr, setInVr] = useState(false);
   const { avatarType, setFileSource, setLive2dSource, sourceLabel } = useAvatarSource();
   const isAvatarReady = useReactionStore((state) => state.isAvatarReady);
   const { addToast } = useToastStore();
@@ -43,6 +47,32 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const setStreamMode = useUIStore((state) => state.setStreamMode);
   const sidebarOpen = useUIStore((state) => state.sidebarOpen);
   const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
+
+  // Check VR support
+  useEffect(() => {
+    const checkVR = async () => {
+      if (navigator.xr) {
+        const supported = await navigator.xr.isSessionSupported('immersive-vr');
+        setVrSupported(supported);
+      }
+    };
+    checkVR();
+  }, []);
+
+  const handleToggleVR = async () => {
+    try {
+      if (inVr) {
+        await vrManager.exitVR();
+        setInVr(false);
+      } else {
+        await vrManager.enterVR();
+        setInVr(true);
+        addToast('Entering VR...', 'success');
+      }
+    } catch (error) {
+      addToast('Failed to toggle VR session', 'error');
+    }
+  };
 
   // Easter egg
   useEffect(() => {
@@ -258,6 +288,17 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
           >
             <FloppyDisk size={20} weight="duotone" />
           </button>
+          
+          {vrSupported && (
+            <button 
+              className={`icon-button ${inVr ? 'active' : ''}`}
+              style={{ width: '32px', height: '32px', marginLeft: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: inVr ? 'var(--accent)' : 'inherit' }}
+              onClick={handleToggleVR}
+              title={inVr ? 'Exit VR' : 'Enter VR'}
+            >
+              <Monitor size={20} weight={inVr ? "fill" : "duotone"} />
+            </button>
+          )}
           <button 
             className="icon-button hide-mobile"
             style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}

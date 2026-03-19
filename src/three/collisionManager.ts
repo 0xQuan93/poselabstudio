@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { environment3DManager } from './environment3DManager';
+import { PhysicsLayers, PhysicsMasks } from './physicsLayers';
 
 class CollisionManager {
   private raycaster = new THREE.Raycaster();
@@ -10,16 +11,19 @@ class CollisionManager {
    * Find the ground height at a given world position
    * @returns The Y position of the ground, or null if no ground found
    */
-  getGroundHeight(worldPos: THREE.Vector3, maxDistance = 5): number | null {
-    const colliders = environment3DManager.getAllColliders();
-    if (colliders.length === 0) return 0; // Default to floor level if no environments
+  getGroundHeight(worldPos: THREE.Vector3, maxDistance = 5, mask: number = PhysicsMasks.GROUND): number | null {
+    const colliders = environment3DManager.getAllColliders().filter(m => {
+      // If the mesh is part of an environment, check its layer via the node system
+      // For now, we assume all environment colliders are on the ENVIRONMENT layer
+      return true; 
+    });
+    
+    if (colliders.length === 0) return 0;
 
-    // Raycast from higher up to catch floors that might be above the character (e.g. uneven terrain)
     this.tempVec.copy(worldPos);
-    this.tempVec.y += 2.0; // Start 2m above hips (approx 3m above feet)
+    this.tempVec.y += 2.0;
 
     this.raycaster.set(this.tempVec, this.tempDown);
-    // Increase range to catch deep valleys
     this.raycaster.far = maxDistance + 5.0;
 
     const intersects = this.raycaster.intersectObjects(colliders, true);
@@ -32,9 +36,8 @@ class CollisionManager {
 
   /**
    * Check for wall collisions in a direction
-   * @returns The distance to the wall, or null if no wall found within maxDistance
    */
-  checkWallCollision(worldPos: THREE.Vector3, direction: THREE.Vector3, maxDistance = 0.5): number | null {
+  checkWallCollision(worldPos: THREE.Vector3, direction: THREE.Vector3, maxDistance = 0.5, mask: number = PhysicsMasks.WALL): number | null {
     const colliders = environment3DManager.getAllColliders();
     if (colliders.length === 0) return null;
 
