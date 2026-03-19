@@ -12,7 +12,6 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 import { Node, NodeLoader } from './nodeLoader';
-import { PhysicsLayers } from './physicsLayers';
 
 // ======================
 // Types & Configuration

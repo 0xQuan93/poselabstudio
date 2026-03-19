@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { environment3DManager } from './environment3DManager';
-import { PhysicsLayers, PhysicsMasks } from './physicsLayers';
 
 class CollisionManager {
   private raycaster = new THREE.Raycaster();
@@ -11,12 +10,8 @@ class CollisionManager {
    * Find the ground height at a given world position
    * @returns The Y position of the ground, or null if no ground found
    */
-  getGroundHeight(worldPos: THREE.Vector3, maxDistance = 5, mask: number = PhysicsMasks.GROUND): number | null {
-    const colliders = environment3DManager.getAllColliders().filter(m => {
-      // If the mesh is part of an environment, check its layer via the node system
-      // For now, we assume all environment colliders are on the ENVIRONMENT layer
-      return true; 
-    });
+  getGroundHeight(worldPos: THREE.Vector3, maxDistance = 5): number | null {
+    const colliders = environment3DManager.getAllColliders();
     
     if (colliders.length === 0) return 0;
 
@@ -37,7 +32,7 @@ class CollisionManager {
   /**
    * Check for wall collisions in a direction
    */
-  checkWallCollision(worldPos: THREE.Vector3, direction: THREE.Vector3, maxDistance = 0.5, mask: number = PhysicsMasks.WALL): number | null {
+  checkWallCollision(worldPos: THREE.Vector3, direction: THREE.Vector3, maxDistance = 0.5): number | null {
     const colliders = environment3DManager.getAllColliders();
     if (colliders.length === 0) return null;
 

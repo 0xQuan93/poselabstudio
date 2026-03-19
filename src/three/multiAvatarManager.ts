@@ -88,6 +88,11 @@ class MultiAvatarManager {
     return this.isManualPosing;
   }
 
+  /** Get an avatar instance by peerId */
+  getAvatar(peerId: PeerId): AvatarInstance | undefined {
+    return this.avatars.get(peerId);
+  }
+
   /** Set manual posing mode */
   setManualPosing(enabled: boolean) {
     this.isManualPosing = enabled;

@@ -260,7 +260,7 @@ class VoiceChatManager {
       if (!peer.panner) return;
       const avatar = multiAvatarManager.getAvatar(peerId);
       if (avatar) {
-        avatar.scene.getWorldPosition(this.v1);
+        avatar.vrm.scene.getWorldPosition(this.v1);
         const time = this.audioContext!.currentTime;
         peer.panner.positionX.setValueAtTime(this.v1.x, time);
         peer.panner.positionY.setValueAtTime(this.v1.y, time);

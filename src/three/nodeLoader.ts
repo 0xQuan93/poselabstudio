@@ -90,7 +90,6 @@ export class NodeLoader {
   private static parse(object3ds: THREE.Object3D[], parentNode: Node, animations: THREE.AnimationClip[]) {
     for (const object3d of object3ds) {
       const props = object3d.userData || {};
-      const nodeType: NodeType = (props.node as NodeType) || (object3d.type.toLowerCase() as NodeType) || 'group';
       
       let node: Node | null = null;
 

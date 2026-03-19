@@ -28,7 +28,7 @@ class VRManager {
       throw new Error('VR is not supported on this device/browser');
     }
 
-    this.renderer = sceneManager.getRenderer();
+    this.renderer = (sceneManager.getRenderer() as THREE.WebGLRenderer) || null;
     if (!this.renderer) {
       throw new Error('Renderer not initialized');
     }
