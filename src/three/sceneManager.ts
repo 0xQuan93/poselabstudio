@@ -279,7 +279,11 @@ class SceneManager {
   }
 
   private processFrame(delta: number) {
-      this.controls?.update();
+      if (!this.renderer || !this.scene || !this.camera) return;
+
+      if (!this.renderer.xr.isPresenting) {
+        this.controls?.update();
+      }
       
       // Execute tick handlers in order of priority (higher first)
       const sortedPriorities = Array.from(this.tickHandlers.keys()).sort((a, b) => b - a);
@@ -287,7 +291,7 @@ class SceneManager {
           this.tickHandlers.get(priority)?.forEach(handler => handler(delta));
       });
 
-      if (this.followTarget && this.camera && this.controls) {
+      if (this.followTarget && this.controls && !this.renderer.xr.isPresenting) {
         this.followTarget.getWorldPosition(this.followTargetPosition);
         
         if (this.followMode === 'selfie') {
@@ -335,17 +339,25 @@ class SceneManager {
       }
 
       // Camera collision detection (prevent clipping through environment)
-      this.handleCameraCollision();
+      if (!this.renderer.xr.isPresenting) {
+        this.handleCameraCollision();
+      }
 
       // Update post-processing (for animated effects like film grain)
       postProcessingManager.update(delta);
 
-      // Render using post-processing composer if enabled, otherwise direct render
-      const composer = postProcessingManager.getComposer();
-      if (postProcessingManager.isEnabled() && composer) {
-        composer.render();
+      // WebXR Rendering logic
+      if (this.renderer.xr.isPresenting) {
+        // Bypassing composer in XR mode as it doesn't support Eye-layers easily
+        this.renderer.render(this.scene, this.camera);
       } else {
-        this.renderer?.render(this.scene!, this.camera!);
+        // Render using post-processing composer if enabled, otherwise direct render
+        const composer = postProcessingManager.getComposer();
+        if (postProcessingManager.isEnabled() && composer) {
+          composer.render();
+        } else {
+          this.renderer.render(this.scene, this.camera);
+        }
       }
   }
 
@@ -378,13 +390,13 @@ class SceneManager {
   }
 
   private startLoop() {
-    const loop = () => {
+    if (!this.renderer) return;
+
+    this.renderer.setAnimationLoop((_time, _frame) => {
       if (!this.isRunning) return;
       const delta = this.clock.getDelta();
       this.processFrame(delta);
-      this.animationFrameId = window.requestAnimationFrame(loop);
-    };
-    this.animationFrameId = window.requestAnimationFrame(loop);
+    });
   }
 
   /**
