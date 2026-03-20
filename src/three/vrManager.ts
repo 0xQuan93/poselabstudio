@@ -42,7 +42,10 @@ class VRManager {
 
   // Math Helpers
   private v1 = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
+  private q2 = new THREE.Quaternion();
+  private q3 = new THREE.Quaternion();
 
   constructor() {
     this.checkSupport();
@@ -194,6 +197,15 @@ class VRManager {
     this.hasTrackingReference = true;
   }
 
+  private setBoneWorldQuaternion(bone: THREE.Object3D, worldQuaternion: THREE.Quaternion) {
+    if (bone.parent) {
+      bone.parent.getWorldQuaternion(this.q2);
+      bone.quaternion.copy(this.q2.invert().multiply(worldQuaternion));
+    } else {
+      bone.quaternion.copy(worldQuaternion);
+    }
+  }
+
   private onTriggerPressed() {
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
@@ -286,8 +298,6 @@ class VRManager {
     const camera = sceneManager.getCamera();
     if (!vrm || !camera) return;
 
-    const invSceneQuat = vrm.scene.quaternion.clone().invert();
-
     // 1. HEAD & SPINE SOLVER
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     const chestNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Chest);
@@ -301,20 +311,15 @@ class VRManager {
 
       // Rotation
       camera.getWorldQuaternion(this.q1);
-      const localHeadQuat = this.q1.clone().premultiply(invSceneQuat);
-      headNode.quaternion.copy(localHeadQuat);
+      this.setBoneWorldQuaternion(headNode, this.q1);
 
       // Spine Bending (Tilt chest/spine to look natural)
       if (chestNode && spineNode) {
-          // Calculate head forward vector
-          const headForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.q1);
-          // Distribute rotation across spine chain (subtle)
-          const bendQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), headForward);
-          bendQuat.premultiply(invSceneQuat);
-          
-          // Apply 30% to chest, 20% to spine for organic leaning
-          chestNode.quaternion.slerp(bendQuat, 0.3);
-          spineNode.quaternion.slerp(bendQuat, 0.2);
+          const torsoLocalQuat = vrm.scene.quaternion.clone().invert().multiply(this.q1);
+          const identityQuat = new THREE.Quaternion();
+
+          chestNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.3));
+          spineNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.2));
       }
 
       // Hips Position (calibrated follow + crouching)
@@ -357,6 +362,7 @@ class VRManager {
         
         const reachVec = this.v1.clone().sub(shoulderPos);
         const dist = reachVec.length();
+        if (dist < 1e-5) return;
         const reachDir = reachVec.clone().normalize();
         
         // Law of Cosines for Elbow
@@ -368,23 +374,27 @@ class VRManager {
         const cosBeta = (d1 * d1 + c * c - d2 * d2) / (2 * d1 * c);
         const beta = Math.acos(THREE.MathUtils.clamp(cosBeta, -1, 1));
 
-        // Solve Rotation
-        const baseDir = new THREE.Vector3(idx === 0 ? 1 : -1, 0, 0); // VRM Arms out along X
+        // Solve Rotation in world space, then convert back to the bone's
+        // parent-local rotation. This keeps controller mapping aligned with the
+        // actual arm parent transform instead of scene space.
+        upperNode.parent?.getWorldQuaternion(this.q2);
+        const baseDir = new THREE.Vector3(idx === 0 ? 1 : -1, 0, 0).applyQuaternion(this.q2).normalize(); // VRM arms rest along local X
         const pole = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion); // Elbows back
         const sideNormal = reachDir.clone().cross(pole).normalize();
         
         const shoulderQuat = new THREE.Quaternion().setFromUnitVectors(baseDir, reachDir);
         const shoulderBend = new THREE.Quaternion().setFromAxisAngle(sideNormal, idx === 0 ? -beta : beta);
+        const shoulderWorldQuat = shoulderBend.multiply(shoulderQuat).multiply(this.q2.clone());
         
-        upperNode.quaternion.copy(shoulderQuat).multiply(shoulderBend).premultiply(invSceneQuat);
+        this.setBoneWorldQuaternion(upperNode, shoulderWorldQuat);
         
         const elbowBend = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), idx === 0 ? (Math.PI - gamma) : -(Math.PI - gamma));
         lowerNode.quaternion.copy(elbowBend);
 
         // Hand Rotation
-        const localHandQuat = this.q1.clone().premultiply(invSceneQuat);
         const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, idx === 0 ? Math.PI/2 : -Math.PI/2));
-        handNode.quaternion.copy(localHandQuat).multiply(handCorr);
+        this.q3.copy(this.q1).multiply(handCorr);
+        this.setBoneWorldQuaternion(handNode, this.q3);
         
         // Keep the wrist bone anchored to its default local offset. Driving the
         // whole hand bone to world-space controller coordinates breaks the arm
