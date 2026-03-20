@@ -26,7 +26,6 @@ class VRManager {
   private currentVrm: any = null;
 
   // Calibration Data
-  private isCalibrated = false;
   private userHeight = 1.65;
   private avatarHeight = 1.65;
   private scaleFactor = 1.0;
@@ -274,7 +273,6 @@ class VRManager {
 
     // 1. HEAD & SPINE SOLVER
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
-    const neckNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Neck);
     const chestNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Chest);
     const spineNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Spine);
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
