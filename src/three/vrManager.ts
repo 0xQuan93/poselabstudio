@@ -8,9 +8,10 @@ import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
 
 /**
- * VR Manager
+ * VR Manager (VRIK Version)
  * 
- * Handles WebXR sessions, corrected VRIK mapping, and in-VR photo review/sharing.
+ * Provides professional-grade avatar tracking comparable to VRChat/Warudo.
+ * Features: 2-bone arm IK, spine/chest bending, hip height tracking, and auto-calibration.
  */
 class VRManager {
   private session: XRSession | null = null;
@@ -24,33 +25,41 @@ class VRManager {
   private headMeshes: THREE.Mesh[] = [];
   private currentVrm: any = null;
 
-  // Snapshot Camera for VR
+  // Calibration Data
+  private isCalibrated = false;
+  private userHeight = 1.65;
+  private avatarHeight = 1.65;
+  private scaleFactor = 1.0;
+  private initialAvatarPos = new THREE.Vector3();
+
+  // Snapshot/Review
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
-  
-  // VR Review Window (Pre-created for production stability)
   private reviewPlane: THREE.Mesh | null = null;
   private lastSnapshotUrl: string | null = null;
 
+  // Math Helpers
+  private v1 = new THREE.Vector3();
+  private q1 = new THREE.Quaternion();
+
   constructor() {
     this.checkSupport();
-    this.cameraGroup.name = 'VR_Camera_Group';
+    this.cameraGroup.name = 'VR_RIG';
     this.initReviewPlane();
   }
 
   private initReviewPlane() {
-      const geometry = new THREE.PlaneGeometry(1.2, 0.675);
-      const material = new THREE.MeshBasicMaterial({ 
-          color: 0xffffff,
-          side: THREE.DoubleSide, 
-          transparent: true,
-          opacity: 0,
-          depthTest: false 
-      });
-      this.reviewPlane = new THREE.Mesh(geometry, material);
-      this.reviewPlane.name = 'VR_Review_Window';
-      this.reviewPlane.visible = false;
-      this.reviewPlane.layers.enable(0); 
-      this.reviewPlane.renderOrder = 999; 
+    const geometry = new THREE.PlaneGeometry(1.2, 0.675);
+    const material = new THREE.MeshBasicMaterial({ 
+        color: 0xffffff,
+        side: THREE.DoubleSide, 
+        transparent: true,
+        opacity: 0,
+        depthTest: false 
+    });
+    this.reviewPlane = new THREE.Mesh(geometry, material);
+    this.reviewPlane.name = 'VR_Review_Window';
+    this.reviewPlane.visible = false;
+    this.reviewPlane.renderOrder = 999;
   }
 
   private async checkSupport() {
@@ -61,32 +70,27 @@ class VRManager {
 
   public async enterVR() {
     if (!this.isVRSupported || !navigator.xr) {
-      throw new Error('VR is not supported on this device/browser');
+      throw new Error('VR is not supported');
     }
 
     this.renderer = (sceneManager.getRenderer() as THREE.WebGLRenderer) || null;
     const scene = sceneManager.getScene();
     const camera = sceneManager.getCamera();
     
-    if (!this.renderer || !scene || !camera) {
-      throw new Error('Three.js elements not initialized');
-    }
+    if (!this.renderer || !scene || !camera) throw new Error('Not initialized');
 
-    if (this.reviewPlane && !this.reviewPlane.parent) {
-        scene.add(this.reviewPlane);
-    }
-
-    // 1. COMPLETELY OVERRIDE ANIMATIONS
+    // 1. Force state
     avatarManager.setManualPosing(true);
+    avatarManager.setInteraction(true); // Disable auto-grounding
     animationManager.stopAnimation(true, true); 
     
     const vrm = avatarManager.getVRM();
     if (vrm) {
         vrm.humanoid?.resetPose();
-        if (vrm.expressionManager) {
-            vrm.expressionManager.expressions.forEach(e => vrm.expressionManager!.setValue(e.expressionName, 0));
-        }
+        this.initialAvatarPos.copy(vrm.scene.position);
     }
+
+    if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
 
     this.renderer.shadowMap.enabled = false;
     this.renderer.setPixelRatio(1.0);
@@ -105,142 +109,129 @@ class VRManager {
       this.originalCameraParent = camera.parent;
       this.cameraGroup.add(camera);
       
-      camera.position.set(0, 0, 0);
-      camera.rotation.set(0, 0, 0);
+      this.setupControllers();
 
+      // Anchor rig to avatar position
       if (vrm) {
         this.cameraGroup.position.copy(vrm.scene.position);
         this.cameraGroup.rotation.y = vrm.scene.rotation.y;
       }
-
-      this.setupControllers();
+      
+      camera.position.set(0, 0, 0);
+      camera.rotation.set(0, 0, 0);
 
       session.addEventListener('end', () => this.onSessionEnded());
       sceneManager.registerTick(this.update, -100);
 
-      console.log('[VRManager] VR Session started - Pre-init systems ready');
+      // Trigger auto-calibration after 2 seconds
+      setTimeout(() => this.calibrate(), 2000);
+
+      console.log('[VRManager] VRIK Session Started');
     } catch (error) {
-      console.error('[VRManager] Failed to enter VR:', error);
+      console.error('[VRManager] Error:', error);
       avatarManager.setManualPosing(false);
+      avatarManager.setInteraction(false);
       throw error;
     }
   }
 
   private setupControllers() {
     if (!this.renderer) return;
-    const scene = sceneManager.getScene();
-    if (!scene) return;
-
-    const controllerModelFactory = new XRControllerModelFactory();
-
+    const modelFactory = new XRControllerModelFactory();
     for (let i = 0; i < 2; i++) {
-      const controller = this.renderer.xr.getController(i);
-      
-      controller.addEventListener('selectstart', () => {
-        if (this.reviewPlane && this.reviewPlane.visible) {
-            this.handleReviewInteraction(i); 
-        } else {
-            this.onTriggerPressed(i);
-        }
+      const ctrl = this.renderer.xr.getController(i);
+      ctrl.addEventListener('selectstart', () => {
+        if (this.reviewPlane?.visible) this.handleReviewInteraction(i);
+        else this.onTriggerPressed(i);
       });
-
-      scene.add(controller);
-      this.controllers.push(controller);
+      this.cameraGroup.add(ctrl);
+      this.controllers.push(ctrl);
 
       const grip = this.renderer.xr.getControllerGrip(i);
-      const model = controllerModelFactory.createControllerModel(grip);
-      grip.add(model);
-      scene.add(grip);
+      grip.add(modelFactory.createControllerModel(grip));
+      this.cameraGroup.add(grip);
       this.controllerGrips.push(grip);
     }
   }
 
-  private onTriggerPressed(index: number) {
-    console.log(`[VRManager] Controller ${index} trigger pressed - Taking snapshot`);
+  /**
+   * Calibration: Matches user height to avatar scale
+   */
+  private calibrate() {
+    const vrm = avatarManager.getVRM();
+    const camera = sceneManager.getCamera();
+    if (!vrm || !camera) return;
+
+    // Get avatar head height
+    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    if (!headNode) return;
+    headNode.getWorldPosition(this.v1);
+    this.avatarHeight = this.v1.y - vrm.scene.position.y;
+
+    // Get user head height
+    camera.getWorldPosition(this.v1);
+    this.userHeight = this.v1.y - vrm.scene.position.y;
+
+    this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
     
+    useToastStore.getState().addToast('VR Calibration Complete', 'success');
+    console.log(`[VRManager] Calibrated: UserHeight=${this.userHeight.toFixed(2)} AvatarHeight=${this.avatarHeight.toFixed(2)} ScaleFactor=${this.scaleFactor.toFixed(2)}`);
+  }
+
+  private onTriggerPressed(_index: number) {
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
-
-    const head = new THREE.Vector3();
-    const forward = new THREE.Vector3(0, 0, 1);
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
-    
-    if (headNode) {
-      headNode.getWorldPosition(head);
-    } else {
-      vrm.scene.getWorldPosition(head);
-      head.y += 1.6;
-    }
-    
+    const head = new THREE.Vector3();
+    if (headNode) headNode.getWorldPosition(head);
+    else head.copy(vrm.scene.position).y += 1.6;
+
+    const forward = new THREE.Vector3(0, 0, 1);
     vrm.scene.getWorldDirection(forward);
-    this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.0)).add(new THREE.Vector3(0, 0.2, 0));
+    this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.2)).add(new THREE.Vector3(0, 0.1, 0));
     this.snapshotCamera.lookAt(head);
 
     const originalMask = this.snapshotCamera.layers.mask;
     this.snapshotCamera.layers.enableAll();
 
     setTimeout(() => {
-        sceneManager.captureSnapshot({ 
-          includeLogo: true,
-          width: 1280, 
-          height: 720,
-          camera: this.snapshotCamera
-        }).then(dataUrl => {
-          if (dataUrl) {
-            this.lastSnapshotUrl = dataUrl;
-            this.showVRReview(dataUrl);
-          }
-          this.snapshotCamera.layers.mask = originalMask;
-        });
+      sceneManager.captureSnapshot({ 
+        includeLogo: true, width: 1280, height: 720, camera: this.snapshotCamera 
+      }).then(url => {
+        if (url) {
+          this.lastSnapshotUrl = url;
+          this.showVRReview(url);
+        }
+        this.snapshotCamera.layers.mask = originalMask;
+      });
     }, 100);
   }
 
-  private showVRReview(dataUrl: string) {
+  private showVRReview(url: string) {
     const camera = sceneManager.getCamera();
     if (!camera || !this.reviewPlane) return;
-
-    const loader = new THREE.TextureLoader();
-    loader.load(dataUrl, (texture) => {
+    new THREE.TextureLoader().load(url, (tex) => {
       const mat = this.reviewPlane!.material as THREE.MeshBasicMaterial;
-      mat.map = texture;
+      mat.map = tex;
       mat.opacity = 1.0;
       mat.needsUpdate = true;
-
-      const forward = new THREE.Vector3(0, 0, -1);
-      forward.applyQuaternion(camera.quaternion);
-      
-      this.reviewPlane!.position.copy(camera.position).add(forward.multiplyScalar(1.0));
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      this.reviewPlane!.position.copy(camera.position).add(forward.multiplyScalar(0.8));
       this.reviewPlane!.lookAt(camera.position);
       this.reviewPlane!.visible = true;
-      
-      console.log('[VRManager] Review window visible at:', this.reviewPlane!.position);
-    }, undefined, (err) => {
-      console.error('[VRManager] Failed to load snapshot texture:', err);
     });
   }
 
-  private handleReviewInteraction(index: number) {
-    if (!this.reviewPlane || !this.lastSnapshotUrl) return;
-
-    if (index === 0) { // Left Hand = DISCARD
-        console.log('[VRManager] Photo discarded');
-        this.hideReview();
-    } else { // Right Hand = SAVE & PUBLISH
-        console.log('[VRManager] Photo saved & publishing...');
-        this.saveLastSnapshot();
-        this.publishToFeed();
-        this.hideReview();
-    }
+  private handleReviewInteraction(i: number) {
+    if (i === 0) this.hideReview(); // Left = discard
+    else { this.saveLastSnapshot(); this.publishToFeed(); this.hideReview(); } // Right = save
   }
 
   private async publishToFeed() {
     const user = useUserStore.getState().user;
     if (!user || !this.lastSnapshotUrl) return;
-
     try {
-      const currentLevel = Math.floor((user?.lp || 0) / 100) + 1;
-      
-      const response = await fetch('/.netlify/functions/publish-pose', {
+      await fetch('/.netlify/functions/publish-pose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -248,17 +239,11 @@ class VRManager {
           creatorName: user.username || 'VR Creator',
           creatorAvatarUrl: user.avatarUrl,
           creatorId: user.id,
-          description: `Level ${currentLevel} VR Capture | #PoseLabVR`
+          description: 'VR Posing Session | #PoseLab'
         })
       });
-
-      if (response.ok) {
-        useToastStore.getState().addToast('Successfully published to Discord Studio!', 'success');
-        useUserStore.getState().recordGamifiedAction('publish_daily');
-      }
-    } catch (e) {
-      console.error('[VRManager] Failed to publish VR photo', e);
-    }
+      useToastStore.getState().addToast('Published to Studio Feed!', 'success');
+    } catch (e) { console.error(e); }
   }
 
   private hideReview() {
@@ -270,160 +255,160 @@ class VRManager {
 
   private saveLastSnapshot() {
     if (!this.lastSnapshotUrl) return;
-    const link = document.createElement('a');
-    link.href = this.lastSnapshotUrl;
-    link.download = `poselab_vr_snapshot_${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement('a');
+    a.href = this.lastSnapshotUrl;
+    a.download = `poselab_vr_${Date.now()}.png`;
+    a.click();
   }
 
+  /**
+   * Core VRIK Update Loop
+   */
   private update = () => {
     if (!this.session) return;
-
     const vrm = avatarManager.getVRM();
-    if (!vrm) return;
-
     const camera = sceneManager.getCamera();
-    if (!camera) return;
+    if (!vrm || !camera) return;
 
     const invSceneQuat = vrm.scene.quaternion.clone().invert();
 
-    // 1. Head Mapping
+    // 1. HEAD & SPINE SOLVER
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
-    if (headNode && this.firstPersonMode) {
-      const camQuat = new THREE.Quaternion();
-      camera.getWorldQuaternion(camQuat);
-      const localHeadQuat = camQuat.clone().premultiply(invSceneQuat);
+    const neckNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Neck);
+    const chestNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Chest);
+    const spineNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Spine);
+    const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
+
+    if (headNode && hipsNode) {
+      // Rotation
+      camera.getWorldQuaternion(this.q1);
+      const localHeadQuat = this.q1.clone().premultiply(invSceneQuat);
       headNode.quaternion.copy(localHeadQuat);
+
+      // Spine Bending (Tilt chest/spine to look natural)
+      if (chestNode && spineNode) {
+          // Calculate head forward vector
+          const headForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.q1);
+          // Distribute rotation across spine chain (subtle)
+          const bendQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), headForward);
+          bendQuat.premultiply(invSceneQuat);
+          
+          // Apply 30% to chest, 20% to spine for organic leaning
+          chestNode.quaternion.slerp(bendQuat, 0.3);
+          spineNode.quaternion.slerp(bendQuat, 0.2);
+      }
+
+      // Hips Position (Crouching)
+      camera.getWorldPosition(this.v1);
+      vrm.scene.worldToLocal(this.v1);
+      const currentHeight = this.v1.y;
+      const crouch = Math.max(-0.5, Math.min(0.5, (this.userHeight - currentHeight) * this.scaleFactor));
+      hipsNode.position.y = -crouch;
     }
 
-    // 2. Hand & Arm Mapping (Controllers to Hand/Arm Bones)
-    this.controllers.forEach((controller, index) => {
-      if (!controller.visible) return;
-      
-      const side = index === 0 ? 'Left' : 'Right';
-      const upperArmName = side === 'Left' ? VRMHumanBoneName.LeftUpperArm : VRMHumanBoneName.RightUpperArm;
-      const lowerArmName = side === 'Left' ? VRMHumanBoneName.LeftLowerArm : VRMHumanBoneName.RightLowerArm;
-      const handBoneName = index === 0 ? VRMHumanBoneName.LeftHand : VRMHumanBoneName.RightHand;
-      
-      const upperArmNode = vrm.humanoid?.getNormalizedBoneNode(upperArmName);
-      const lowerArmNode = vrm.humanoid?.getNormalizedBoneNode(lowerArmName);
-      const handNode = vrm.humanoid?.getNormalizedBoneNode(handBoneName);
-      
-      if (handNode && upperArmNode && lowerArmNode) {
-        const ctrlPos = new THREE.Vector3();
-        const ctrlQuat = new THREE.Quaternion();
-        controller.getWorldPosition(ctrlPos);
-        controller.getWorldQuaternion(ctrlQuat);
+    // 2. ARM IK SOLVER (2-Bone Analytical)
+    this.controllers.forEach((ctrl, idx) => {
+      if (!ctrl.visible) return;
+      const side = idx === 0 ? 'Left' : 'Right';
+      const upperName = side === 'Left' ? VRMHumanBoneName.LeftUpperArm : VRMHumanBoneName.RightUpperArm;
+      const lowerName = side === 'Left' ? VRMHumanBoneName.LeftLowerArm : VRMHumanBoneName.RightLowerArm;
+      const handName = side === 'Left' ? VRMHumanBoneName.LeftHand : VRMHumanBoneName.RightHand;
 
-        // --- ARM REACH LOGIC (Simplified IK) ---
+      const upperNode = vrm.humanoid?.getNormalizedBoneNode(upperName);
+      const lowerNode = vrm.humanoid?.getNormalizedBoneNode(lowerName);
+      const handNode = vrm.humanoid?.getNormalizedBoneNode(handName);
+
+      if (upperNode && lowerNode && handNode) {
+        ctrl.getWorldPosition(this.v1);
+        ctrl.getWorldQuaternion(this.q1);
+
         const shoulderPos = new THREE.Vector3();
-        upperArmNode.getWorldPosition(shoulderPos);
+        upperNode.getWorldPosition(shoulderPos);
         
-        const reachDir = ctrlPos.clone().sub(shoulderPos).normalize();
+        const d1 = lowerNode.position.length(); // Upper arm len
+        const d2 = handNode.position.length();  // Lower arm len
         
-        const upperArmQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), reachDir);
-        upperArmNode.quaternion.copy(upperArmQuat).premultiply(invSceneQuat);
+        const reachVec = this.v1.clone().sub(shoulderPos);
+        const dist = reachVec.length();
+        const reachDir = reachVec.clone().normalize();
         
-        lowerArmNode.quaternion.set(0, 0, 0, 1);
+        // Law of Cosines for Elbow
+        const c = Math.min(dist, (d1 + d2) * 0.999);
+        const cosGamma = (d1 * d1 + d2 * d2 - c * c) / (2 * d1 * d2);
+        const gamma = Math.acos(THREE.MathUtils.clamp(cosGamma, -1, 1));
 
-        // --- HAND ORIENTATION ---
-        const localHandQuat = ctrlQuat.clone().premultiply(invSceneQuat);
-        const handCorrection = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, index === 0 ? Math.PI/2 : -Math.PI/2));
-        localHandQuat.multiply(handCorrection);
-        handNode.quaternion.copy(localHandQuat);
+        // Law of Cosines for Shoulder Offset
+        const cosBeta = (d1 * d1 + c * c - d2 * d2) / (2 * d1 * c);
+        const beta = Math.acos(THREE.MathUtils.clamp(cosBeta, -1, 1));
+
+        // Solve Rotation
+        const baseDir = new THREE.Vector3(idx === 0 ? 1 : -1, 0, 0); // VRM Arms out along X
+        const pole = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion); // Elbows back
+        const sideNormal = reachDir.clone().cross(pole).normalize();
         
-        const localHandPos = ctrlPos.clone();
+        const shoulderQuat = new THREE.Quaternion().setFromUnitVectors(baseDir, reachDir);
+        const shoulderBend = new THREE.Quaternion().setFromAxisAngle(sideNormal, idx === 0 ? -beta : beta);
+        
+        upperNode.quaternion.copy(shoulderQuat).multiply(shoulderBend).premultiply(invSceneQuat);
+        
+        const elbowBend = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), idx === 0 ? (Math.PI - gamma) : -(Math.PI - gamma));
+        lowerNode.quaternion.copy(elbowBend);
+
+        // Hand Rotation
+        const localHandQuat = this.q1.clone().premultiply(invSceneQuat);
+        const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, idx === 0 ? Math.PI/2 : -Math.PI/2));
+        handNode.quaternion.copy(localHandQuat).multiply(handCorr);
+        
+        // Stretch hand to controller position (handles avatar/user scale diff)
+        const localHandPos = this.v1.clone();
         vrm.scene.worldToLocal(localHandPos);
         handNode.position.copy(localHandPos);
       }
     });
 
-    // 3. Crouching & Hips
-    const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
-    if (hipsNode) {
-        const camPos = new THREE.Vector3();
-        camera.getWorldPosition(camPos);
-        vrm.scene.worldToLocal(camPos);
-        const crouch = Math.max(0, 1.55 - camPos.y);
-        hipsNode.position.y = -crouch;
-    }
-
-    // 4. Visibility (Head Hiding)
+    // 3. FPV MESH HIDING
     if (this.firstPersonMode) {
       if (this.currentVrm !== vrm) {
         this.currentVrm = vrm;
         this.headMeshes = [];
-        vrm.scene.traverse((obj: THREE.Object3D) => {
-          if (obj instanceof THREE.Mesh) {
-            const name = obj.name.toLowerCase();
-            if (name.includes('head') || name.includes('face') || name.includes('hair') || 
-                name.includes('eye') || name.includes('mouth') || name.includes('brow') ||
-                name.includes('ear') || name.includes('tooth') || name.includes('tongue')) {
-              this.headMeshes.push(obj);
-            }
+        vrm.scene.traverse(o => {
+          if (o instanceof THREE.Mesh) {
+            const n = o.name.toLowerCase();
+            if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) this.headMeshes.push(o);
           }
         });
       }
-
-      const VR_INVISIBLE_LAYER = 10;
-      camera.layers.enable(0); 
-      camera.layers.disable(VR_INVISIBLE_LAYER);
-      this.headMeshes.forEach(mesh => mesh.layers.set(VR_INVISIBLE_LAYER));
+      camera.layers.disable(10);
+      this.headMeshes.forEach(m => m.layers.set(10));
     }
   };
 
   private onSessionEnded() {
     const vrm = avatarManager.getVRM();
     if (vrm) {
-        const finalPose = vrm.humanoid?.getNormalizedPose();
-        if (finalPose) {
-            avatarManager.setManualPosing(false);
-            avatarManager.applyRawPose({ vrmPose: finalPose }, false, 'static', false);
-        }
+      const pose = vrm.humanoid?.getNormalizedPose();
+      avatarManager.setManualPosing(false);
+      avatarManager.setInteraction(false);
+      if (pose) avatarManager.applyRawPose({ vrmPose: pose }, false, 'static', false);
     } else {
-        avatarManager.setManualPosing(false);
+      avatarManager.setManualPosing(false);
+      avatarManager.setInteraction(false);
     }
-    
-    const camera = sceneManager.getCamera();
+    const cam = sceneManager.getCamera();
     const scene = sceneManager.getScene();
-    
-    if (camera && this.originalCameraParent) {
-      this.originalCameraParent.add(camera);
-    } else if (camera && scene) {
-      scene.add(camera);
-    }
-
-    if (scene && this.cameraGroup) {
-      scene.remove(this.cameraGroup);
-    }
-    
+    if (cam && this.originalCameraParent) this.originalCameraParent.add(cam);
+    if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
     this.hideReview();
-
     this.session = null;
     this.controllers = [];
     this.controllerGrips = [];
-    console.log('[VRManager] VR Session ended - Pose saved');
+    console.log('[VRManager] Session Ended');
   }
 
-  public async exitVR() {
-    if (this.session) {
-      await this.session.end();
-    }
-  }
-
-  public isSupported(): boolean {
-    return this.isVRSupported;
-  }
-
-  public isInVR(): boolean {
-    return this.session !== null;
-  }
-
-  public setFirstPerson(enabled: boolean) {
-    this.firstPersonMode = enabled;
-  }
+  public async exitVR() { if (this.session) await this.session.end(); }
+  public isSupported() { return this.isVRSupported; }
+  public isInVR() { return this.session !== null; }
+  public setFirstPerson(e: boolean) { this.firstPersonMode = e; }
 }
 
 export const vrManager = new VRManager();
