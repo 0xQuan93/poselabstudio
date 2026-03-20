@@ -7,7 +7,7 @@ import { VRMHumanBoneName } from '@pixiv/three-vrm';
 /**
  * VR Manager
  * 
- * Handles WebXR sessions, VRIK-style bone mapping, and controller interactions.
+ * Handles WebXR sessions, corrected VRIK mapping, and in-VR photo review.
  */
 class VRManager {
   private session: XRSession | null = null;
@@ -23,6 +23,10 @@ class VRManager {
 
   // Snapshot Camera for VR
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+  
+  // VR Review Window
+  private reviewPlane: THREE.Mesh | null = null;
+  private lastSnapshotUrl: string | null = null;
 
   constructor() {
     this.checkSupport();
@@ -71,7 +75,7 @@ class VRManager {
       this.setupControllers();
 
       session.addEventListener('end', () => this.onSessionEnded());
-      // Use a lower priority (-10) so VR bone mapping overrides animations
+      // Use a lower priority (-10) so VR bone mapping overrides animations and manual posing
       sceneManager.registerTick(this.update, -10);
 
       console.log('[VRManager] VR Session started');
@@ -90,7 +94,13 @@ class VRManager {
 
     for (let i = 0; i < 2; i++) {
       const controller = this.renderer.xr.getController(i);
-      controller.addEventListener('selectstart', () => this.onTriggerPressed(i));
+      controller.addEventListener('selectstart', () => {
+        if (this.reviewPlane && this.reviewPlane.visible) {
+            this.handleReviewInteraction(i);
+        } else {
+            this.onTriggerPressed(i);
+        }
+      });
       scene.add(controller);
       this.controllers.push(controller);
 
@@ -108,7 +118,6 @@ class VRManager {
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
 
-    // Position snapshot camera in front of avatar
     const head = new THREE.Vector3();
     const forward = new THREE.Vector3(0, 0, 1);
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
@@ -120,13 +129,11 @@ class VRManager {
       head.y += 1.6;
     }
     
-    // Character's forward direction
     vrm.scene.getWorldDirection(forward);
     // Point camera at head from 2.0m away, slightly elevated
     this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.0)).add(new THREE.Vector3(0, 0.2, 0));
     this.snapshotCamera.lookAt(head);
 
-    // Temporarily show all layers for the snapshot camera
     const originalMask = this.snapshotCamera.layers.mask;
     this.snapshotCamera.layers.enableAll();
 
@@ -138,18 +145,76 @@ class VRManager {
           camera: this.snapshotCamera
         }).then(dataUrl => {
           if (dataUrl) {
-            const link = document.createElement('a');
-            link.href = dataUrl;
-            link.download = `poselab_avatar_snapshot_${Date.now()}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            console.log('[VRManager] Avatar snapshot saved');
+            this.lastSnapshotUrl = dataUrl;
+            this.showVRReview(dataUrl);
+            console.log('[VRManager] Avatar snapshot captured for review');
           }
-          // Restore mask (though snapshot call uses a clone usually, better safe)
           this.snapshotCamera.layers.mask = originalMask;
         });
     }, 100);
+  }
+
+  /**
+   * Show a 3D preview of the photo inside VR
+   */
+  private showVRReview(dataUrl: string) {
+    const scene = sceneManager.getScene();
+    const camera = sceneManager.getCamera();
+    if (!scene || !camera) return;
+
+    // Remove existing review plane
+    if (this.reviewPlane) {
+      scene.remove(this.reviewPlane);
+    }
+
+    const loader = new THREE.TextureLoader();
+    loader.load(dataUrl, (texture) => {
+      const geometry = new THREE.PlaneGeometry(0.8, 0.45); // 16:9 aspect
+      const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+      this.reviewPlane = new THREE.Mesh(geometry, material);
+
+      // Position in front of camera
+      const forward = new THREE.Vector3(0, 0, -1);
+      forward.applyQuaternion(camera.quaternion);
+      
+      this.reviewPlane.position.copy(camera.position).add(forward.multiplyScalar(1.2));
+      this.reviewPlane.lookAt(camera.position);
+      this.reviewPlane.name = 'VR_Review_Window';
+      
+      scene.add(this.reviewPlane);
+    });
+  }
+
+  private handleReviewInteraction(index: number) {
+    if (!this.reviewPlane || !this.lastSnapshotUrl) return;
+
+    // For now, left trigger = Cancel, right trigger = Save
+    if (index === 0) {
+        console.log('[VRManager] Review Cancelled');
+        this.hideReview();
+    } else {
+        console.log('[VRManager] Review Saved');
+        this.saveLastSnapshot();
+        this.hideReview();
+    }
+  }
+
+  private hideReview() {
+    if (this.reviewPlane) {
+      this.reviewPlane.visible = false;
+      const scene = sceneManager.getScene();
+      if (scene) scene.remove(this.reviewPlane);
+    }
+  }
+
+  private saveLastSnapshot() {
+    if (!this.lastSnapshotUrl) return;
+    const link = document.createElement('a');
+    link.href = this.lastSnapshotUrl;
+    link.download = `poselab_avatar_snapshot_${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   private update = () => {
@@ -161,27 +226,27 @@ class VRManager {
     const camera = sceneManager.getCamera();
     if (!camera) return;
 
-    // 1. Position the avatar to match the VR session floor
-    // We keep the avatar at its current scene position, but sync bones
-    
-    // 2. Head Mapping (HMD to Head Bone)
+    // 1. Root Positioning
+    // In local-floor, camera (0,0,0) is physical floor center.
+    // We don't move the vrm.scene because the user might have positioned it.
+    // Instead we calculate relative offsets for bones.
+
+    // 2. Head Mapping (Corrected for VRM 180 coordinate system)
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     if (headNode && this.firstPersonMode) {
-      // Get camera position/rotation in world space
-      const camWorldPos = new THREE.Vector3();
       const camWorldQuat = new THREE.Quaternion();
-      camera.getWorldPosition(camWorldPos);
       camera.getWorldQuaternion(camWorldQuat);
 
-      // Map rotation to head bone
-      // We need to account for VRM's 180 coordinate system
-      headNode.quaternion.copy(camWorldQuat);
-      // Adjust for avatar scene rotation if any
+      // VRM models face -Z by default, but PoseLab often rotates the scene 180 (facing +Z)
+      // We need to ensure the head follows the headset correctly relative to the body.
       const invSceneQuat = vrm.scene.quaternion.clone().invert();
-      headNode.quaternion.premultiply(invSceneQuat);
+      const localQuat = camWorldQuat.clone().premultiply(invSceneQuat);
+      
+      // Apply to head
+      headNode.quaternion.copy(localQuat);
     }
 
-    // 3. Hand Mapping (Controllers to Hand Bones)
+    // 3. Hand Mapping (Corrected Position & Orientation)
     this.controllers.forEach((controller, index) => {
       if (!controller.visible) return;
       
@@ -194,20 +259,25 @@ class VRManager {
         controller.getWorldPosition(ctrlWorldPos);
         controller.getWorldQuaternion(ctrlWorldQuat);
 
-        // Position hand node (local to avatar)
-        const localHandPos = ctrlWorldPos.clone();
-        vrm.scene.worldToLocal(localHandPos);
-        handNode.position.copy(localHandPos);
+        // Convert world position to avatar-local position
+        const localPos = ctrlWorldPos.clone();
+        vrm.scene.worldToLocal(localPos);
+        handNode.position.copy(localPos);
 
-        // Rotate hand node
-        const localHandQuat = ctrlWorldQuat.clone();
+        // Convert world rotation to avatar-local rotation
         const invSceneQuat = vrm.scene.quaternion.clone().invert();
-        localHandQuat.premultiply(invSceneQuat);
-        handNode.quaternion.copy(localHandQuat);
+        const localQuat = ctrlWorldQuat.clone().premultiply(invSceneQuat);
+        
+        // Correcting for the fact that VRM hand bones often have a 90-degree offset 
+        // compared to VR controller "forward".
+        const correction = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, index === 0 ? Math.PI/2 : -Math.PI/2, 0));
+        localQuat.multiply(correction);
+        
+        handNode.quaternion.copy(localQuat);
       }
     });
 
-    // 4. First-person mesh hiding
+    // 4. Mesh Hiding
     if (this.firstPersonMode) {
       if (this.currentVrm !== vrm) {
         this.currentVrm = vrm;
@@ -244,6 +314,8 @@ class VRManager {
     if (scene && this.cameraGroup) {
       scene.remove(this.cameraGroup);
     }
+    
+    this.hideReview();
 
     this.session = null;
     this.controllers = [];
