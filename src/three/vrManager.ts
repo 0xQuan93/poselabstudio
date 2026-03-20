@@ -42,7 +42,6 @@ class VRManager {
 
   // Math Helpers
   private v1 = new THREE.Vector3();
-  private v2 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
   private q3 = new THREE.Quaternion();
