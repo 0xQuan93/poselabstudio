@@ -33,6 +33,7 @@ class VRManager {
   private initialAvatarPos = new THREE.Vector3();
   private referenceHeadLocalPos = new THREE.Vector3();
   private referenceHipsLocalPos = new THREE.Vector3();
+  private hasTrackingReference = false;
 
   // Snapshot/Review
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
@@ -91,6 +92,7 @@ class VRManager {
         vrm.humanoid?.resetPose();
         this.initialAvatarPos.copy(vrm.scene.position);
     }
+    this.hasTrackingReference = false;
 
     if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
 
@@ -170,7 +172,15 @@ class VRManager {
     headNode.getWorldPosition(this.v1);
     this.avatarHeight = this.v1.y - vrm.scene.position.y;
 
-    // Get user head height
+    this.captureTrackingReference(vrm, camera);
+
+    this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
+    
+    useToastStore.getState().addToast('VR Calibration Complete', 'success');
+    console.log(`[VRManager] Calibrated: UserHeight=${this.userHeight.toFixed(2)} AvatarHeight=${this.avatarHeight.toFixed(2)} ScaleFactor=${this.scaleFactor.toFixed(2)}`);
+  }
+
+  private captureTrackingReference(vrm: VRM, camera: THREE.Camera) {
     camera.getWorldPosition(this.v1);
     this.userHeight = this.v1.y - vrm.scene.position.y;
     vrm.scene.worldToLocal(this.v1);
@@ -181,10 +191,7 @@ class VRManager {
       this.referenceHipsLocalPos.copy(hipsNode.position);
     }
 
-    this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
-    
-    useToastStore.getState().addToast('VR Calibration Complete', 'success');
-    console.log(`[VRManager] Calibrated: UserHeight=${this.userHeight.toFixed(2)} AvatarHeight=${this.avatarHeight.toFixed(2)} ScaleFactor=${this.scaleFactor.toFixed(2)}`);
+    this.hasTrackingReference = true;
   }
 
   private onTriggerPressed() {
@@ -288,6 +295,10 @@ class VRManager {
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
 
     if (headNode && hipsNode) {
+      if (!this.hasTrackingReference) {
+        this.captureTrackingReference(vrm, camera);
+      }
+
       // Rotation
       camera.getWorldQuaternion(this.q1);
       const localHeadQuat = this.q1.clone().premultiply(invSceneQuat);
@@ -402,6 +413,7 @@ class VRManager {
     const vrm = avatarManager.getVRM();
     this.tickDispose?.();
     this.tickDispose = undefined;
+    this.hasTrackingReference = false;
 
     if (vrm) {
       const pose = vrm.humanoid?.getNormalizedPose();
