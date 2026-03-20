@@ -3,7 +3,7 @@ import { sceneManager } from './sceneManager';
 import { avatarManager } from './avatarManager';
 import { animationManager } from './animationManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
-import { VRMHumanBoneName } from '@pixiv/three-vrm';
+import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
 
@@ -17,19 +17,21 @@ class VRManager {
   private session: XRSession | null = null;
   private isVRSupported: boolean = false;
   private renderer: THREE.WebGLRenderer | null = null;
+  private tickDispose?: () => void;
   private controllers: THREE.Group[] = [];
   private controllerGrips: THREE.Group[] = [];
   private firstPersonMode: boolean = true;
   private cameraGroup = new THREE.Group();
   private originalCameraParent: THREE.Object3D | null = null;
   private headMeshes: THREE.Mesh[] = [];
-  private currentVrm: any = null;
+  private currentVrm: VRM | null = null;
 
   // Calibration Data
   private userHeight = 1.65;
   private avatarHeight = 1.65;
   private scaleFactor = 1.0;
   private initialAvatarPos = new THREE.Vector3();
+  private referenceHeadLocalPos = new THREE.Vector3();
 
   // Snapshot/Review
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
@@ -38,6 +40,7 @@ class VRManager {
 
   // Math Helpers
   private v1 = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
 
   constructor() {
@@ -118,9 +121,9 @@ class VRManager {
       
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
-
       session.addEventListener('end', () => this.onSessionEnded());
-      sceneManager.registerTick(this.update, -100);
+      this.tickDispose?.();
+      this.tickDispose = sceneManager.registerTick(this.update, -100);
 
       // Trigger auto-calibration after 2 seconds
       setTimeout(() => this.calibrate(), 2000);
@@ -141,7 +144,7 @@ class VRManager {
       const ctrl = this.renderer.xr.getController(i);
       ctrl.addEventListener('selectstart', () => {
         if (this.reviewPlane?.visible) this.handleReviewInteraction(i);
-        else this.onTriggerPressed(i);
+        else this.onTriggerPressed();
       });
       this.cameraGroup.add(ctrl);
       this.controllers.push(ctrl);
@@ -170,6 +173,8 @@ class VRManager {
     // Get user head height
     camera.getWorldPosition(this.v1);
     this.userHeight = this.v1.y - vrm.scene.position.y;
+    vrm.scene.worldToLocal(this.v1);
+    this.referenceHeadLocalPos.copy(this.v1);
 
     this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
     
@@ -177,7 +182,7 @@ class VRManager {
     console.log(`[VRManager] Calibrated: UserHeight=${this.userHeight.toFixed(2)} AvatarHeight=${this.avatarHeight.toFixed(2)} ScaleFactor=${this.scaleFactor.toFixed(2)}`);
   }
 
-  private onTriggerPressed(_index: number) {
+  private onTriggerPressed() {
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
@@ -278,6 +283,18 @@ class VRManager {
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
 
     if (headNode && hipsNode) {
+      camera.getWorldPosition(this.v1);
+      this.v2.copy(this.v1);
+      vrm.scene.worldToLocal(this.v2);
+
+      // Translate the avatar root with the user's room-scale motion so the
+      // full body follows the headset instead of leaving the torso behind.
+      vrm.scene.position.set(
+        this.initialAvatarPos.x + (this.v2.x - this.referenceHeadLocalPos.x),
+        this.initialAvatarPos.y,
+        this.initialAvatarPos.z + (this.v2.z - this.referenceHeadLocalPos.z),
+      );
+
       // Rotation
       camera.getWorldQuaternion(this.q1);
       const localHeadQuat = this.q1.clone().premultiply(invSceneQuat);
@@ -296,12 +313,16 @@ class VRManager {
           spineNode.quaternion.slerp(bendQuat, 0.2);
       }
 
-      // Hips Position (Crouching)
+      // Hips Position (room-scale offset + crouching)
       camera.getWorldPosition(this.v1);
       vrm.scene.worldToLocal(this.v1);
       const currentHeight = this.v1.y;
       const crouch = Math.max(-0.5, Math.min(0.5, (this.userHeight - currentHeight) * this.scaleFactor));
-      hipsNode.position.y = -crouch;
+      hipsNode.position.set(
+        this.v1.x - this.referenceHeadLocalPos.x,
+        -crouch,
+        this.v1.z - this.referenceHeadLocalPos.z,
+      );
     }
 
     // 2. ARM IK SOLVER (2-Bone Analytical)
@@ -357,10 +378,9 @@ class VRManager {
         const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, idx === 0 ? Math.PI/2 : -Math.PI/2));
         handNode.quaternion.copy(localHandQuat).multiply(handCorr);
         
-        // Stretch hand to controller position (handles avatar/user scale diff)
-        const localHandPos = this.v1.clone();
-        vrm.scene.worldToLocal(localHandPos);
-        handNode.position.copy(localHandPos);
+        // Keep the wrist bone anchored to its default local offset. Driving the
+        // whole hand bone to world-space controller coordinates breaks the arm
+        // chain and prevents the avatar body from being cleanly user-driven.
       }
     });
 
@@ -383,8 +403,12 @@ class VRManager {
 
   private onSessionEnded() {
     const vrm = avatarManager.getVRM();
+    this.tickDispose?.();
+    this.tickDispose = undefined;
+
     if (vrm) {
       const pose = vrm.humanoid?.getNormalizedPose();
+      vrm.scene.position.copy(this.initialAvatarPos);
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
       if (pose) avatarManager.applyRawPose({ vrmPose: pose }, false, 'static', false);
@@ -395,6 +419,8 @@ class VRManager {
     const cam = sceneManager.getCamera();
     const scene = sceneManager.getScene();
     if (cam && this.originalCameraParent) this.originalCameraParent.add(cam);
+    cam?.layers.enable(10);
+    this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
     this.hideReview();
     this.session = null;
