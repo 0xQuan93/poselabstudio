@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { sceneManager } from './sceneManager';
 import { avatarManager } from './avatarManager';
+import { animationManager } from './animationManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { VRMHumanBoneName } from '@pixiv/three-vrm';
+import { useUserStore } from '../state/useUserStore';
+import { useToastStore } from '../state/useToastStore';
 
 /**
  * VR Manager
  * 
- * Handles WebXR sessions, corrected VRIK mapping, and in-VR photo review.
+ * Handles WebXR sessions, corrected VRIK mapping, and in-VR photo review/sharing.
  */
 class VRManager {
   private session: XRSession | null = null;
@@ -52,6 +55,18 @@ class VRManager {
       throw new Error('Three.js elements not initialized');
     }
 
+    // 1. COMPLETELY OVERRIDE ANIMATIONS
+    avatarManager.setManualPosing(true);
+    animationManager.stopAnimation(true, true); // Stop any active mixer and reset pose
+    
+    const vrm = avatarManager.getVRM();
+    if (vrm) {
+        vrm.humanoid?.resetPose();
+        if (vrm.expressionManager) {
+            vrm.expressionManager.expressions.forEach(e => vrm.expressionManager!.setValue(e.expressionName, 0));
+        }
+    }
+
     this.renderer.shadowMap.enabled = false;
     this.renderer.setPixelRatio(1.0);
 
@@ -65,6 +80,7 @@ class VRManager {
       this.renderer.xr.enabled = true;
       this.renderer.xr.setSession(session);
       
+      // Setup Camera Group
       scene.add(this.cameraGroup);
       this.originalCameraParent = camera.parent;
       this.cameraGroup.add(camera);
@@ -72,15 +88,26 @@ class VRManager {
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
 
+      // --- FIX BACKWARDS VIEW ---
+      // Anchor physical space to avatar's feet
+      if (vrm) {
+        this.cameraGroup.position.copy(vrm.scene.position);
+        
+        // Align physical room 'forward' (-Z) with avatar 'forward' (+Z if rotated 180)
+        const avatarRotY = vrm.scene.rotation.y;
+        this.cameraGroup.rotation.y = avatarRotY;
+      }
+
       this.setupControllers();
 
       session.addEventListener('end', () => this.onSessionEnded());
-      // Use a lower priority (-10) so VR bone mapping overrides animations and manual posing
-      sceneManager.registerTick(this.update, -10);
+      // High priority to be the final word on bone state
+      sceneManager.registerTick(this.update, -100);
 
-      console.log('[VRManager] VR Session started');
+      console.log('[VRManager] VR Session started - All systems hooked up');
     } catch (error) {
       console.error('[VRManager] Failed to enter VR:', error);
+      avatarManager.setManualPosing(false);
       throw error;
     }
   }
@@ -94,13 +121,15 @@ class VRManager {
 
     for (let i = 0; i < 2; i++) {
       const controller = this.renderer.xr.getController(i);
+      
       controller.addEventListener('selectstart', () => {
         if (this.reviewPlane && this.reviewPlane.visible) {
-            this.handleReviewInteraction(i);
+            this.handleReviewInteraction(i); 
         } else {
             this.onTriggerPressed(i);
         }
       });
+
       scene.add(controller);
       this.controllers.push(controller);
 
@@ -113,7 +142,7 @@ class VRManager {
   }
 
   private onTriggerPressed(index: number) {
-    console.log(`[VRManager] Controller ${index} trigger pressed - Taking avatar snapshot`);
+    console.log(`[VRManager] Controller ${index} trigger pressed - Taking snapshot`);
     
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
@@ -130,7 +159,6 @@ class VRManager {
     }
     
     vrm.scene.getWorldDirection(forward);
-    // Point camera at head from 2.0m away, slightly elevated
     this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.0)).add(new THREE.Vector3(0, 0.2, 0));
     this.snapshotCamera.lookAt(head);
 
@@ -147,37 +175,31 @@ class VRManager {
           if (dataUrl) {
             this.lastSnapshotUrl = dataUrl;
             this.showVRReview(dataUrl);
-            console.log('[VRManager] Avatar snapshot captured for review');
           }
           this.snapshotCamera.layers.mask = originalMask;
         });
     }, 100);
   }
 
-  /**
-   * Show a 3D preview of the photo inside VR
-   */
   private showVRReview(dataUrl: string) {
     const scene = sceneManager.getScene();
     const camera = sceneManager.getCamera();
     if (!scene || !camera) return;
 
-    // Remove existing review plane
     if (this.reviewPlane) {
       scene.remove(this.reviewPlane);
     }
 
     const loader = new THREE.TextureLoader();
     loader.load(dataUrl, (texture) => {
-      const geometry = new THREE.PlaneGeometry(0.8, 0.45); // 16:9 aspect
-      const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+      const geometry = new THREE.PlaneGeometry(1.2, 0.675);
+      const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, transparent: true });
       this.reviewPlane = new THREE.Mesh(geometry, material);
 
-      // Position in front of camera
       const forward = new THREE.Vector3(0, 0, -1);
       forward.applyQuaternion(camera.quaternion);
       
-      this.reviewPlane.position.copy(camera.position).add(forward.multiplyScalar(1.2));
+      this.reviewPlane.position.copy(camera.position).add(forward.multiplyScalar(1.5));
       this.reviewPlane.lookAt(camera.position);
       this.reviewPlane.name = 'VR_Review_Window';
       
@@ -188,22 +210,50 @@ class VRManager {
   private handleReviewInteraction(index: number) {
     if (!this.reviewPlane || !this.lastSnapshotUrl) return;
 
-    // For now, left trigger = Cancel, right trigger = Save
-    if (index === 0) {
-        console.log('[VRManager] Review Cancelled');
+    if (index === 0) { // Left Hand = DISCARD
+        console.log('[VRManager] Photo discarded');
         this.hideReview();
-    } else {
-        console.log('[VRManager] Review Saved');
+    } else { // Right Hand = SAVE & PUBLISH
+        console.log('[VRManager] Photo saved & publishing...');
         this.saveLastSnapshot();
+        this.publishToFeed();
         this.hideReview();
+    }
+  }
+
+  private async publishToFeed() {
+    const user = useUserStore.getState().user;
+    if (!user || !this.lastSnapshotUrl) return;
+
+    try {
+      const currentLevel = Math.floor((user?.lp || 0) / 100) + 1;
+      
+      const response = await fetch('/.netlify/functions/publish-pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: this.lastSnapshotUrl,
+          creatorName: user.username || 'VR Creator',
+          creatorAvatarUrl: user.avatarUrl,
+          creatorId: user.id,
+          description: `Level ${currentLevel} VR Capture | #PoseLabVR`
+        })
+      });
+
+      if (response.ok) {
+        useToastStore.getState().addToast('Successfully published to Discord Studio!', 'success');
+        useUserStore.getState().recordGamifiedAction('publish_daily');
+      }
+    } catch (e) {
+      console.error('[VRManager] Failed to publish VR photo', e);
     }
   }
 
   private hideReview() {
     if (this.reviewPlane) {
-      this.reviewPlane.visible = false;
       const scene = sceneManager.getScene();
       if (scene) scene.remove(this.reviewPlane);
+      this.reviewPlane = null;
     }
   }
 
@@ -211,7 +261,7 @@ class VRManager {
     if (!this.lastSnapshotUrl) return;
     const link = document.createElement('a');
     link.href = this.lastSnapshotUrl;
-    link.download = `poselab_avatar_snapshot_${Date.now()}.png`;
+    link.download = `poselab_vr_snapshot_${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -226,27 +276,18 @@ class VRManager {
     const camera = sceneManager.getCamera();
     if (!camera) return;
 
-    // 1. Root Positioning
-    // In local-floor, camera (0,0,0) is physical floor center.
-    // We don't move the vrm.scene because the user might have positioned it.
-    // Instead we calculate relative offsets for bones.
+    const invSceneQuat = vrm.scene.quaternion.clone().invert();
 
-    // 2. Head Mapping (Corrected for VRM 180 coordinate system)
+    // 1. Head Mapping
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     if (headNode && this.firstPersonMode) {
-      const camWorldQuat = new THREE.Quaternion();
-      camera.getWorldQuaternion(camWorldQuat);
-
-      // VRM models face -Z by default, but PoseLab often rotates the scene 180 (facing +Z)
-      // We need to ensure the head follows the headset correctly relative to the body.
-      const invSceneQuat = vrm.scene.quaternion.clone().invert();
-      const localQuat = camWorldQuat.clone().premultiply(invSceneQuat);
-      
-      // Apply to head
-      headNode.quaternion.copy(localQuat);
+      const camQuat = new THREE.Quaternion();
+      camera.getWorldQuaternion(camQuat);
+      const localHeadQuat = camQuat.clone().premultiply(invSceneQuat);
+      headNode.quaternion.copy(localHeadQuat);
     }
 
-    // 3. Hand Mapping (Corrected Position & Orientation)
+    // 2. Hand Mapping
     this.controllers.forEach((controller, index) => {
       if (!controller.visible) return;
       
@@ -254,30 +295,23 @@ class VRManager {
       const handNode = vrm.humanoid?.getNormalizedBoneNode(handBoneName);
       
       if (handNode) {
-        const ctrlWorldPos = new THREE.Vector3();
-        const ctrlWorldQuat = new THREE.Quaternion();
-        controller.getWorldPosition(ctrlWorldPos);
-        controller.getWorldQuaternion(ctrlWorldQuat);
+        const ctrlPos = new THREE.Vector3();
+        const ctrlQuat = new THREE.Quaternion();
+        controller.getWorldPosition(ctrlPos);
+        controller.getWorldQuaternion(ctrlQuat);
 
-        // Convert world position to avatar-local position
-        const localPos = ctrlWorldPos.clone();
+        const localPos = ctrlPos.clone();
         vrm.scene.worldToLocal(localPos);
         handNode.position.copy(localPos);
 
-        // Convert world rotation to avatar-local rotation
-        const invSceneQuat = vrm.scene.quaternion.clone().invert();
-        const localQuat = ctrlWorldQuat.clone().premultiply(invSceneQuat);
-        
-        // Correcting for the fact that VRM hand bones often have a 90-degree offset 
-        // compared to VR controller "forward".
-        const correction = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, index === 0 ? Math.PI/2 : -Math.PI/2, 0));
-        localQuat.multiply(correction);
-        
+        const localQuat = ctrlQuat.clone().premultiply(invSceneQuat);
+        const handCorrection = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, index === 0 ? Math.PI/2 : -Math.PI/2));
+        localQuat.multiply(handCorrection);
         handNode.quaternion.copy(localQuat);
       }
     });
 
-    // 4. Mesh Hiding
+    // 3. Visibility
     if (this.firstPersonMode) {
       if (this.currentVrm !== vrm) {
         this.currentVrm = vrm;
@@ -302,6 +336,17 @@ class VRManager {
   };
 
   private onSessionEnded() {
+    const vrm = avatarManager.getVRM();
+    if (vrm) {
+        const finalPose = vrm.humanoid?.getNormalizedPose();
+        if (finalPose) {
+            avatarManager.setManualPosing(false);
+            avatarManager.applyRawPose({ vrmPose: finalPose }, false, 'static', false);
+        }
+    } else {
+        avatarManager.setManualPosing(false);
+    }
+    
     const camera = sceneManager.getCamera();
     const scene = sceneManager.getScene();
     
@@ -320,7 +365,7 @@ class VRManager {
     this.session = null;
     this.controllers = [];
     this.controllerGrips = [];
-    console.log('[VRManager] VR Session ended');
+    console.log('[VRManager] VR Session ended - Pose saved');
   }
 
   public async exitVR() {
