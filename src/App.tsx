@@ -18,13 +18,16 @@ import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
 import { TickerTape } from './components/TickerTape';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
-import { GearSix, X } from '@phosphor-icons/react';
+import { GearSix, X, Fire } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
 import { StudioChatPanel } from './components/studio/StudioChatPanel';
 import { useUserStore } from './state/useUserStore';
 
 // import { LobbyPanel } from './components/LobbyPanel';
+
+import { useAvatarSource } from './state/useAvatarSource';
+import { useToastStore } from './state/useToastStore';
 
 // Initialize multiplayer avatar bridge on app startup
 initAvatarBridge();
@@ -37,7 +40,57 @@ function App() {
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
+  const [isDragging, setIsDragging] = useState(false);
   const user = useUserStore((state) => state.user);
+  const { setFileSource } = useAvatarSource();
+  const { addToast } = useToastStore();
+
+  // Handle global drag and drop for VRM files
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.name.toLowerCase().endsWith('.vrm')) {
+          setFileSource(file);
+          addToast(`Loading ${file.name}...`, 'info');
+          useUserStore.getState().recordGamifiedAction('first_avatar_load').then(reward => {
+            if (reward > 0) {
+              addToast(`+${reward} LP for loading your first avatar!`, 'success');
+            }
+          });
+        } else {
+          addToast('Only .vrm files are supported via drag and drop.', 'warning');
+        }
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [setFileSource, addToast]);
 
   // Sync LP and Activity State to Discord
   useEffect(() => {
@@ -185,6 +238,16 @@ function App() {
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
       <AppHeader mode={mode} onModeChange={setMode} />
       
+      {isDragging && (
+        <div className="drag-drop-overlay">
+          <div className="drag-drop-content">
+            <Fire size={48} weight="duotone" className="drag-icon" />
+            <h2>Drop VRM to Load</h2>
+            <p>Release to import your custom avatar</p>
+          </div>
+        </div>
+      )}
+
       <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''} ${!sidebarOpen ? 'sidebar-closed' : ''}`}>
         <div 
           className="studio-mode-wrapper" 

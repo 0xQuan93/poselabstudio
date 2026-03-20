@@ -5,7 +5,6 @@ import { applyBackground, toggleLabEnvironment, type AnimatedBackground } from '
 import type { BackgroundId } from '../types/reactions';
 import { useSettingsStore } from '../state/useSettingsStore';
 import { perfMonitor } from '../perf/perfMonitor';
-import { useUIStore } from '../state/useUIStore';
 import { lightingManager } from './lightingManager';
 import { postProcessingManager } from './postProcessingManager';
 import { environmentManager, HDRI_PRESETS } from './environmentManager';
@@ -735,6 +734,7 @@ class SceneManager {
     includeLogo?: boolean;
     transparentBackground?: boolean;
     fitToFrame?: boolean; // NEW: Auto-frame full body
+    camera?: THREE.Camera; // Optional: use a different camera for capture
   }): Promise<string | null> {
     if (!this.renderer || !this.canvas || !this.scene || !this.camera) return null;
     
@@ -743,17 +743,15 @@ class SceneManager {
     const fitToFrame = options?.fitToFrame ?? false;
     const targetWidth = options?.width || this.canvas.width;
     const targetHeight = options?.height || this.canvas.height;
-    
-    // Check if we have an active CSS overlay
-    const activeCssOverlay = useUIStore.getState().activeCssOverlay;
+    const captureCamera = options?.camera || this.camera;
 
     console.log('[SceneManager] Capturing snapshot:', { 
       targetWidth, 
       targetHeight, 
       includeLogo, 
       transparentBackground,
-      activeCssOverlay,
-      fitToFrame
+      fitToFrame,
+      customCamera: !!options?.camera
     });
     
     // Save current background and clear color state
@@ -779,118 +777,68 @@ class SceneManager {
       this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0); // Fully transparent
       if (labGroup) labGroup.visible = false;
-      console.log('[SceneManager] Background removed, Lab hidden, clear color set to transparent');
     }    
+
     try {
-      // If custom resolution requested, render to an off-screen canvas
-      if (options?.width || options?.height || fitToFrame) {
-        // Save current renderer size
-        const originalSize = new THREE.Vector2();
-        this.renderer.getSize(originalSize);
-        const originalAspect = this.camera.aspect;
-        
-        // Temporarily resize renderer for high-res capture
-        this.renderer.setSize(targetWidth, targetHeight, false);
-        this.camera.aspect = targetWidth / targetHeight;
-        this.camera.updateProjectionMatrix();
-
-        // Auto-frame if requested (MUST happen after aspect ratio update)
-        if (fitToFrame && this.controls) {
-             // Use the robust fullbody logic which now accounts for aspect ratio & bounding box
-             // Use a slightly larger padding for export safety (1.2)
-             this.setCameraPreset('fullbody', true);
-        }
-
-        // Resize post-processing composer if enabled
-        if (postProcessingManager.isEnabled()) {
-          postProcessingManager.resize(targetWidth, targetHeight);
-        }
-        
-        // Render at target resolution
-        const composer = postProcessingManager.getComposer();
-        if (postProcessingManager.isEnabled() && composer) {
-          composer.render();
-        } else {
-          this.renderer.render(this.scene, this.camera);
-        }
-        
-        // Capture the render
-        const dataUrl = await this.compositeWithLogo(
-          this.renderer.domElement, 
-          targetWidth, 
-          targetHeight, 
-          includeLogo,
-          transparentBackground,
-          activeCssOverlay
-        );
-        
-        // Restore original size
-        this.renderer.setSize(originalSize.x, originalSize.y, false);
-        this.camera.aspect = originalAspect;
-        this.camera.updateProjectionMatrix();
-
-        // Restore post-processing size
-        if (postProcessingManager.isEnabled()) {
-          postProcessingManager.resize(originalSize.x, originalSize.y);
-        }
-        
-        // Restore camera position if we moved it
-        if (fitToFrame && originalTarget && this.controls) {
-            this.camera.position.copy(originalCameraPos);
-            this.camera.near = originalNear;
-            this.camera.far = originalFar;
-            this.controls.target.copy(originalTarget);
-            if (originalMinDist !== undefined) this.controls.minDistance = originalMinDist;
-            if (originalMaxDist !== undefined) this.controls.maxDistance = originalMaxDist;
-            this.controls.update();
-        }
-        
-        // Restore background and clear color
-        this.scene.background = originalBackground;
-        this.renderer.setClearColor(originalClearColor, originalClearAlpha);
-        if (labGroup && transparentBackground) labGroup.visible = originalLabVisible;
-        
-        return dataUrl;
-      }
+      // If custom resolution requested or custom camera, render to an off-screen canvas or temp state
+      const originalSize = new THREE.Vector2();
+      this.renderer.getSize(originalSize);
+      const originalAspect = (captureCamera as THREE.PerspectiveCamera).aspect;
       
-      // Normal resolution capture (no resize, no reframe)
-      const composer = postProcessingManager.getComposer();
-      if (postProcessingManager.isEnabled() && composer) {
-        composer.render();
-      } else {
-        this.renderer.render(this.scene, this.camera);
+      // Temporarily resize renderer for high-res capture
+      this.renderer.setSize(targetWidth, targetHeight, false);
+      if (captureCamera instanceof THREE.PerspectiveCamera) {
+          captureCamera.aspect = targetWidth / targetHeight;
+          captureCamera.updateProjectionMatrix();
       }
+
+      // Auto-frame if requested (ONLY for the main camera or if specified)
+      if (fitToFrame && this.controls && captureCamera === this.camera) {
+           this.setCameraPreset('fullbody', true);
+      }
+
+      // Render at target resolution
+      // NOTE: We bypass post-processing for custom cameras or VR snapshots to ensure clarity
+      this.renderer.render(this.scene, captureCamera);
       
+      // Capture the render
       const dataUrl = await this.compositeWithLogo(
         this.renderer.domElement, 
-        this.canvas.width, 
-        this.canvas.height, 
+        targetWidth, 
+        targetHeight, 
         includeLogo,
         transparentBackground,
-        activeCssOverlay
+        null // No CSS overlay on custom camera shots
       );
+      
+      // Restore original size
+      this.renderer.setSize(originalSize.x, originalSize.y, false);
+      if (captureCamera instanceof THREE.PerspectiveCamera) {
+          captureCamera.aspect = originalAspect;
+          captureCamera.updateProjectionMatrix();
+      }
+
+      // Restore camera position if we moved it
+      if (fitToFrame && originalTarget && this.controls && captureCamera === this.camera) {
+          this.camera.position.copy(originalCameraPos);
+          this.camera.near = originalNear;
+          this.camera.far = originalFar;
+          this.controls.target.copy(originalTarget);
+          if (originalMinDist !== undefined) this.controls.minDistance = originalMinDist;
+          if (originalMaxDist !== undefined) this.controls.maxDistance = originalMaxDist;
+          this.controls.update();
+      }
       
       // Restore background and clear color
       this.scene.background = originalBackground;
       this.renderer.setClearColor(originalClearColor, originalClearAlpha);
+      if (labGroup && transparentBackground) labGroup.visible = originalLabVisible;
       
       return dataUrl;
     } catch (error) {
-      // Ensure background and clear color are restored even on error
+      // Restore background and clear color on error
       this.scene.background = originalBackground;
       this.renderer.setClearColor(originalClearColor, originalClearAlpha);
-      
-      // Attempt to restore camera too
-      if (fitToFrame && originalTarget && this.controls) {
-         this.camera.position.copy(originalCameraPos);
-         this.camera.near = originalNear;
-         this.camera.far = originalFar;
-         this.controls.target.copy(originalTarget);
-         if (originalMinDist !== undefined) this.controls.minDistance = originalMinDist;
-         if (originalMaxDist !== undefined) this.controls.maxDistance = originalMaxDist;
-         this.controls.update();
-      }
-
       throw error;
     }
   }

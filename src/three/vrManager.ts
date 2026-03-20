@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { sceneManager } from './sceneManager';
 import { avatarManager } from './avatarManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+import { VRMHumanBoneName } from '@pixiv/three-vrm';
 
 /**
  * VR Manager
  * 
- * Handles WebXR sessions, first-person camera syncing, and controller interactions.
+ * Handles WebXR sessions, VRIK-style bone mapping, and controller interactions.
  */
 class VRManager {
   private session: XRSession | null = null;
@@ -17,6 +18,11 @@ class VRManager {
   private firstPersonMode: boolean = true;
   private cameraGroup = new THREE.Group();
   private originalCameraParent: THREE.Object3D | null = null;
+  private headMeshes: THREE.Mesh[] = [];
+  private currentVrm: any = null;
+
+  // Snapshot Camera for VR
+  private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
 
   constructor() {
     this.checkSupport();
@@ -42,10 +48,7 @@ class VRManager {
       throw new Error('Three.js elements not initialized');
     }
 
-    // Optimization: VR needs high framerate. 
-    // Disable heavy features.
     this.renderer.shadowMap.enabled = false;
-    // Cap pixel ratio to 1.0 for VR performance (usually enough for modern headsets)
     this.renderer.setPixelRatio(1.0);
 
     try {
@@ -58,21 +61,18 @@ class VRManager {
       this.renderer.xr.enabled = true;
       this.renderer.xr.setSession(session);
       
-      // Setup Camera Group for positioning in VR
       scene.add(this.cameraGroup);
       this.originalCameraParent = camera.parent;
       this.cameraGroup.add(camera);
       
-      // Reset camera local position/rotation as it will be controlled by XR
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
 
       this.setupControllers();
 
       session.addEventListener('end', () => this.onSessionEnded());
-
-      // Start the sync loop
-      sceneManager.registerTick(this.update);
+      // Use a lower priority (-10) so VR bone mapping overrides animations
+      sceneManager.registerTick(this.update, -10);
 
       console.log('[VRManager] VR Session started');
     } catch (error) {
@@ -103,72 +103,132 @@ class VRManager {
   }
 
   private onTriggerPressed(index: number) {
-    console.log(`[VRManager] Controller ${index} trigger pressed - Taking snapshot`);
-    // Take a snapshot in VR
-    // Use a small delay to ensure the UI or anything else is ready
+    console.log(`[VRManager] Controller ${index} trigger pressed - Taking avatar snapshot`);
+    
+    const vrm = avatarManager.getVRM();
+    if (!vrm) return;
+
+    // Position snapshot camera in front of avatar
+    const head = new THREE.Vector3();
+    const forward = new THREE.Vector3(0, 0, 1);
+    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    
+    if (headNode) {
+      headNode.getWorldPosition(head);
+    } else {
+      vrm.scene.getWorldPosition(head);
+      head.y += 1.6;
+    }
+    
+    // Character's forward direction
+    vrm.scene.getWorldDirection(forward);
+    // Point camera at head from 2.0m away, slightly elevated
+    this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.0)).add(new THREE.Vector3(0, 0.2, 0));
+    this.snapshotCamera.lookAt(head);
+
+    // Temporarily show all layers for the snapshot camera
+    const originalMask = this.snapshotCamera.layers.mask;
+    this.snapshotCamera.layers.enableAll();
+
     setTimeout(() => {
-        sceneManager.captureSnapshot({ includeLogo: true }).then(dataUrl => {
+        sceneManager.captureSnapshot({ 
+          includeLogo: true,
+          width: 1920,
+          height: 1080,
+          camera: this.snapshotCamera
+        }).then(dataUrl => {
           if (dataUrl) {
             const link = document.createElement('a');
             link.href = dataUrl;
-            link.download = `poselab_vr_snapshot_${Date.now()}.png`;
+            link.download = `poselab_avatar_snapshot_${Date.now()}.png`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            console.log('[VRManager] Snapshot saved');
+            console.log('[VRManager] Avatar snapshot saved');
           }
+          // Restore mask (though snapshot call uses a clone usually, better safe)
+          this.snapshotCamera.layers.mask = originalMask;
         });
     }, 100);
   }
 
-  private headMeshes: THREE.Mesh[] = [];
-  private currentVrm: any = null;
-
   private update = () => {
-    if (!this.session || !this.firstPersonMode) return;
+    if (!this.session) return;
 
     const vrm = avatarManager.getVRM();
     if (!vrm) return;
 
-    // Position the camera group at the avatar's position
-    this.cameraGroup.position.copy(vrm.scene.position);
-    this.cameraGroup.rotation.y = vrm.scene.rotation.y;
+    const camera = sceneManager.getCamera();
+    if (!camera) return;
 
-    // Cache head meshes if VRM changed
-    if (this.currentVrm !== vrm) {
-      this.currentVrm = vrm;
-      this.headMeshes = [];
-      vrm.scene.traverse((obj: THREE.Object3D) => {
-        if (obj instanceof THREE.Mesh) {
-          const name = obj.name.toLowerCase();
-          if (
-            name.includes('head') || 
-            name.includes('face') || 
-            name.includes('hair') || 
-            name.includes('eye') || 
-            name.includes('mouth') ||
-            name.includes('brow') ||
-            name.includes('ear') ||
-            name.includes('tooth') ||
-            name.includes('tongue')
-          ) {
-            this.headMeshes.push(obj);
-          }
-        }
-      });
+    // 1. Position the avatar to match the VR session floor
+    // We keep the avatar at its current scene position, but sync bones
+    
+    // 2. Head Mapping (HMD to Head Bone)
+    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    if (headNode && this.firstPersonMode) {
+      // Get camera position/rotation in world space
+      const camWorldPos = new THREE.Vector3();
+      const camWorldQuat = new THREE.Quaternion();
+      camera.getWorldPosition(camWorldPos);
+      camera.getWorldQuaternion(camWorldQuat);
+
+      // Map rotation to head bone
+      // We need to account for VRM's 180 coordinate system
+      headNode.quaternion.copy(camWorldQuat);
+      // Adjust for avatar scene rotation if any
+      const invSceneQuat = vrm.scene.quaternion.clone().invert();
+      headNode.quaternion.premultiply(invSceneQuat);
     }
 
-    // Head Hiding Logic
-    const VR_INVISIBLE_LAYER = 10;
-    const camera = sceneManager.getCamera();
-    if (camera) {
+    // 3. Hand Mapping (Controllers to Hand Bones)
+    this.controllers.forEach((controller, index) => {
+      if (!controller.visible) return;
+      
+      const handBoneName = index === 0 ? VRMHumanBoneName.LeftHand : VRMHumanBoneName.RightHand;
+      const handNode = vrm.humanoid?.getNormalizedBoneNode(handBoneName);
+      
+      if (handNode) {
+        const ctrlWorldPos = new THREE.Vector3();
+        const ctrlWorldQuat = new THREE.Quaternion();
+        controller.getWorldPosition(ctrlWorldPos);
+        controller.getWorldQuaternion(ctrlWorldQuat);
+
+        // Position hand node (local to avatar)
+        const localHandPos = ctrlWorldPos.clone();
+        vrm.scene.worldToLocal(localHandPos);
+        handNode.position.copy(localHandPos);
+
+        // Rotate hand node
+        const localHandQuat = ctrlWorldQuat.clone();
+        const invSceneQuat = vrm.scene.quaternion.clone().invert();
+        localHandQuat.premultiply(invSceneQuat);
+        handNode.quaternion.copy(localHandQuat);
+      }
+    });
+
+    // 4. First-person mesh hiding
+    if (this.firstPersonMode) {
+      if (this.currentVrm !== vrm) {
+        this.currentVrm = vrm;
+        this.headMeshes = [];
+        vrm.scene.traverse((obj: THREE.Object3D) => {
+          if (obj instanceof THREE.Mesh) {
+            const name = obj.name.toLowerCase();
+            if (name.includes('head') || name.includes('face') || name.includes('hair') || 
+                name.includes('eye') || name.includes('mouth') || name.includes('brow') ||
+                name.includes('ear') || name.includes('tooth') || name.includes('tongue')) {
+              this.headMeshes.push(obj);
+            }
+          }
+        });
+      }
+
+      const VR_INVISIBLE_LAYER = 10;
       camera.layers.enable(0); 
       camera.layers.disable(VR_INVISIBLE_LAYER);
+      this.headMeshes.forEach(mesh => mesh.layers.set(VR_INVISIBLE_LAYER));
     }
-
-    this.headMeshes.forEach(mesh => {
-      mesh.layers.set(VR_INVISIBLE_LAYER);
-    });
   };
 
   private onSessionEnded() {
