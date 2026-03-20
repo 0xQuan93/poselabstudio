@@ -32,6 +32,7 @@ class VRManager {
   private scaleFactor = 1.0;
   private initialAvatarPos = new THREE.Vector3();
   private referenceHeadLocalPos = new THREE.Vector3();
+  private referenceHipsLocalPos = new THREE.Vector3();
 
   // Snapshot/Review
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
@@ -40,7 +41,6 @@ class VRManager {
 
   // Math Helpers
   private v1 = new THREE.Vector3();
-  private v2 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
 
   constructor() {
@@ -176,6 +176,11 @@ class VRManager {
     vrm.scene.worldToLocal(this.v1);
     this.referenceHeadLocalPos.copy(this.v1);
 
+    const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
+    if (hipsNode) {
+      this.referenceHipsLocalPos.copy(hipsNode.position);
+    }
+
     this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
     
     useToastStore.getState().addToast('VR Calibration Complete', 'success');
@@ -283,18 +288,6 @@ class VRManager {
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
 
     if (headNode && hipsNode) {
-      camera.getWorldPosition(this.v1);
-      this.v2.copy(this.v1);
-      vrm.scene.worldToLocal(this.v2);
-
-      // Translate the avatar root with the user's room-scale motion so the
-      // full body follows the headset instead of leaving the torso behind.
-      vrm.scene.position.set(
-        this.initialAvatarPos.x + (this.v2.x - this.referenceHeadLocalPos.x),
-        this.initialAvatarPos.y,
-        this.initialAvatarPos.z + (this.v2.z - this.referenceHeadLocalPos.z),
-      );
-
       // Rotation
       camera.getWorldQuaternion(this.q1);
       const localHeadQuat = this.q1.clone().premultiply(invSceneQuat);
@@ -313,15 +306,19 @@ class VRManager {
           spineNode.quaternion.slerp(bendQuat, 0.2);
       }
 
-      // Hips Position (room-scale offset + crouching)
+      // Hips Position (calibrated follow + crouching)
       camera.getWorldPosition(this.v1);
       vrm.scene.worldToLocal(this.v1);
       const currentHeight = this.v1.y;
       const crouch = Math.max(-0.5, Math.min(0.5, (this.userHeight - currentHeight) * this.scaleFactor));
+      const headOffsetX = this.v1.x - this.referenceHeadLocalPos.x;
+      const headOffsetZ = this.v1.z - this.referenceHeadLocalPos.z;
+      const followScale = 0.75;
+      const maxHorizontalOffset = 0.25;
       hipsNode.position.set(
-        this.v1.x - this.referenceHeadLocalPos.x,
-        -crouch,
-        this.v1.z - this.referenceHeadLocalPos.z,
+        this.referenceHipsLocalPos.x + THREE.MathUtils.clamp(headOffsetX * followScale, -maxHorizontalOffset, maxHorizontalOffset),
+        this.referenceHipsLocalPos.y - crouch,
+        this.referenceHipsLocalPos.z + THREE.MathUtils.clamp(headOffsetZ * followScale, -maxHorizontalOffset, maxHorizontalOffset),
       );
     }
 
