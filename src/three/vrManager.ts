@@ -64,6 +64,12 @@ class VRManager {
   private controllerHandOffsets = [new THREE.Quaternion(), new THREE.Quaternion()];
   private hasControllerHandOffsets = [false, false];
   private gamepadButtonStates = new Map<string, boolean>();
+  private controllerHandTargetOffsets = [
+    new THREE.Vector3(-0.015, -0.025, 0.045),
+    new THREE.Vector3(0.015, -0.025, 0.045),
+  ];
+  private avatarBounds = new THREE.Box3();
+  private floorAnchorY = 0;
 
   constructor() {
     this.checkSupport();
@@ -114,6 +120,7 @@ class VRManager {
         this.initialAvatarPos.copy(vrm.scene.position);
         this.initialAvatarRotation.copy(vrm.scene.rotation);
         this.captureInitialHandRotations(vrm);
+        this.captureFloorAnchor(vrm);
     }
     this.hasTrackingReference = false;
     this.hasControllerHandOffsets = [false, false];
@@ -275,30 +282,50 @@ class VRManager {
     }
   }
 
+  private captureFloorAnchor(vrm: VRM) {
+    vrm.scene.updateWorldMatrix(true, true);
+    this.avatarBounds.setFromObject(vrm.scene);
+    this.floorAnchorY = this.avatarBounds.min.y;
+  }
+
+  private keepAvatarGrounded(vrm: VRM) {
+    vrm.scene.updateWorldMatrix(true, true);
+    this.avatarBounds.setFromObject(vrm.scene);
+    if (!Number.isFinite(this.avatarBounds.min.y)) return;
+
+    const deltaY = this.floorAnchorY - this.avatarBounds.min.y;
+    if (Math.abs(deltaY) > 1e-4) {
+      vrm.scene.position.y += deltaY;
+    }
+  }
+
   private captureSnapshot() {
     const vrm = avatarManager.getVRM();
     const camera = sceneManager.getCamera();
     if (!vrm || !camera || this.isCapturingSnapshot) return;
     this.isCapturingSnapshot = true;
-    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
-    const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
-    const head = new THREE.Vector3();
-    const hips = new THREE.Vector3();
-    if (headNode) headNode.getWorldPosition(head);
-    else head.copy(vrm.scene.position).y += 1.6;
-    if (hipsNode) hipsNode.getWorldPosition(hips);
-    else hips.copy(vrm.scene.position).y += 1.0;
+    vrm.scene.updateWorldMatrix(true, true);
+    this.avatarBounds.setFromObject(vrm.scene);
 
+    const boundsCenter = this.avatarBounds.getCenter(this.v1);
+    const boundsSize = this.avatarBounds.getSize(this.v2);
     const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
-    const avatarRight = new THREE.Vector3(1, 0, 0).applyQuaternion(vrm.scene.quaternion).normalize();
-    const lookTarget = hips.clone().lerp(head, 0.6).add(new THREE.Vector3(0, 0.08, 0));
-    const framingDistance = THREE.MathUtils.clamp(this.avatarHeight * 0.9, 1.25, 2.3);
+    const verticalFov = THREE.MathUtils.degToRad(this.snapshotCamera.fov);
+    const aspect = 1280 / 720;
+    const fitHeight = Math.max(boundsSize.y * 0.7, 0.75);
+    const fitWidth = Math.max(boundsSize.x * 0.7, fitHeight * aspect * 0.45);
+    const distanceFromHeight = fitHeight / Math.tan(verticalFov / 2);
+    const distanceFromWidth = fitWidth / (Math.tan(verticalFov / 2) * aspect);
+    const framingDistance = Math.max(distanceFromHeight, distanceFromWidth) + Math.max(boundsSize.z, 0.5) * 0.85;
+    const lookTarget = boundsCenter.clone().add(new THREE.Vector3(0, boundsSize.y * 0.08, 0));
 
     this.snapshotCamera.position
       .copy(lookTarget)
       .add(avatarForward.multiplyScalar(framingDistance))
-      .add(avatarRight.multiplyScalar(0.12))
-      .add(new THREE.Vector3(0, 0.22, 0));
+      .add(new THREE.Vector3(0, Math.max(0.18, boundsSize.y * 0.08), 0));
+    this.snapshotCamera.near = 0.05;
+    this.snapshotCamera.far = Math.max(20, framingDistance * 4);
+    this.snapshotCamera.updateProjectionMatrix();
     this.snapshotCamera.lookAt(lookTarget);
 
     const originalMask = this.snapshotCamera.layers.mask;
@@ -379,10 +406,10 @@ class VRManager {
     const gamepad = inputSource?.gamepad;
     if (!gamepad) return;
 
-    const trigger = gamepad.buttons[0]?.value ?? 0;
-    const squeeze = gamepad.buttons[1]?.value ?? 0;
+    const trigger = 0.18 + (gamepad.buttons[0]?.value ?? 0) * 0.82;
+    const squeeze = 0.35 + (gamepad.buttons[1]?.value ?? 0) * 0.65;
     const thumbTouched = [3, 4, 5].some((idx) => gamepad.buttons[idx]?.touched);
-    const thumbCurl = thumbTouched ? 0.7 : 0.15;
+    const thumbCurl = thumbTouched ? 0.7 : 0.28;
 
     const prefix = side === 'Left' ? 'Left' : 'Right';
     this.applyFingerCurl(vrm, [
@@ -543,7 +570,8 @@ class VRManager {
       const handNode = vrm.humanoid?.getNormalizedBoneNode(handName);
 
       if (upperNode && lowerNode && handNode) {
-        grip.getWorldPosition(this.v1);
+        this.v1.copy(this.controllerHandTargetOffsets[idx]);
+        grip.localToWorld(this.v1);
         grip.getWorldQuaternion(this.q1);
 
         const shoulderPos = new THREE.Vector3();
@@ -609,6 +637,8 @@ class VRManager {
         this.applyControllerFingerPose(vrm, this.session?.inputSources[idx], side);
       }
     });
+
+    this.keepAvatarGrounded(vrm);
 
     // 3. FPV MESH HIDING
     if (this.currentVrm !== vrm) {
