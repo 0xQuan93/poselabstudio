@@ -94,7 +94,7 @@ class VRManager {
     
     const vrm = avatarManager.getVRM();
     if (vrm) {
-        vrm.humanoid?.resetPose();
+        vrm.humanoid?.resetNormalizedPose();
         this.initialAvatarPos.copy(vrm.scene.position);
     }
     this.hasTrackingReference = false;
@@ -355,8 +355,8 @@ class VRManager {
     }
 
     // 2. ARM IK SOLVER (2-Bone Analytical)
-    this.controllers.forEach((ctrl, idx) => {
-      if (!ctrl.visible) return;
+    this.controllerGrips.forEach((grip, idx) => {
+      if (!grip.visible) return;
       const side = idx === 0 ? 'Left' : 'Right';
       const upperName = side === 'Left' ? VRMHumanBoneName.LeftUpperArm : VRMHumanBoneName.RightUpperArm;
       const lowerName = side === 'Left' ? VRMHumanBoneName.LeftLowerArm : VRMHumanBoneName.RightLowerArm;
@@ -367,8 +367,8 @@ class VRManager {
       const handNode = vrm.humanoid?.getNormalizedBoneNode(handName);
 
       if (upperNode && lowerNode && handNode) {
-        ctrl.getWorldPosition(this.v1);
-        ctrl.getWorldQuaternion(this.q1);
+        grip.getWorldPosition(this.v1);
+        grip.getWorldQuaternion(this.q1);
 
         const shoulderPos = new THREE.Vector3();
         upperNode.getWorldPosition(shoulderPos);
