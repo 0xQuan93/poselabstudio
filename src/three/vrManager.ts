@@ -15,17 +15,6 @@ type XRControllerGroup = THREE.Group & {
   };
 };
 
-type HudAction = 'capture' | 'recenter' | 'firstPerson' | 'exit';
-
-type HUDButtonMesh = THREE.Mesh<
-  THREE.PlaneGeometry,
-  THREE.MeshBasicMaterial
-> & {
-  userData: THREE.Object3D['userData'] & {
-    action: HudAction;
-  };
-};
-
 /**
  * VR Manager (VRIK Version)
  * 
@@ -62,24 +51,24 @@ class VRManager {
   private snapshotCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
   private reviewPlane: THREE.Mesh | null = null;
   private lastSnapshotUrl: string | null = null;
-  private hudGroup = new THREE.Group();
-  private hudButtons: HUDButtonMesh[] = [];
-  private hudRaycaster = new THREE.Raycaster();
+  private isCapturingSnapshot = false;
 
   // Math Helpers
   private v1 = new THREE.Vector3();
   private v2 = new THREE.Vector3();
-  private v3 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
   private q3 = new THREE.Quaternion();
   private e1 = new THREE.Euler();
+  private initialHandWorldRotations = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private controllerHandOffsets = [new THREE.Quaternion(), new THREE.Quaternion()];
+  private hasControllerHandOffsets = [false, false];
+  private gamepadButtonStates = new Map<string, boolean>();
 
   constructor() {
     this.checkSupport();
     this.cameraGroup.name = 'VR_RIG';
     this.initReviewPlane();
-    this.initHud();
   }
 
   private initReviewPlane() {
@@ -95,61 +84,6 @@ class VRManager {
     this.reviewPlane.name = 'VR_Review_Window';
     this.reviewPlane.visible = false;
     this.reviewPlane.renderOrder = 999;
-  }
-
-  private initHud() {
-    this.hudGroup.name = 'VR_HUD';
-    this.hudGroup.visible = false;
-
-    const actions: Array<{ action: HudAction; label: string; color: string; x: number }> = [
-      { action: 'capture', label: 'SNAP', color: '#22d3ee', x: -0.54 },
-      { action: 'recenter', label: 'RECAL', color: '#a855f7', x: -0.18 },
-      { action: 'firstPerson', label: 'FPV', color: '#f59e0b', x: 0.18 },
-      { action: 'exit', label: 'EXIT', color: '#ef4444', x: 0.54 },
-    ];
-
-    actions.forEach(({ action, label, color, x }) => {
-      const texture = this.createHudButtonTexture(label, color);
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthTest: false,
-      });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.14), material) as HUDButtonMesh;
-      mesh.position.set(x, 0, 0);
-      mesh.renderOrder = 1000;
-      mesh.userData.action = action;
-      this.hudGroup.add(mesh);
-      this.hudButtons.push(mesh);
-    });
-  }
-
-  private createHudButtonTexture(label: string, color: string) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return new THREE.CanvasTexture(canvas);
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(5, 10, 20, 0.9)';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 22);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 42px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    return texture;
   }
 
   private async checkSupport() {
@@ -179,8 +113,11 @@ class VRManager {
         vrm.humanoid?.resetNormalizedPose();
         this.initialAvatarPos.copy(vrm.scene.position);
         this.initialAvatarRotation.copy(vrm.scene.rotation);
+        this.captureInitialHandRotations(vrm);
     }
     this.hasTrackingReference = false;
+    this.hasControllerHandOffsets = [false, false];
+    this.gamepadButtonStates.clear();
 
     if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
 
@@ -204,8 +141,6 @@ class VRManager {
       this.cameraGroup.add(camera);
       
       this.setupControllers();
-      if (!this.hudGroup.parent) scene.add(this.hudGroup);
-      this.hudGroup.visible = true;
 
       // Anchor rig to avatar position
       if (vrm) {
@@ -221,6 +156,7 @@ class VRManager {
 
       // Trigger auto-calibration after 2 seconds
       setTimeout(() => this.calibrate(), 2000);
+      useToastStore.getState().addToast('VR controls: Right trigger snaps/saves, left trigger discards review, left stick press recalibrates, right stick press toggles FPV.', 'success');
 
       console.log('[VRManager] VRIK Session Started');
     } catch (error) {
@@ -249,7 +185,6 @@ class VRManager {
     for (let i = 0; i < 2; i++) {
       const ctrl = this.renderer.xr.getController(i) as XRControllerGroup;
       const selectHandler = () => {
-        if (this.tryActivateHud(ctrl)) return;
         if (this.reviewPlane?.visible) this.handleReviewInteraction(i);
         else if (i === 1) this.captureSnapshot();
       };
@@ -281,6 +216,7 @@ class VRManager {
     this.avatarHeight = this.v1.y - vrm.scene.position.y;
 
     this.captureTrackingReference(vrm, camera);
+    this.captureControllerHandOffsets();
 
     this.scaleFactor = this.avatarHeight / Math.max(0.1, this.userHeight);
     
@@ -319,24 +255,50 @@ class VRManager {
     }
   }
 
+  private captureInitialHandRotations(vrm: VRM) {
+    const leftHand = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.LeftHand);
+    const rightHand = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.RightHand);
+    leftHand?.getWorldQuaternion(this.initialHandWorldRotations[0]);
+    rightHand?.getWorldQuaternion(this.initialHandWorldRotations[1]);
+  }
+
+  private captureControllerHandOffsets() {
+    this.controllerGrips.forEach((grip, idx) => {
+      if (!grip.visible) return;
+      grip.getWorldQuaternion(this.q1);
+      this.controllerHandOffsets[idx].copy(this.q1.clone().invert().multiply(this.initialHandWorldRotations[idx]));
+      this.hasControllerHandOffsets[idx] = true;
+    });
+
+    if (this.hasControllerHandOffsets.some(Boolean)) {
+      console.log('[VRManager] Controller hand offsets calibrated');
+    }
+  }
+
   private captureSnapshot() {
     const vrm = avatarManager.getVRM();
     const camera = sceneManager.getCamera();
-    if (!vrm || !camera) return;
+    if (!vrm || !camera || this.isCapturingSnapshot) return;
+    this.isCapturingSnapshot = true;
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
     const head = new THREE.Vector3();
+    const hips = new THREE.Vector3();
     if (headNode) headNode.getWorldPosition(head);
     else head.copy(vrm.scene.position).y += 1.6;
+    if (hipsNode) hipsNode.getWorldPosition(hips);
+    else hips.copy(vrm.scene.position).y += 1.0;
 
     const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
     const avatarRight = new THREE.Vector3(1, 0, 0).applyQuaternion(vrm.scene.quaternion).normalize();
-    const lookTarget = head.clone().add(new THREE.Vector3(0, 0.05, 0));
+    const lookTarget = hips.clone().lerp(head, 0.6).add(new THREE.Vector3(0, 0.08, 0));
+    const framingDistance = THREE.MathUtils.clamp(this.avatarHeight * 0.9, 1.25, 2.3);
 
     this.snapshotCamera.position
       .copy(lookTarget)
-      .add(avatarForward.multiplyScalar(1.65))
-      .add(avatarRight.multiplyScalar(0.18))
-      .add(new THREE.Vector3(0, 0.15, 0));
+      .add(avatarForward.multiplyScalar(framingDistance))
+      .add(avatarRight.multiplyScalar(0.12))
+      .add(new THREE.Vector3(0, 0.22, 0));
     this.snapshotCamera.lookAt(lookTarget);
 
     const originalMask = this.snapshotCamera.layers.mask;
@@ -351,6 +313,8 @@ class VRManager {
           this.showVRReview(url);
         }
         this.snapshotCamera.layers.mask = originalMask;
+      }).finally(() => {
+        this.isCapturingSnapshot = false;
       });
     }, 100);
   }
@@ -373,52 +337,6 @@ class VRManager {
   private handleReviewInteraction(i: number) {
     if (i === 0) this.hideReview(); // Left = discard
     else { this.saveLastSnapshot(); this.publishToFeed(); this.hideReview(); } // Right = save
-  }
-
-  private tryActivateHud(controller: THREE.Object3D) {
-    if (!this.hudGroup.visible || this.hudButtons.length === 0) return false;
-
-    controller.getWorldPosition(this.v1);
-    controller.getWorldQuaternion(this.q1);
-    this.v2.set(0, 0, -1).applyQuaternion(this.q1).normalize();
-    this.hudRaycaster.set(this.v1, this.v2);
-
-    const hit = this.hudRaycaster.intersectObjects(this.hudButtons, false)[0];
-    if (!hit) return false;
-
-    const action = (hit.object as HUDButtonMesh).userData.action;
-    switch (action) {
-      case 'capture':
-        this.captureSnapshot();
-        break;
-      case 'recenter':
-        this.calibrate();
-        break;
-      case 'firstPerson':
-        this.firstPersonMode = !this.firstPersonMode;
-        useToastStore.getState().addToast(this.firstPersonMode ? 'First-person mode enabled' : 'First-person mode disabled', 'success');
-        break;
-      case 'exit':
-        void this.exitVR();
-        break;
-    }
-
-    return true;
-  }
-
-  private updateHudPose(camera: THREE.Camera) {
-    if (!this.hudGroup.visible) return;
-
-    camera.getWorldPosition(this.v1);
-    camera.getWorldQuaternion(this.q1);
-    this.v2.set(0, 0, -1).applyQuaternion(this.q1).normalize();
-    this.v3.set(0, 1, 0).applyQuaternion(this.q1).normalize();
-
-    this.hudGroup.position
-      .copy(this.v1)
-      .add(this.v2.clone().multiplyScalar(0.85))
-      .add(this.v3.clone().multiplyScalar(-0.22));
-    this.hudGroup.quaternion.copy(this.q1);
   }
 
   private applyFingerCurl(
@@ -494,6 +412,27 @@ class VRManager {
     ], side, thumbCurl, true);
   }
 
+  private consumeGamepadButton(inputSource: XRInputSource | undefined, buttonIndex: number, key: string) {
+    const pressed = !!inputSource?.gamepad?.buttons[buttonIndex]?.pressed;
+    const wasPressed = this.gamepadButtonStates.get(key) ?? false;
+    this.gamepadButtonStates.set(key, pressed);
+    return pressed && !wasPressed;
+  }
+
+  private updateControllerShortcuts() {
+    const leftInput = this.session?.inputSources[0];
+    const rightInput = this.session?.inputSources[1];
+
+    if (this.consumeGamepadButton(leftInput, 3, 'left-stick-press')) {
+      this.calibrate();
+    }
+
+    if (this.consumeGamepadButton(rightInput, 3, 'right-stick-press')) {
+      this.firstPersonMode = !this.firstPersonMode;
+      useToastStore.getState().addToast(this.firstPersonMode ? 'First-person mode enabled' : 'First-person mode disabled', 'success');
+    }
+  }
+
   private async publishToFeed() {
     const user = useUserStore.getState().user;
     if (!user || !this.lastSnapshotUrl) return;
@@ -536,7 +475,7 @@ class VRManager {
     const vrm = avatarManager.getVRM();
     const camera = sceneManager.getCamera();
     if (!vrm || !camera) return;
-    this.updateHudPose(camera);
+    this.updateControllerShortcuts();
 
     // 1. HEAD & SPINE SOLVER
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
@@ -660,9 +599,12 @@ class VRManager {
           .applyQuaternion(this.q2.clone().invert());
         lowerNode.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(lowerRestDirLocal, handDirLocal));
 
+        if (!this.hasControllerHandOffsets[idx]) {
+          this.captureControllerHandOffsets();
+        }
+
         // Hand Rotation
-        const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, idx === 0 ? 0.16 : -0.16, idx === 0 ? Math.PI / 2 : -Math.PI / 2));
-        this.q3.copy(this.q1).multiply(handCorr);
+        this.q3.copy(this.q1).multiply(this.controllerHandOffsets[idx]);
         this.setBoneWorldQuaternion(handNode, this.q3);
         this.applyControllerFingerPose(vrm, this.session?.inputSources[idx], side);
       }
@@ -724,9 +666,7 @@ class VRManager {
     cam?.layers.enable(10);
     this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
-    if (scene && this.hudGroup.parent === scene) scene.remove(this.hudGroup);
     this.hideReview();
-    this.hudGroup.visible = false;
     this.session = null;
     this.controllers.forEach((ctrl) => {
       const xrCtrl = ctrl as XRControllerGroup;
