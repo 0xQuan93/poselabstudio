@@ -408,49 +408,61 @@ class VRManager {
 
         const shoulderPos = new THREE.Vector3();
         upperNode.getWorldPosition(shoulderPos);
-        
-        const d1 = lowerNode.position.length(); // Upper arm len
-        const d2 = handNode.position.length();  // Lower arm len
-        
+
+        const upperLen = lowerNode.position.length();
+        const lowerLen = handNode.position.length();
         const reachVec = this.v1.clone().sub(shoulderPos);
-        const dist = reachVec.length();
-        if (dist < 1e-5) return;
+        const reachDist = reachVec.length();
+        if (reachDist < 1e-5) return;
+
+        const clampedDist = Math.min(reachDist, (upperLen + lowerLen) * 0.999);
         const reachDir = reachVec.clone().normalize();
-        
-        // Law of Cosines for Elbow
-        const c = Math.min(dist, (d1 + d2) * 0.999);
-        const cosGamma = (d1 * d1 + d2 * d2 - c * c) / (2 * d1 * d2);
-        const gamma = Math.acos(THREE.MathUtils.clamp(cosGamma, -1, 1));
 
-        // Law of Cosines for Shoulder Offset
-        const cosBeta = (d1 * d1 + c * c - d2 * d2) / (2 * d1 * c);
-        const beta = Math.acos(THREE.MathUtils.clamp(cosBeta, -1, 1));
+        // Build the bend plane from the avatar's side/back vectors instead of
+        // assuming the normalized VRM arm always rests on +/-X. That assumption
+        // was causing the user's lowered hands to solve upward on some rigs.
+        const sidePole = new THREE.Vector3(idx === 0 ? -1 : 1, 0, 0).applyQuaternion(vrm.scene.quaternion);
+        const backPole = new THREE.Vector3(0, 0, -1).applyQuaternion(vrm.scene.quaternion);
+        const poleHint = sidePole.addScaledVector(backPole, 0.35).normalize();
 
-        // Solve Rotation in world space, then convert back to the bone's
-        // parent-local rotation. This keeps controller mapping aligned with the
-        // actual arm parent transform instead of scene space.
+        let bendNormal = reachDir.clone().cross(poleHint);
+        if (bendNormal.lengthSq() < 1e-6) {
+          bendNormal = reachDir.clone().cross(new THREE.Vector3(0, 1, 0).applyQuaternion(vrm.scene.quaternion));
+        }
+        if (bendNormal.lengthSq() < 1e-6) {
+          bendNormal = reachDir.clone().cross(new THREE.Vector3(1, 0, 0));
+        }
+        bendNormal.normalize();
+
+        const elbowOut = bendNormal.clone().cross(reachDir).normalize();
+        const shoulderToElbowAlong = ((upperLen * upperLen) - (lowerLen * lowerLen) + (clampedDist * clampedDist)) / (2 * clampedDist);
+        const elbowHeight = Math.sqrt(Math.max(0, upperLen * upperLen - shoulderToElbowAlong * shoulderToElbowAlong));
+        const elbowPos = shoulderPos.clone()
+          .add(reachDir.clone().multiplyScalar(shoulderToElbowAlong))
+          .add(elbowOut.multiplyScalar(elbowHeight));
+
+        const upperRestDirLocal = lowerNode.position.clone().normalize();
         upperNode.parent?.getWorldQuaternion(this.q2);
-        const baseDir = new THREE.Vector3(idx === 0 ? 1 : -1, 0, 0).applyQuaternion(this.q2).normalize(); // VRM arms rest along local X
-        const pole = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion); // Elbows back
-        const sideNormal = reachDir.clone().cross(pole).normalize();
-        
-        const shoulderQuat = new THREE.Quaternion().setFromUnitVectors(baseDir, reachDir);
-        const shoulderBend = new THREE.Quaternion().setFromAxisAngle(sideNormal, idx === 0 ? -beta : beta);
-        const shoulderWorldQuat = shoulderBend.multiply(shoulderQuat).multiply(this.q2.clone());
-        
-        this.setBoneWorldQuaternion(upperNode, shoulderWorldQuat);
-        
-        const elbowBend = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), idx === 0 ? (Math.PI - gamma) : -(Math.PI - gamma));
-        lowerNode.quaternion.copy(elbowBend);
+        const elbowDirLocal = elbowPos
+          .clone()
+          .sub(shoulderPos)
+          .normalize()
+          .applyQuaternion(this.q2.clone().invert());
+        upperNode.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(upperRestDirLocal, elbowDirLocal));
+
+        const lowerRestDirLocal = handNode.position.clone().normalize();
+        lowerNode.parent?.getWorldQuaternion(this.q2);
+        const handDirLocal = this.v1
+          .clone()
+          .sub(elbowPos)
+          .normalize()
+          .applyQuaternion(this.q2.clone().invert());
+        lowerNode.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(lowerRestDirLocal, handDirLocal));
 
         // Hand Rotation
-        const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, idx === 0 ? Math.PI/2 : -Math.PI/2));
+        const handCorr = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, idx === 0 ? Math.PI / 2 : -Math.PI / 2));
         this.q3.copy(this.q1).multiply(handCorr);
         this.setBoneWorldQuaternion(handNode, this.q3);
-        
-        // Keep the wrist bone anchored to its default local offset. Driving the
-        // whole hand bone to world-space controller coordinates breaks the arm
-        // chain and prevents the avatar body from being cleanly user-driven.
       }
     });
 
