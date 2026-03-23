@@ -33,6 +33,7 @@ class VRManager {
   private initialAvatarPos = new THREE.Vector3();
   private referenceHeadLocalPos = new THREE.Vector3();
   private referenceHipsLocalPos = new THREE.Vector3();
+  private referenceBodyYawOffset = 0;
   private hasTrackingReference = false;
 
   // Snapshot/Review
@@ -42,9 +43,11 @@ class VRManager {
 
   // Math Helpers
   private v1 = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
   private q1 = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
   private q3 = new THREE.Quaternion();
+  private e1 = new THREE.Euler();
 
   constructor() {
     this.checkSupport();
@@ -188,6 +191,10 @@ class VRManager {
     vrm.scene.worldToLocal(this.v1);
     this.referenceHeadLocalPos.copy(this.v1);
 
+    camera.getWorldQuaternion(this.q1);
+    this.e1.setFromQuaternion(this.q1, 'YXZ');
+    this.referenceBodyYawOffset = vrm.scene.rotation.y - this.e1.y;
+
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
     if (hipsNode) {
       this.referenceHipsLocalPos.copy(hipsNode.position);
@@ -310,6 +317,20 @@ class VRManager {
 
       // Rotation
       camera.getWorldQuaternion(this.q1);
+      this.e1.setFromQuaternion(this.q1, 'YXZ');
+
+      // Industry-standard 3-point VR avatar control pins the avatar root to the
+      // HMD and uses headset yaw to drive the body. We preserve the calibrated
+      // avatar-vs-headset yaw offset so the user stays aligned with the rig.
+      vrm.scene.rotation.y = this.e1.y + this.referenceBodyYawOffset;
+      camera.getWorldPosition(this.v1);
+      this.v2.copy(this.referenceHeadLocalPos).applyQuaternion(vrm.scene.quaternion);
+      vrm.scene.position.set(
+        this.v1.x - this.v2.x,
+        this.initialAvatarPos.y,
+        this.v1.z - this.v2.z,
+      );
+
       this.setBoneWorldQuaternion(headNode, this.q1);
 
       // Spine Bending (Tilt chest/spine to look natural)
@@ -326,14 +347,10 @@ class VRManager {
       vrm.scene.worldToLocal(this.v1);
       const currentHeight = this.v1.y;
       const crouch = Math.max(-0.5, Math.min(0.5, (this.userHeight - currentHeight) * this.scaleFactor));
-      const headOffsetX = this.v1.x - this.referenceHeadLocalPos.x;
-      const headOffsetZ = this.v1.z - this.referenceHeadLocalPos.z;
-      const followScale = 0.75;
-      const maxHorizontalOffset = 0.25;
       hipsNode.position.set(
-        this.referenceHipsLocalPos.x + THREE.MathUtils.clamp(headOffsetX * followScale, -maxHorizontalOffset, maxHorizontalOffset),
+        this.referenceHipsLocalPos.x,
         this.referenceHipsLocalPos.y - crouch,
-        this.referenceHipsLocalPos.z + THREE.MathUtils.clamp(headOffsetZ * followScale, -maxHorizontalOffset, maxHorizontalOffset),
+        this.referenceHipsLocalPos.z,
       );
     }
 
