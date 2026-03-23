@@ -7,6 +7,14 @@ import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
 
+type XRControllerGroup = THREE.Group & {
+  addEventListener(type: 'selectstart', listener: () => void): void;
+  removeEventListener(type: 'selectstart', listener: () => void): void;
+  userData: THREE.Object3D['userData'] & {
+    vrSelectHandler?: () => void;
+  };
+};
+
 /**
  * VR Manager (VRIK Version)
  * 
@@ -25,12 +33,15 @@ class VRManager {
   private originalCameraParent: THREE.Object3D | null = null;
   private headMeshes: THREE.Mesh[] = [];
   private currentVrm: VRM | null = null;
+  private originalRendererPixelRatio: number | null = null;
+  private originalRendererShadowMapEnabled: boolean | null = null;
 
   // Calibration Data
   private userHeight = 1.65;
   private avatarHeight = 1.65;
   private scaleFactor = 1.0;
   private initialAvatarPos = new THREE.Vector3();
+  private initialAvatarRotation = new THREE.Euler();
   private referenceHeadLocalPos = new THREE.Vector3();
   private referenceHipsLocalPos = new THREE.Vector3();
   private referenceBodyYawOffset = 0;
@@ -96,11 +107,14 @@ class VRManager {
     if (vrm) {
         vrm.humanoid?.resetNormalizedPose();
         this.initialAvatarPos.copy(vrm.scene.position);
+        this.initialAvatarRotation.copy(vrm.scene.rotation);
     }
     this.hasTrackingReference = false;
 
     if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
 
+    this.originalRendererShadowMapEnabled ??= this.renderer.shadowMap.enabled;
+    this.originalRendererPixelRatio ??= this.renderer.getPixelRatio();
     this.renderer.shadowMap.enabled = false;
     this.renderer.setPixelRatio(1.0);
 
@@ -138,6 +152,8 @@ class VRManager {
       console.log('[VRManager] VRIK Session Started');
     } catch (error) {
       console.error('[VRManager] Error:', error);
+      this.restoreRendererState();
+      if (this.renderer) this.renderer.xr.enabled = false;
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
       throw error;
@@ -146,17 +162,30 @@ class VRManager {
 
   private setupControllers() {
     if (!this.renderer) return;
+
+    this.controllers.forEach((ctrl) => {
+      const xrCtrl = ctrl as XRControllerGroup;
+      const existingHandler = xrCtrl.userData.vrSelectHandler;
+      if (existingHandler) xrCtrl.removeEventListener('selectstart', existingHandler);
+    });
+
+    this.controllers = [];
+    this.controllerGrips = [];
+
     const modelFactory = new XRControllerModelFactory();
     for (let i = 0; i < 2; i++) {
-      const ctrl = this.renderer.xr.getController(i);
-      ctrl.addEventListener('selectstart', () => {
+      const ctrl = this.renderer.xr.getController(i) as XRControllerGroup;
+      const selectHandler = () => {
         if (this.reviewPlane?.visible) this.handleReviewInteraction(i);
         else this.onTriggerPressed();
-      });
+      };
+      ctrl.userData.vrSelectHandler = selectHandler;
+      ctrl.addEventListener('selectstart', selectHandler);
       this.cameraGroup.add(ctrl);
       this.controllers.push(ctrl);
 
       const grip = this.renderer.xr.getControllerGrip(i);
+      grip.clear();
       grip.add(modelFactory.createControllerModel(grip));
       this.cameraGroup.add(grip);
       this.controllerGrips.push(grip);
@@ -193,7 +222,11 @@ class VRManager {
 
     camera.getWorldQuaternion(this.q1);
     this.e1.setFromQuaternion(this.q1, 'YXZ');
-    this.referenceBodyYawOffset = vrm.scene.rotation.y - this.e1.y;
+
+    // AvatarManager keeps the avatar scene rotated 180° in desktop mode so the
+    // model faces the preview camera. VR body yaw should only preserve any user
+    // authored offset beyond that desktop-facing baseline.
+    this.referenceBodyYawOffset = vrm.scene.rotation.y - Math.PI - this.e1.y;
 
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
     if (hipsNode) {
@@ -214,15 +247,15 @@ class VRManager {
 
   private onTriggerPressed() {
     const vrm = avatarManager.getVRM();
-    if (!vrm) return;
+    const camera = sceneManager.getCamera();
+    if (!vrm || !camera) return;
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     const head = new THREE.Vector3();
     if (headNode) headNode.getWorldPosition(head);
     else head.copy(vrm.scene.position).y += 1.6;
 
-    const forward = new THREE.Vector3(0, 0, 1);
-    vrm.scene.getWorldDirection(forward);
-    this.snapshotCamera.position.copy(head).add(forward.clone().multiplyScalar(2.2)).add(new THREE.Vector3(0, 0.1, 0));
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+    this.snapshotCamera.position.copy(head).sub(forward.clone().multiplyScalar(2.2)).add(new THREE.Vector3(0, 0.1, 0));
     this.snapshotCamera.lookAt(head);
 
     const originalMask = this.snapshotCamera.layers.mask;
@@ -314,6 +347,9 @@ class VRManager {
       if (!this.hasTrackingReference) {
         this.captureTrackingReference(vrm, camera);
       }
+
+      vrm.scene.rotation.x = this.initialAvatarRotation.x;
+      vrm.scene.rotation.z = this.initialAvatarRotation.z;
 
       // Rotation
       camera.getWorldQuaternion(this.q1);
@@ -419,21 +455,35 @@ class VRManager {
     });
 
     // 3. FPV MESH HIDING
+    if (this.currentVrm !== vrm) {
+      this.currentVrm = vrm;
+      this.headMeshes = [];
+      vrm.scene.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          const n = o.name.toLowerCase();
+          if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) this.headMeshes.push(o);
+        }
+      });
+    }
+
     if (this.firstPersonMode) {
-      if (this.currentVrm !== vrm) {
-        this.currentVrm = vrm;
-        this.headMeshes = [];
-        vrm.scene.traverse(o => {
-          if (o instanceof THREE.Mesh) {
-            const n = o.name.toLowerCase();
-            if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) this.headMeshes.push(o);
-          }
-        });
-      }
       camera.layers.disable(10);
       this.headMeshes.forEach(m => m.layers.set(10));
+    } else {
+      camera.layers.enable(10);
+      this.headMeshes.forEach(m => m.layers.enable(0));
     }
   };
+
+  private restoreRendererState() {
+    if (!this.renderer) return;
+    if (this.originalRendererShadowMapEnabled !== null) {
+      this.renderer.shadowMap.enabled = this.originalRendererShadowMapEnabled;
+    }
+    if (this.originalRendererPixelRatio !== null) {
+      this.renderer.setPixelRatio(this.originalRendererPixelRatio);
+    }
+  }
 
   private onSessionEnded() {
     const vrm = avatarManager.getVRM();
@@ -444,6 +494,7 @@ class VRManager {
     if (vrm) {
       const pose = vrm.humanoid?.getNormalizedPose();
       vrm.scene.position.copy(this.initialAvatarPos);
+      vrm.scene.rotation.copy(this.initialAvatarRotation);
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
       if (pose) avatarManager.applyRawPose({ vrmPose: pose }, false, 'static', false);
@@ -454,13 +505,24 @@ class VRManager {
     const cam = sceneManager.getCamera();
     const scene = sceneManager.getScene();
     if (cam && this.originalCameraParent) this.originalCameraParent.add(cam);
+    this.restoreRendererState();
+    if (this.renderer) this.renderer.xr.enabled = false;
     cam?.layers.enable(10);
     this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
     this.hideReview();
     this.session = null;
+    this.controllers.forEach((ctrl) => {
+      const xrCtrl = ctrl as XRControllerGroup;
+      const existingHandler = xrCtrl.userData.vrSelectHandler;
+      if (existingHandler) {
+        xrCtrl.removeEventListener('selectstart', existingHandler);
+        delete xrCtrl.userData.vrSelectHandler;
+      }
+    });
     this.controllers = [];
     this.controllerGrips = [];
+    this.originalCameraParent = null;
     console.log('[VRManager] Session Ended');
   }
 
