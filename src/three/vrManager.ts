@@ -52,6 +52,8 @@ class VRManager {
   private reviewPlane: THREE.Mesh | null = null;
   private lastSnapshotUrl: string | null = null;
   private isCapturingSnapshot = false;
+  private viewfinderPlane: THREE.Mesh | null = null;
+  private viewfinderRenderTarget: THREE.WebGLRenderTarget | null = null;
 
   // Math Helpers
   private v1 = new THREE.Vector3();
@@ -70,15 +72,74 @@ class VRManager {
   ];
   private avatarBounds = new THREE.Box3();
   private floorAnchorY = 0;
+  private currentBodyYaw = 0;
 
   constructor() {
     this.checkSupport();
     this.cameraGroup.name = 'VR_RIG';
     this.initReviewPlane();
+    this.initViewfinder();
+  }
+
+  private initViewfinder() {
+    this.viewfinderRenderTarget = new THREE.WebGLRenderTarget(360, 640);
+    const geometry = new THREE.PlaneGeometry(0.15, 0.15 * (640/360));
+    const material = new THREE.MeshBasicMaterial({ 
+        map: this.viewfinderRenderTarget.texture,
+        side: THREE.DoubleSide,
+        depthTest: false,
+    });
+    this.viewfinderPlane = new THREE.Mesh(geometry, material);
+    this.viewfinderPlane.name = 'VR_Viewfinder';
+    this.viewfinderPlane.renderOrder = 998;
+    this.viewfinderPlane.visible = false;
+  }
+
+  private activeFlash: { mesh: THREE.Mesh, opacity: number } | null = null;
+
+  private triggerFlash() {
+    const scene = sceneManager.getScene();
+    const camera = sceneManager.getCamera();
+    if (!scene || !camera) return;
+
+    if (this.activeFlash) {
+       scene.remove(this.activeFlash.mesh);
+       this.activeFlash.mesh.geometry.dispose();
+       (this.activeFlash.mesh.material as THREE.Material).dispose();
+    }
+
+    const flashGeometry = new THREE.PlaneGeometry(10, 10);
+    const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false });
+    const flashMesh = new THREE.Mesh(flashGeometry, flashMaterial);
+    
+    const forward = new THREE.Vector3(0, 0, -0.5).applyQuaternion(camera.quaternion);
+    flashMesh.position.copy(camera.position).add(forward);
+    flashMesh.quaternion.copy(camera.quaternion);
+    flashMesh.renderOrder = 9999;
+    scene.add(flashMesh);
+    
+    this.activeFlash = { mesh: flashMesh, opacity: 0.8 };
+
+    // Audio click
+    try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+    } catch (e) {}
   }
 
   private initReviewPlane() {
-    const geometry = new THREE.PlaneGeometry(1.2, 0.675);
+    // Taller geometry to fit the snapshot + UI context labels
+    const geometry = new THREE.PlaneGeometry(0.675, 1.2 * (1380/1280));
     const material = new THREE.MeshBasicMaterial({ 
         color: 0xffffff,
         side: THREE.DoubleSide, 
@@ -203,6 +264,13 @@ class VRManager {
       const grip = this.renderer.xr.getControllerGrip(i);
       grip.clear();
       grip.add(modelFactory.createControllerModel(grip));
+      
+      if (i === 1 && this.viewfinderPlane) {
+        grip.add(this.viewfinderPlane);
+        this.viewfinderPlane.position.set(0, 0.1, -0.1);
+        this.viewfinderPlane.rotation.x = -Math.PI / 6;
+      }
+      
       this.cameraGroup.add(grip);
       this.controllerGrips.push(grip);
     }
@@ -220,7 +288,7 @@ class VRManager {
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     if (!headNode) return;
     headNode.getWorldPosition(this.v1);
-    this.avatarHeight = this.v1.y - vrm.scene.position.y;
+    this.avatarHeight = this.v1.y - this.initialAvatarPos.y;
 
     this.captureTrackingReference(vrm, camera);
     this.captureControllerHandOffsets();
@@ -233,7 +301,7 @@ class VRManager {
 
   private captureTrackingReference(vrm: VRM, camera: THREE.Camera) {
     camera.getWorldPosition(this.v1);
-    this.userHeight = this.v1.y - vrm.scene.position.y;
+    this.userHeight = this.v1.y - this.initialAvatarPos.y;
     vrm.scene.worldToLocal(this.v1);
     this.referenceHeadLocalPos.copy(this.v1);
 
@@ -244,6 +312,7 @@ class VRManager {
     // model faces the preview camera. VR body yaw should only preserve any user
     // authored offset beyond that desktop-facing baseline.
     this.referenceBodyYawOffset = vrm.scene.rotation.y - Math.PI - this.e1.y;
+    this.currentBodyYaw = this.e1.y;
 
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
     if (hipsNode) {
@@ -304,36 +373,64 @@ class VRManager {
     const camera = sceneManager.getCamera();
     if (!vrm || !camera || this.isCapturingSnapshot) return;
     this.isCapturingSnapshot = true;
+    
     vrm.scene.updateWorldMatrix(true, true);
-    this.avatarBounds.setFromObject(vrm.scene);
+    
+    // Target resolution for selfie (Vertical 9:16)
+    const targetWidth = 720;
+    const targetHeight = 1280;
+    const aspect = targetWidth / targetHeight;
 
-    const boundsCenter = this.avatarBounds.getCenter(this.v1);
-    const boundsSize = this.avatarBounds.getSize(this.v2);
-    const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
-    const verticalFov = THREE.MathUtils.degToRad(this.snapshotCamera.fov);
-    const aspect = 1280 / 720;
-    const fitHeight = Math.max(boundsSize.y * 0.7, 0.75);
-    const fitWidth = Math.max(boundsSize.x * 0.7, fitHeight * aspect * 0.45);
-    const distanceFromHeight = fitHeight / Math.tan(verticalFov / 2);
-    const distanceFromWidth = fitWidth / (Math.tan(verticalFov / 2) * aspect);
-    const framingDistance = Math.max(distanceFromHeight, distanceFromWidth) + Math.max(boundsSize.z, 0.5) * 0.85;
-    const lookTarget = boundsCenter.clone().add(new THREE.Vector3(0, boundsSize.y * 0.08, 0));
+    // Get head position for the camera to look at
+    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    const headPos = new THREE.Vector3();
+    if (headNode) headNode.getWorldPosition(headPos);
+    else headPos.copy(vrm.scene.position).add(new THREE.Vector3(0, 1.5 * this.scaleFactor, 0));
 
-    this.snapshotCamera.position
-      .copy(lookTarget)
-      .add(avatarForward.multiplyScalar(framingDistance))
-      .add(new THREE.Vector3(0, Math.max(0.18, boundsSize.y * 0.08), 0));
-    this.snapshotCamera.near = 0.05;
-    this.snapshotCamera.far = Math.max(20, framingDistance * 4);
+    const rightGrip = this.controllerGrips[1]; // Right trigger triggers snapshot
+    
+    if (rightGrip && rightGrip.visible) {
+        // HANDHELD SELFIE MODE (Free aim already set in update loop)
+        
+        // Haptics
+        const session = this.renderer?.xr.getSession();
+        if (session) {
+            const rightInput = session.inputSources[1];
+            if (rightInput?.gamepad?.hapticActuators?.[0]) {
+                rightInput.gamepad.hapticActuators[0].pulse(1.0, 100);
+            }
+        }
+        
+        // Visual Flash & Audio
+        this.triggerFlash();
+        
+    } else {
+        // AUTO-PORTRAIT MODE (Third person vertical)
+        this.avatarBounds.setFromObject(vrm.scene);
+        const boundsSize = this.avatarBounds.getSize(this.v2);
+        const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
+        
+        // Composition for vertical portrait
+        const framingDistance = 1.3 * this.scaleFactor;
+        this.snapshotCamera.position
+          .copy(headPos)
+          .add(avatarForward.multiplyScalar(framingDistance))
+          .add(new THREE.Vector3(0, 0.1, 0));
+        
+        this.snapshotCamera.fov = 50;
+        this.snapshotCamera.lookAt(headPos);
+    }
+
+    this.snapshotCamera.near = 0.01;
+    this.snapshotCamera.far = 100;
     this.snapshotCamera.updateProjectionMatrix();
-    this.snapshotCamera.lookAt(lookTarget);
 
     const originalMask = this.snapshotCamera.layers.mask;
     this.snapshotCamera.layers.enableAll();
 
     setTimeout(() => {
       sceneManager.captureSnapshot({ 
-        includeLogo: true, width: 1280, height: 720, camera: this.snapshotCamera 
+        includeLogo: true, width: targetWidth, height: targetHeight, camera: this.snapshotCamera 
       }).then(url => {
         if (url) {
           this.lastSnapshotUrl = url;
@@ -349,16 +446,42 @@ class VRManager {
   private showVRReview(url: string) {
     const camera = sceneManager.getCamera();
     if (!camera || !this.reviewPlane) return;
-    new THREE.TextureLoader().load(url, (tex) => {
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 720;
+      canvas.height = 1280 + 100; // Extra space for UI
+      const ctx = canvas.getContext('2d')!;
+      
+      // Draw background
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw Snapshot
+      ctx.drawImage(img, 0, 0, 720, 1280);
+      
+      // Draw UI Text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 32px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('[L-Trigger: ✖ Discard]    [R-Trigger: ✔ Publish]', canvas.width / 2, 1280 + 60);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      
       const mat = this.reviewPlane!.material as THREE.MeshBasicMaterial;
       mat.map = tex;
       mat.opacity = 1.0;
       mat.needsUpdate = true;
+      
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
       this.reviewPlane!.position.copy(camera.position).add(forward.multiplyScalar(0.8));
       this.reviewPlane!.lookAt(camera.position);
       this.reviewPlane!.visible = true;
-    });
+    };
+    img.src = url;
   }
 
   private handleReviewInteraction(i: number) {
@@ -504,10 +627,70 @@ class VRManager {
     if (!vrm || !camera) return;
     this.updateControllerShortcuts();
 
+    if (this.activeFlash) {
+      this.activeFlash.opacity -= 0.05;
+      if (this.activeFlash.opacity <= 0) {
+        sceneManager.getScene()?.remove(this.activeFlash.mesh);
+        this.activeFlash.mesh.geometry.dispose();
+        (this.activeFlash.mesh.material as THREE.Material).dispose();
+        this.activeFlash = null;
+      } else {
+        (this.activeFlash.mesh.material as THREE.MeshBasicMaterial).opacity = this.activeFlash.opacity;
+      }
+    }
+
+    const rightGrip = this.controllerGrips[1];
+    if (rightGrip && rightGrip.visible && this.viewfinderPlane && this.viewfinderRenderTarget) {
+        this.viewfinderPlane.visible = true;
+        
+        // Setup the free-aim snapshot camera
+        rightGrip.getWorldPosition(this.v1);
+        rightGrip.getWorldQuaternion(this.q1);
+        const lensOffset = new THREE.Vector3(0, 0, -0.15).applyQuaternion(this.q1);
+        this.snapshotCamera.position.copy(this.v1).add(lensOffset);
+        this.snapshotCamera.quaternion.copy(this.q1); // Look straight out of the controller
+        
+        this.snapshotCamera.fov = 80;
+        this.snapshotCamera.near = 0.01;
+        this.snapshotCamera.far = 100;
+        this.snapshotCamera.updateProjectionMatrix();
+
+        if (this.renderer && !this.isCapturingSnapshot) {
+            const gl = this.renderer;
+            const currentRenderTarget = gl.getRenderTarget();
+            
+            // Hide viewfinder mesh during its own render to avoid infinite mirror
+            this.viewfinderPlane.visible = false;
+            
+            gl.setRenderTarget(this.viewfinderRenderTarget);
+            gl.render(sceneManager.getScene()!, this.snapshotCamera);
+            
+            gl.setRenderTarget(currentRenderTarget);
+            
+            this.viewfinderPlane.visible = true;
+        }
+    } else if (this.viewfinderPlane) {
+        this.viewfinderPlane.visible = false;
+    }
+
+    const cameraPos = new THREE.Vector3();
+    camera.getWorldPosition(cameraPos);
+    
+    // Calculate the perfect target head position mapping real-world space to avatar space
+    const drop = this.userHeight - (cameraPos.y - this.initialAvatarPos.y);
+    const scaledDrop = drop * this.scaleFactor;
+    const targetHeadPos = new THREE.Vector3(
+        cameraPos.x,
+        this.initialAvatarPos.y + this.avatarHeight - scaledDrop,
+        cameraPos.z
+    );
+
     // 1. HEAD & SPINE SOLVER
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
     const chestNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Chest);
+    const upperChestNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.UpperChest);
     const spineNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Spine);
+    const neckNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Neck);
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
 
     if (headNode && hipsNode) {
@@ -522,39 +705,57 @@ class VRManager {
       camera.getWorldQuaternion(this.q1);
       this.e1.setFromQuaternion(this.q1, 'YXZ');
 
-      // Industry-standard 3-point VR avatar control pins the avatar root to the
-      // HMD and uses headset yaw to drive the body. We preserve the calibrated
-      // avatar-vs-headset yaw offset so the user stays aligned with the rig.
-      vrm.scene.rotation.y = this.e1.y + this.referenceBodyYawOffset;
-      camera.getWorldPosition(this.v1);
+      // VRChat style low-pass filter for body yaw smoothing
+      let yawDiff = this.e1.y - this.currentBodyYaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      this.currentBodyYaw += yawDiff * 0.1; // Smooth body turning
+
+      vrm.scene.rotation.y = this.currentBodyYaw + this.referenceBodyYawOffset;
+
+      // Reset hips to reference before solving
+      hipsNode.position.copy(this.referenceHipsLocalPos);
+
+      // Anchor roughly to get bones in the right ballpark
       this.v2.copy(this.referenceHeadLocalPos).applyQuaternion(vrm.scene.quaternion);
       vrm.scene.position.set(
-        this.v1.x - this.v2.x,
+        targetHeadPos.x - this.v2.x,
         this.initialAvatarPos.y,
-        this.v1.z - this.v2.z,
+        targetHeadPos.z - this.v2.z,
       );
 
       this.setBoneWorldQuaternion(headNode, this.q1);
 
-      // Spine Bending (Tilt chest/spine to look natural)
-      if (chestNode && spineNode) {
+      // Spine Bending (VRChat / Warudo style distributed procedural bending)
+      if (spineNode) {
           const torsoLocalQuat = vrm.scene.quaternion.clone().invert().multiply(this.q1);
           const identityQuat = new THREE.Quaternion();
 
-          chestNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.3));
-          spineNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.2));
+          // Distribute rotation across the spine chain to prevent "stiff pole" syndrome
+          spineNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.15));
+          if (chestNode) chestNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.25));
+          if (upperChestNode) upperChestNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.15));
+          if (neckNode) neckNode.quaternion.copy(identityQuat.clone().slerp(torsoLocalQuat, 0.2));
       }
 
-      // Hips Position (calibrated follow + crouching)
-      camera.getWorldPosition(this.v1);
-      vrm.scene.worldToLocal(this.v1);
-      const currentHeight = this.v1.y;
-      const crouch = Math.max(-0.5, Math.min(0.5, (this.userHeight - currentHeight) * this.scaleFactor));
-      hipsNode.position.set(
-        this.referenceHipsLocalPos.x,
-        this.referenceHipsLocalPos.y - crouch,
-        this.referenceHipsLocalPos.z,
-      );
+      // Precise Alignment
+      vrm.scene.updateMatrixWorld(true);
+      const actualHeadPos = new THREE.Vector3();
+      headNode.getWorldPosition(actualHeadPos);
+
+      // Fix X/Z offset exactly
+      vrm.scene.position.x += (targetHeadPos.x - actualHeadPos.x);
+      vrm.scene.position.z += (targetHeadPos.z - actualHeadPos.z);
+
+      // Fix Y offset via Hips (Crouching)
+      const yError = targetHeadPos.y - actualHeadPos.y;
+      const newHipsY = this.referenceHipsLocalPos.y + yError;
+      
+      const maxHipsY = this.referenceHipsLocalPos.y;
+      const minHipsY = this.referenceHipsLocalPos.y - 0.8; 
+      hipsNode.position.y = Math.max(minHipsY, Math.min(maxHipsY, newHipsY));
+
+      vrm.scene.updateMatrixWorld(true);
     }
 
     // 2. ARM IK SOLVER (2-Bone Analytical)
@@ -574,12 +775,16 @@ class VRManager {
         grip.localToWorld(this.v1);
         grip.getWorldQuaternion(this.q1);
 
+        const camToHand = this.v1.clone().sub(cameraPos);
+        camToHand.multiplyScalar(this.scaleFactor);
+        const targetHandPos = targetHeadPos.clone().add(camToHand);
+
         const shoulderPos = new THREE.Vector3();
         upperNode.getWorldPosition(shoulderPos);
 
         const upperLen = lowerNode.position.length();
         const lowerLen = handNode.position.length();
-        const reachVec = this.v1.clone().sub(shoulderPos);
+        const reachVec = targetHandPos.clone().sub(shoulderPos);
         const reachDist = reachVec.length();
         if (reachDist < 1e-5) return;
 

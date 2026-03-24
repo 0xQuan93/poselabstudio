@@ -799,7 +799,12 @@ class SceneManager {
 
       // Render at target resolution
       // NOTE: We bypass post-processing for custom cameras or VR snapshots to ensure clarity
+      const wasXrEnabled = this.renderer.xr.enabled;
+      if (wasXrEnabled) this.renderer.xr.enabled = false;
+      
       this.renderer.render(this.scene, captureCamera);
+      
+      if (wasXrEnabled) this.renderer.xr.enabled = true;
       
       // Capture the render
       const dataUrl = await this.compositeWithLogo(
