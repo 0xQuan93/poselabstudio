@@ -379,7 +379,6 @@ class VRManager {
     // Target resolution for selfie (Vertical 9:16)
     const targetWidth = 720;
     const targetHeight = 1280;
-    const aspect = targetWidth / targetHeight;
 
     // Get head position for the camera to look at
     const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
@@ -407,7 +406,6 @@ class VRManager {
     } else {
         // AUTO-PORTRAIT MODE (Third person vertical)
         this.avatarBounds.setFromObject(vrm.scene);
-        const boundsSize = this.avatarBounds.getSize(this.v2);
         const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
         
         // Composition for vertical portrait
