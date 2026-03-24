@@ -661,9 +661,13 @@ class VRManager {
         this.snapshotCamera.position.copy(this.v1).add(lensOffset);
 
         const idealDistance = THREE.MathUtils.clamp(1.15 * this.scaleFactor, this.handheldSelfieMinDistance, this.handheldSelfieMaxDistance);
-        const currentDistance = this.snapshotCamera.position.distanceTo(lookAtTarget);
+        const cameraFromTarget = this.snapshotCamera.position.clone().sub(lookAtTarget);
+        const currentDistance = cameraFromTarget.length();
         if (currentDistance < idealDistance) {
-          this.snapshotCamera.position.addScaledVector(controllerForward, -(idealDistance - currentDistance));
+          const retreatDirection = currentDistance > 1e-5
+            ? cameraFromTarget.normalize()
+            : controllerForward.clone().negate();
+          this.snapshotCamera.position.copy(lookAtTarget).addScaledVector(retreatDirection, idealDistance);
         }
 
         this.snapshotCamera.lookAt(lookAtTarget);
