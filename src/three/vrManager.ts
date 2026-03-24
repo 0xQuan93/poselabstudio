@@ -4,6 +4,7 @@ import { avatarManager } from './avatarManager';
 import { animationManager } from './animationManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
+import type { VRMPose } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
 
@@ -42,6 +43,7 @@ class VRManager {
   private scaleFactor = 1.0;
   private initialAvatarPos = new THREE.Vector3();
   private initialAvatarRotation = new THREE.Euler();
+  private poseBeforeVR: VRMPose | null = null;
   private referenceHeadLocalPos = new THREE.Vector3();
   private referenceHipsLocalPos = new THREE.Vector3();
   private referenceBodyYawOffset = 0;
@@ -179,11 +181,14 @@ class VRManager {
     
     const vrm = avatarManager.getVRM();
     if (vrm) {
+        this.poseBeforeVR = vrm.humanoid?.getNormalizedPose() ?? null;
         vrm.humanoid?.resetNormalizedPose();
         this.initialAvatarPos.copy(vrm.scene.position);
         this.initialAvatarRotation.copy(vrm.scene.rotation);
         this.captureInitialHandRotations(vrm);
         this.captureFloorAnchor(vrm);
+    } else {
+        this.poseBeforeVR = null;
     }
     this.hasTrackingReference = false;
     this.hasControllerHandOffsets = [false, false];
@@ -949,12 +954,16 @@ class VRManager {
     this.hasTrackingReference = false;
 
     if (vrm) {
-      const pose = vrm.humanoid?.getNormalizedPose();
       vrm.scene.position.copy(this.initialAvatarPos);
       vrm.scene.rotation.copy(this.initialAvatarRotation);
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
-      if (pose) avatarManager.applyRawPose({ vrmPose: pose }, false, 'static', false);
+
+      if (this.poseBeforeVR) {
+        avatarManager.applyRawPose({ vrmPose: this.poseBeforeVR }, false, 'static', false);
+      } else {
+        vrm.humanoid?.resetNormalizedPose();
+      }
     } else {
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
@@ -980,6 +989,7 @@ class VRManager {
     this.controllers = [];
     this.controllerGrips = [];
     this.originalCameraParent = null;
+    this.poseBeforeVR = null;
     console.log('[VRManager] Session Ended');
   }
 
