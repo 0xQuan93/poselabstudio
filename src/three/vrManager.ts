@@ -588,9 +588,13 @@ class VRManager {
     return pressed && !wasPressed;
   }
 
+  private getInputSourceByHandedness(handedness: XRHandedness): XRInputSource | undefined {
+    return this.session ? Array.from(this.session.inputSources).find((source: XRInputSource) => source.handedness === handedness) : undefined;
+  }
+
   private updateControllerShortcuts() {
-    const leftInput = this.session?.inputSources[0];
-    const rightInput = this.session?.inputSources[1];
+    const leftInput = this.getInputSourceByHandedness('left');
+    const rightInput = this.getInputSourceByHandedness('right');
 
     if (this.consumeGamepadButton(leftInput, 3, 'left-stick-press')) {
       this.calibrate();
@@ -881,8 +885,11 @@ class VRManager {
 
         // Hand Rotation
         this.q3.copy(this.q1).multiply(this.controllerHandOffsets[idx]);
-        this.setBoneWorldQuaternion(handNode, this.q3);
-        this.applyControllerFingerPose(vrm, this.session?.inputSources[idx], side);
+        handNode.getWorldQuaternion(this.q2);
+        this.q2.slerp(this.q3, 0.45);
+        this.setBoneWorldQuaternion(handNode, this.q2);
+        const inputSource = this.getInputSourceByHandedness(idx === 0 ? 'left' : 'right');
+        this.applyControllerFingerPose(vrm, inputSource, side);
       }
     });
 
@@ -893,35 +900,35 @@ class VRManager {
       this.currentVrm = vrm;
       this.headMeshes = [];
 
-      const headNodeForCull = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
-      const headWorldPos = new THREE.Vector3();
-      headNodeForCull?.getWorldPosition(headWorldPos);
-      const cullRadius = 0.28 * Math.max(0.8, this.scaleFactor);
-
-      vrm.scene.traverse(o => {
-        if (!(o instanceof THREE.Mesh)) return;
-        const n = o.name.toLowerCase();
-        const nameMatch = n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow');
-
-        let nearHead = false;
-        if (headNodeForCull && o.geometry) {
-          o.geometry.computeBoundingSphere();
-          if (o.geometry.boundingSphere) {
-            const centerWorld = o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld);
-            nearHead = centerWorld.distanceTo(headWorldPos) <= cullRadius + o.geometry.boundingSphere.radius;
+      if (vrm.firstPerson) {
+        vrm.firstPerson.setup({ firstPersonOnlyLayer: 9, thirdPersonOnlyLayer: 10 });
+      } else {
+        vrm.scene.traverse(o => {
+          if (o instanceof THREE.Mesh) {
+            const n = o.name.toLowerCase();
+            if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) {
+              this.headMeshes.push(o);
+            }
           }
-        }
-
-        if (nameMatch || nearHead) this.headMeshes.push(o);
-      });
+        });
+      }
     }
 
+    const firstPersonOnlyLayer = vrm.firstPerson?.firstPersonOnlyLayer ?? 9;
+    const thirdPersonOnlyLayer = vrm.firstPerson?.thirdPersonOnlyLayer ?? 10;
+
+    this.snapshotCamera.layers.enable(0);
+    this.snapshotCamera.layers.enable(thirdPersonOnlyLayer);
+    this.snapshotCamera.layers.disable(firstPersonOnlyLayer);
+
     if (this.firstPersonMode) {
-      camera.layers.disable(10);
-      this.headMeshes.forEach(m => m.layers.set(10));
+      camera.layers.enable(firstPersonOnlyLayer);
+      camera.layers.disable(thirdPersonOnlyLayer);
+      this.headMeshes.forEach((mesh) => mesh.layers.set(thirdPersonOnlyLayer));
     } else {
-      camera.layers.enable(10);
-      this.headMeshes.forEach(m => m.layers.enable(0));
+      camera.layers.disable(firstPersonOnlyLayer);
+      camera.layers.enable(thirdPersonOnlyLayer);
+      this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     }
   };
 
