@@ -67,12 +67,14 @@ class VRManager {
   private hasControllerHandOffsets = [false, false];
   private gamepadButtonStates = new Map<string, boolean>();
   private controllerHandTargetOffsets = [
-    new THREE.Vector3(-0.015, -0.025, 0.045),
-    new THREE.Vector3(0.015, -0.025, 0.045),
+    new THREE.Vector3(-0.035, -0.035, 0.03),
+    new THREE.Vector3(0.035, -0.035, 0.03),
   ];
   private avatarBounds = new THREE.Box3();
   private floorAnchorY = 0;
   private currentBodyYaw = 0;
+  private readonly handheldSelfieMinDistance = 0.95;
+  private readonly handheldSelfieMaxDistance = 1.6;
 
   constructor() {
     this.checkSupport();
@@ -527,10 +529,10 @@ class VRManager {
     const gamepad = inputSource?.gamepad;
     if (!gamepad) return;
 
-    const trigger = 0.18 + (gamepad.buttons[0]?.value ?? 0) * 0.82;
-    const squeeze = 0.35 + (gamepad.buttons[1]?.value ?? 0) * 0.65;
+    const trigger = gamepad.buttons[0]?.value ?? 0;
+    const squeeze = 0.08 + (gamepad.buttons[1]?.value ?? 0) * 0.92;
     const thumbTouched = [3, 4, 5].some((idx) => gamepad.buttons[idx]?.touched);
-    const thumbCurl = thumbTouched ? 0.7 : 0.28;
+    const thumbCurl = thumbTouched ? 0.58 : 0.1;
 
     const prefix = side === 'Left' ? 'Left' : 'Right';
     this.applyFingerCurl(vrm, [
@@ -640,15 +642,32 @@ class VRManager {
     const rightGrip = this.controllerGrips[1];
     if (rightGrip && rightGrip.visible && this.viewfinderPlane && this.viewfinderRenderTarget) {
         this.viewfinderPlane.visible = true;
-        
-        // Setup the free-aim snapshot camera
+
+        // Stabilized handheld selfie framing: keep the avatar in view instead of
+        // rendering an extreme close-up when the controller is near the headset.
         rightGrip.getWorldPosition(this.v1);
         rightGrip.getWorldQuaternion(this.q1);
-        const lensOffset = new THREE.Vector3(0, 0, -0.15).applyQuaternion(this.q1);
+
+        const headNodeForViewfinder = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+        const lookAtTarget = new THREE.Vector3();
+        if (headNodeForViewfinder) {
+          headNodeForViewfinder.getWorldPosition(lookAtTarget);
+        } else {
+          lookAtTarget.copy(vrm.scene.position).add(new THREE.Vector3(0, 1.45 * this.scaleFactor, 0));
+        }
+
+        const controllerForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.q1).normalize();
+        const lensOffset = controllerForward.clone().multiplyScalar(0.08);
         this.snapshotCamera.position.copy(this.v1).add(lensOffset);
-        this.snapshotCamera.quaternion.copy(this.q1); // Look straight out of the controller
-        
-        this.snapshotCamera.fov = 80;
+
+        const idealDistance = THREE.MathUtils.clamp(1.15 * this.scaleFactor, this.handheldSelfieMinDistance, this.handheldSelfieMaxDistance);
+        const currentDistance = this.snapshotCamera.position.distanceTo(lookAtTarget);
+        if (currentDistance < idealDistance) {
+          this.snapshotCamera.position.addScaledVector(controllerForward, -(idealDistance - currentDistance));
+        }
+
+        this.snapshotCamera.lookAt(lookAtTarget);
+        this.snapshotCamera.fov = 58;
         this.snapshotCamera.near = 0.01;
         this.snapshotCamera.far = 100;
         this.snapshotCamera.updateProjectionMatrix();
@@ -656,15 +675,15 @@ class VRManager {
         if (this.renderer && !this.isCapturingSnapshot) {
             const gl = this.renderer;
             const currentRenderTarget = gl.getRenderTarget();
-            
+
             // Hide viewfinder mesh during its own render to avoid infinite mirror
             this.viewfinderPlane.visible = false;
-            
+
             gl.setRenderTarget(this.viewfinderRenderTarget);
             gl.render(sceneManager.getScene()!, this.snapshotCamera);
-            
+
             gl.setRenderTarget(currentRenderTarget);
-            
+
             this.viewfinderPlane.visible = true;
         }
     } else if (this.viewfinderPlane) {
@@ -805,7 +824,7 @@ class VRManager {
         }
         bendNormal.normalize();
 
-        const elbowOut = bendNormal.clone().cross(reachDir).normalize();
+        const elbowOut = bendNormal.clone().cross(reachDir).normalize().add(new THREE.Vector3(0, -0.25, 0)).normalize();
         const shoulderToElbowAlong = ((upperLen * upperLen) - (lowerLen * lowerLen) + (clampedDist * clampedDist)) / (2 * clampedDist);
         const elbowHeight = Math.sqrt(Math.max(0, upperLen * upperLen - shoulderToElbowAlong * shoulderToElbowAlong));
         const elbowPos = shoulderPos.clone()
