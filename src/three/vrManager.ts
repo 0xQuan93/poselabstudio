@@ -359,6 +359,25 @@ class VRManager {
     this.floorAnchorY = this.avatarBounds.min.y;
   }
 
+  private ensureSelfieCameraOutsideAvatar(vrm: VRM, fallbackDirection: THREE.Vector3) {
+    vrm.scene.updateWorldMatrix(true, true);
+    this.avatarBounds.setFromObject(vrm.scene);
+    if (!Number.isFinite(this.avatarBounds.min.x) || !Number.isFinite(this.avatarBounds.max.x)) return;
+
+    const center = this.avatarBounds.getCenter(new THREE.Vector3());
+    const radius = this.avatarBounds.getSize(new THREE.Vector3()).length() * 0.5;
+    const safeRadius = radius + (0.12 * Math.max(0.8, this.scaleFactor));
+
+    const fromCenter = this.snapshotCamera.position.clone().sub(center);
+    const dist = fromCenter.length();
+    if (dist >= safeRadius) return;
+
+    const retreatDir = dist > 1e-5
+      ? fromCenter.normalize()
+      : fallbackDirection.clone().normalize();
+    this.snapshotCamera.position.copy(center).addScaledVector(retreatDir, safeRadius);
+  }
+
   private keepAvatarGrounded(vrm: VRM) {
     vrm.scene.updateWorldMatrix(true, true);
     this.avatarBounds.setFromObject(vrm.scene);
@@ -656,6 +675,8 @@ class VRManager {
           lookAtTarget.copy(vrm.scene.position).add(new THREE.Vector3(0, 1.45 * this.scaleFactor, 0));
         }
 
+        lookAtTarget.y -= 0.08 * this.scaleFactor;
+
         const controllerForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.q1).normalize();
         const lensOffset = controllerForward.clone().multiplyScalar(0.08);
         this.snapshotCamera.position.copy(this.v1).add(lensOffset);
@@ -670,6 +691,7 @@ class VRManager {
           this.snapshotCamera.position.copy(lookAtTarget).addScaledVector(retreatDirection, idealDistance);
         }
 
+        this.ensureSelfieCameraOutsideAvatar(vrm, controllerForward.clone().negate());
         this.snapshotCamera.lookAt(lookAtTarget);
         this.snapshotCamera.fov = 58;
         this.snapshotCamera.near = 0.01;
@@ -870,11 +892,27 @@ class VRManager {
     if (this.currentVrm !== vrm) {
       this.currentVrm = vrm;
       this.headMeshes = [];
+
+      const headNodeForCull = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+      const headWorldPos = new THREE.Vector3();
+      headNodeForCull?.getWorldPosition(headWorldPos);
+      const cullRadius = 0.28 * Math.max(0.8, this.scaleFactor);
+
       vrm.scene.traverse(o => {
-        if (o instanceof THREE.Mesh) {
-          const n = o.name.toLowerCase();
-          if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) this.headMeshes.push(o);
+        if (!(o instanceof THREE.Mesh)) return;
+        const n = o.name.toLowerCase();
+        const nameMatch = n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow');
+
+        let nearHead = false;
+        if (headNodeForCull && o.geometry) {
+          o.geometry.computeBoundingSphere();
+          if (o.geometry.boundingSphere) {
+            const centerWorld = o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld);
+            nearHead = centerWorld.distanceTo(headWorldPos) <= cullRadius + o.geometry.boundingSphere.radius;
+          }
         }
+
+        if (nameMatch || nearHead) this.headMeshes.push(o);
       });
     }
 
