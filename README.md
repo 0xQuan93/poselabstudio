@@ -1,7 +1,5 @@
 # 🎭 PoseLab
 
-**A Project 89 Initiative**
-
 **PoseLab** (formerly Reaction Forge) is a browser-based studio for VRM avatar animation, posing, and content creation. It runs locally in your browser with no installs or accounts required.
 
 [![Live Demo](https://img.shields.io/badge/Live-Demo-00ffd6?style=for-the-badge)](https://poselab.studio)
