@@ -89,6 +89,7 @@ export function OnboardingOverlay() {
   } = useUIStore();
   
   const vrmInputRef = useRef<HTMLInputElement>(null);
+  const prevStepRef = useRef(currentTutorialStep);
 
   // Auto-start tutorial if no avatar is loaded
   useEffect(() => {
@@ -105,12 +106,16 @@ export function OnboardingOverlay() {
     if (!isTutorialActive) return;
     
     const step = TUTORIAL_STEPS[currentTutorialStep];
+    const isMovingBackwards = currentTutorialStep < prevStepRef.current;
+    prevStepRef.current = currentTutorialStep;
+
     if (step && step.action) {
       step.action({ setMode, setPoseLabTab });
     }
 
     // specific check for upload step completion
-    if (step && step.id === 'upload' && avatarType !== 'none') {
+    // Only auto-advance if we're not moving backwards (e.g. user clicked "Back")
+    if (step && step.id === 'upload' && avatarType !== 'none' && !isMovingBackwards) {
        nextTutorialStep();
     }
 
