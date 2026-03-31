@@ -4,6 +4,7 @@ import { avatarManager } from './avatarManager';
 import { animationManager } from './animationManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
+import type { VRMPose } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
 
@@ -42,6 +43,7 @@ class VRManager {
   private scaleFactor = 1.0;
   private initialAvatarPos = new THREE.Vector3();
   private initialAvatarRotation = new THREE.Euler();
+  private poseBeforeVR: VRMPose | null = null;
   private referenceHeadLocalPos = new THREE.Vector3();
   private referenceHipsLocalPos = new THREE.Vector3();
   private referenceBodyYawOffset = 0;
@@ -67,12 +69,14 @@ class VRManager {
   private hasControllerHandOffsets = [false, false];
   private gamepadButtonStates = new Map<string, boolean>();
   private controllerHandTargetOffsets = [
-    new THREE.Vector3(-0.015, -0.025, 0.045),
-    new THREE.Vector3(0.015, -0.025, 0.045),
+    new THREE.Vector3(-0.035, -0.035, 0.03),
+    new THREE.Vector3(0.035, -0.035, 0.03),
   ];
   private avatarBounds = new THREE.Box3();
   private floorAnchorY = 0;
   private currentBodyYaw = 0;
+  private readonly handheldSelfieMinDistance = 0.95;
+  private readonly handheldSelfieMaxDistance = 1.6;
 
   constructor() {
     this.checkSupport();
@@ -177,11 +181,14 @@ class VRManager {
     
     const vrm = avatarManager.getVRM();
     if (vrm) {
+        this.poseBeforeVR = vrm.humanoid?.getNormalizedPose() ?? null;
         vrm.humanoid?.resetNormalizedPose();
         this.initialAvatarPos.copy(vrm.scene.position);
         this.initialAvatarRotation.copy(vrm.scene.rotation);
         this.captureInitialHandRotations(vrm);
         this.captureFloorAnchor(vrm);
+    } else {
+        this.poseBeforeVR = null;
     }
     this.hasTrackingReference = false;
     this.hasControllerHandOffsets = [false, false];
@@ -357,6 +364,25 @@ class VRManager {
     this.floorAnchorY = this.avatarBounds.min.y;
   }
 
+  private ensureSelfieCameraOutsideAvatar(vrm: VRM, fallbackDirection: THREE.Vector3) {
+    vrm.scene.updateWorldMatrix(true, true);
+    this.avatarBounds.setFromObject(vrm.scene);
+    if (!Number.isFinite(this.avatarBounds.min.x) || !Number.isFinite(this.avatarBounds.max.x)) return;
+
+    const center = this.avatarBounds.getCenter(new THREE.Vector3());
+    const radius = this.avatarBounds.getSize(new THREE.Vector3()).length() * 0.5;
+    const safeRadius = radius + (0.12 * Math.max(0.8, this.scaleFactor));
+
+    const fromCenter = this.snapshotCamera.position.clone().sub(center);
+    const dist = fromCenter.length();
+    if (dist >= safeRadius) return;
+
+    const retreatDir = dist > 1e-5
+      ? fromCenter.normalize()
+      : fallbackDirection.clone().normalize();
+    this.snapshotCamera.position.copy(center).addScaledVector(retreatDir, safeRadius);
+  }
+
   private keepAvatarGrounded(vrm: VRM) {
     vrm.scene.updateWorldMatrix(true, true);
     this.avatarBounds.setFromObject(vrm.scene);
@@ -527,10 +553,10 @@ class VRManager {
     const gamepad = inputSource?.gamepad;
     if (!gamepad) return;
 
-    const trigger = 0.18 + (gamepad.buttons[0]?.value ?? 0) * 0.82;
-    const squeeze = 0.35 + (gamepad.buttons[1]?.value ?? 0) * 0.65;
+    const trigger = gamepad.buttons[0]?.value ?? 0;
+    const squeeze = 0.08 + (gamepad.buttons[1]?.value ?? 0) * 0.92;
     const thumbTouched = [3, 4, 5].some((idx) => gamepad.buttons[idx]?.touched);
-    const thumbCurl = thumbTouched ? 0.7 : 0.28;
+    const thumbCurl = thumbTouched ? 0.58 : 0.1;
 
     const prefix = side === 'Left' ? 'Left' : 'Right';
     this.applyFingerCurl(vrm, [
@@ -567,9 +593,13 @@ class VRManager {
     return pressed && !wasPressed;
   }
 
+  private getInputSourceByHandedness(handedness: XRHandedness): XRInputSource | undefined {
+    return this.session ? Array.from(this.session.inputSources).find((source: XRInputSource) => source.handedness === handedness) : undefined;
+  }
+
   private updateControllerShortcuts() {
-    const leftInput = this.session?.inputSources[0];
-    const rightInput = this.session?.inputSources[1];
+    const leftInput = this.getInputSourceByHandedness('left');
+    const rightInput = this.getInputSourceByHandedness('right');
 
     if (this.consumeGamepadButton(leftInput, 3, 'left-stick-press')) {
       this.calibrate();
@@ -640,15 +670,39 @@ class VRManager {
     const rightGrip = this.controllerGrips[1];
     if (rightGrip && rightGrip.visible && this.viewfinderPlane && this.viewfinderRenderTarget) {
         this.viewfinderPlane.visible = true;
-        
-        // Setup the free-aim snapshot camera
+
+        // Stabilized handheld selfie framing: keep the avatar in view instead of
+        // rendering an extreme close-up when the controller is near the headset.
         rightGrip.getWorldPosition(this.v1);
         rightGrip.getWorldQuaternion(this.q1);
-        const lensOffset = new THREE.Vector3(0, 0, -0.15).applyQuaternion(this.q1);
+
+        const headNodeForViewfinder = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+        const lookAtTarget = new THREE.Vector3();
+        if (headNodeForViewfinder) {
+          headNodeForViewfinder.getWorldPosition(lookAtTarget);
+        } else {
+          lookAtTarget.copy(vrm.scene.position).add(new THREE.Vector3(0, 1.45 * this.scaleFactor, 0));
+        }
+
+        lookAtTarget.y -= 0.08 * this.scaleFactor;
+
+        const controllerForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.q1).normalize();
+        const lensOffset = controllerForward.clone().multiplyScalar(0.08);
         this.snapshotCamera.position.copy(this.v1).add(lensOffset);
-        this.snapshotCamera.quaternion.copy(this.q1); // Look straight out of the controller
-        
-        this.snapshotCamera.fov = 80;
+
+        const idealDistance = THREE.MathUtils.clamp(1.15 * this.scaleFactor, this.handheldSelfieMinDistance, this.handheldSelfieMaxDistance);
+        const cameraFromTarget = this.snapshotCamera.position.clone().sub(lookAtTarget);
+        const currentDistance = cameraFromTarget.length();
+        if (currentDistance < idealDistance) {
+          const retreatDirection = currentDistance > 1e-5
+            ? cameraFromTarget.normalize()
+            : controllerForward.clone().negate();
+          this.snapshotCamera.position.copy(lookAtTarget).addScaledVector(retreatDirection, idealDistance);
+        }
+
+        this.ensureSelfieCameraOutsideAvatar(vrm, controllerForward.clone().negate());
+        this.snapshotCamera.lookAt(lookAtTarget);
+        this.snapshotCamera.fov = 58;
         this.snapshotCamera.near = 0.01;
         this.snapshotCamera.far = 100;
         this.snapshotCamera.updateProjectionMatrix();
@@ -656,15 +710,15 @@ class VRManager {
         if (this.renderer && !this.isCapturingSnapshot) {
             const gl = this.renderer;
             const currentRenderTarget = gl.getRenderTarget();
-            
+
             // Hide viewfinder mesh during its own render to avoid infinite mirror
             this.viewfinderPlane.visible = false;
-            
+
             gl.setRenderTarget(this.viewfinderRenderTarget);
             gl.render(sceneManager.getScene()!, this.snapshotCamera);
-            
+
             gl.setRenderTarget(currentRenderTarget);
-            
+
             this.viewfinderPlane.visible = true;
         }
     } else if (this.viewfinderPlane) {
@@ -805,7 +859,7 @@ class VRManager {
         }
         bendNormal.normalize();
 
-        const elbowOut = bendNormal.clone().cross(reachDir).normalize();
+        const elbowOut = bendNormal.clone().cross(reachDir).normalize().add(new THREE.Vector3(0, -0.25, 0)).normalize();
         const shoulderToElbowAlong = ((upperLen * upperLen) - (lowerLen * lowerLen) + (clampedDist * clampedDist)) / (2 * clampedDist);
         const elbowHeight = Math.sqrt(Math.max(0, upperLen * upperLen - shoulderToElbowAlong * shoulderToElbowAlong));
         const elbowPos = shoulderPos.clone()
@@ -836,8 +890,11 @@ class VRManager {
 
         // Hand Rotation
         this.q3.copy(this.q1).multiply(this.controllerHandOffsets[idx]);
-        this.setBoneWorldQuaternion(handNode, this.q3);
-        this.applyControllerFingerPose(vrm, this.session?.inputSources[idx], side);
+        handNode.getWorldQuaternion(this.q2);
+        this.q2.slerp(this.q3, 0.45);
+        this.setBoneWorldQuaternion(handNode, this.q2);
+        const inputSource = this.getInputSourceByHandedness(idx === 0 ? 'left' : 'right');
+        this.applyControllerFingerPose(vrm, inputSource, side);
       }
     });
 
@@ -847,20 +904,36 @@ class VRManager {
     if (this.currentVrm !== vrm) {
       this.currentVrm = vrm;
       this.headMeshes = [];
-      vrm.scene.traverse(o => {
-        if (o instanceof THREE.Mesh) {
-          const n = o.name.toLowerCase();
-          if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) this.headMeshes.push(o);
-        }
-      });
+
+      if (vrm.firstPerson) {
+        vrm.firstPerson.setup({ firstPersonOnlyLayer: 9, thirdPersonOnlyLayer: 10 });
+      } else {
+        vrm.scene.traverse(o => {
+          if (o instanceof THREE.Mesh) {
+            const n = o.name.toLowerCase();
+            if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) {
+              this.headMeshes.push(o);
+            }
+          }
+        });
+      }
     }
 
+    const firstPersonOnlyLayer = vrm.firstPerson?.firstPersonOnlyLayer ?? 9;
+    const thirdPersonOnlyLayer = vrm.firstPerson?.thirdPersonOnlyLayer ?? 10;
+
+    this.snapshotCamera.layers.enable(0);
+    this.snapshotCamera.layers.enable(thirdPersonOnlyLayer);
+    this.snapshotCamera.layers.disable(firstPersonOnlyLayer);
+
     if (this.firstPersonMode) {
-      camera.layers.disable(10);
-      this.headMeshes.forEach(m => m.layers.set(10));
+      camera.layers.enable(firstPersonOnlyLayer);
+      camera.layers.disable(thirdPersonOnlyLayer);
+      this.headMeshes.forEach((mesh) => mesh.layers.set(thirdPersonOnlyLayer));
     } else {
-      camera.layers.enable(10);
-      this.headMeshes.forEach(m => m.layers.enable(0));
+      camera.layers.disable(firstPersonOnlyLayer);
+      camera.layers.enable(thirdPersonOnlyLayer);
+      this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     }
   };
 
@@ -881,12 +954,16 @@ class VRManager {
     this.hasTrackingReference = false;
 
     if (vrm) {
-      const pose = vrm.humanoid?.getNormalizedPose();
       vrm.scene.position.copy(this.initialAvatarPos);
       vrm.scene.rotation.copy(this.initialAvatarRotation);
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
-      if (pose) avatarManager.applyRawPose({ vrmPose: pose }, false, 'static', false);
+
+      if (this.poseBeforeVR) {
+        avatarManager.applyRawPose({ vrmPose: this.poseBeforeVR }, false, 'static', false);
+      } else {
+        vrm.humanoid?.resetNormalizedPose();
+      }
     } else {
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
@@ -912,6 +989,7 @@ class VRManager {
     this.controllers = [];
     this.controllerGrips = [];
     this.originalCameraParent = null;
+    this.poseBeforeVR = null;
     console.log('[VRManager] Session Ended');
   }
 
