@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three-stdlib';
-import { VRMHumanBoneName } from '@pixiv/three-vrm';
 import { applyBackground, toggleLabEnvironment, type AnimatedBackground } from './backgrounds';
 import type { BackgroundId } from '../types/reactions';
 import { useSettingsStore } from '../state/useSettingsStore';
@@ -9,6 +8,7 @@ import { lightingManager } from './lightingManager';
 import { postProcessingManager } from './postProcessingManager';
 import { environmentManager, HDRI_PRESETS } from './environmentManager';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
+import { getObjectBounds } from './utils/boundsUtils';
 import { environment3DManager } from './environment3DManager';
 import { live2dManager } from '../live2d/live2dManager';
 
@@ -634,9 +634,10 @@ class SceneManager {
 
   frameObject(object: THREE.Object3D, padding = 1.2) {
     if (!this.camera || !this.controls) return;
-    this.box.setFromObject(object);
-    if (!isFinite(this.box.min.lengthSq()) || !isFinite(this.box.max.lengthSq())) return;
+    const bounds = getObjectBounds(object);
+    if (!isFinite(bounds.min.lengthSq()) || !isFinite(bounds.max.lengthSq())) return;
 
+    this.box.copy(bounds);
     this.box.getCenter(this.center);
     this.box.getSize(this.size);
 
@@ -1180,48 +1181,16 @@ class SceneManager {
       default:
         // Smart Full Body Framing
         // Use bounding box to ensure avatar fits regardless of size or aspect ratio
-        let vrm: any = null;
+        let vrmObj: THREE.Object3D | null = null;
         this.scene?.traverse((obj) => {
-           if (!vrm && obj.userData?.vrm) {
-               vrm = obj.userData.vrm;
+           if (!vrmObj && obj.userData?.vrm) {
+               vrmObj = obj;
            }
         });
 
-        if (vrm && vrm.humanoid) {
-            // Calculate bounding box from actual bone positions to support posed/animated avatars correctly.
-            // Box3.setFromObject uses bind pose (T-pose) which doesn't move with animation/jumping.
-            const box = new THREE.Box3();
-            const tempVec = new THREE.Vector3();
-            const boneNames = Object.values(VRMHumanBoneName);
-            
-            let hasBones = false;
-            boneNames.forEach((name) => {
-                const node = vrm.humanoid.getNormalizedBoneNode(name);
-                if (node) {
-                    node.getWorldPosition(tempVec);
-                    box.expandByPoint(tempVec);
-                    hasBones = true;
-                }
-            });
-
-            if (hasBones) {
-                // Expand box to account for skin, hair, shoes (bones are internal)
-                // Head bone is usually at the neck/base of head. Need to add significant top margin for face + hair.
-                // Feet bones are ankles. Need to add bottom margin for foot + shoe.
-                
-                box.min.y -= 0.35; // Sole/Shoe padding (increased from 0.15 for big shoes)
-                box.max.y += 0.50; // Head/Hair padding (increased from 0.30 for hats/hair)
-                box.min.x -= 0.35; // Arm/Skin padding
-                box.max.x += 0.35;
-                box.min.z -= 0.35;
-                box.max.z += 0.35;
-                
-                this.box.copy(box);
-            } else {
-                // Fallback to mesh bounds if no bones found
-                this.box.setFromObject(vrm.scene);
-            }
-
+        if (vrmObj) {
+            const box = getObjectBounds(vrmObj);
+            this.box.copy(box);
             this.box.getCenter(destTarget);
             this.box.getSize(this.size);
             

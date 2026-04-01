@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { sceneManager } from './sceneManager';
 import { avatarManager } from './avatarManager';
+import { getObjectBounds } from './utils/boundsUtils';
 import { animationManager } from './animationManager';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VRMPose } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
@@ -360,13 +362,15 @@ class VRManager {
 
   private captureFloorAnchor(vrm: VRM) {
     vrm.scene.updateWorldMatrix(true, true);
-    this.avatarBounds.setFromObject(vrm.scene);
+    const bounds = getObjectBounds(vrm.scene);
+    this.avatarBounds.copy(bounds);
     this.floorAnchorY = this.avatarBounds.min.y;
   }
 
   private ensureSelfieCameraOutsideAvatar(vrm: VRM, fallbackDirection: THREE.Vector3) {
     vrm.scene.updateWorldMatrix(true, true);
-    this.avatarBounds.setFromObject(vrm.scene);
+    const bounds = getObjectBounds(vrm.scene);
+    this.avatarBounds.copy(bounds);
     if (!Number.isFinite(this.avatarBounds.min.x) || !Number.isFinite(this.avatarBounds.max.x)) return;
 
     const center = this.avatarBounds.getCenter(new THREE.Vector3());
@@ -385,7 +389,8 @@ class VRManager {
 
   private keepAvatarGrounded(vrm: VRM) {
     vrm.scene.updateWorldMatrix(true, true);
-    this.avatarBounds.setFromObject(vrm.scene);
+    const bounds = getObjectBounds(vrm.scene);
+    this.avatarBounds.copy(bounds);
     if (!Number.isFinite(this.avatarBounds.min.y)) return;
 
     const deltaY = this.floorAnchorY - this.avatarBounds.min.y;
@@ -431,7 +436,8 @@ class VRManager {
         
     } else {
         // AUTO-PORTRAIT MODE (Third person vertical)
-        this.avatarBounds.setFromObject(vrm.scene);
+        const bounds = getObjectBounds(vrm.scene);
+        this.avatarBounds.copy(bounds);
         const avatarForward = new THREE.Vector3(0, 0, 1).applyQuaternion(vrm.scene.quaternion).normalize();
         
         // Composition for vertical portrait

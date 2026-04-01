@@ -113,13 +113,20 @@ class Environment3DManager {
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
           
-          // Center on X and Z, but place bottom at Y=0
-          gltf.scene.position.x -= center.x;
-          gltf.scene.position.z -= center.z;
+          // For large environments, we usually want to respect the authored X/Z origin.
+          // For small objects (props), centering them is more helpful.
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const isProp = maxDim < 5.0;
+
+          if (isProp) {
+            gltf.scene.position.x -= center.x;
+            gltf.scene.position.z -= center.z;
+          }
+          
+          // Always ground on Y so it's not floating or buried by default
           gltf.scene.position.y -= box.min.y;
           
           // Calculate scale to fit reasonably in scene (target ~15 units max dimension for environments)
-          const maxDim = Math.max(size.x, size.y, size.z);
           const targetSize = 15;
           let autoScale = maxDim > 0 ? targetSize / maxDim : 1;
           
