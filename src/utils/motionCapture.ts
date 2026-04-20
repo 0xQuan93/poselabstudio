@@ -478,7 +478,7 @@ export class MotionCaptureManager {
       }
       this.tickDispose = sceneManager.registerTick((delta) => {
           this.updateFrame(delta);
-      }, 100);
+      }, 30);
   }
   
   private stopUpdateLoop(source: 'camera' | 'vmc') {
@@ -505,7 +505,7 @@ export class MotionCaptureManager {
       
       this.targetFaceValues.forEach((targetVal, name) => {
           // Skip mouth expressions if voice lip sync is active (local mic has priority)
-          if (isVMC && voiceLipSync.isExpressionControlled(name)) {
+          if (voiceLipSync.getIsActive() && voiceLipSync.isExpressionControlled(name)) {
               return;
           }
           
@@ -896,24 +896,34 @@ export class MotionCaptureManager {
                 
                 // Upper body follow - make torso subtly follow head rotation for natural movement
                 // Only apply in face/upper body mode (not full body where pose rig handles torso)
+                // We only apply this if these bones weren't already set by the pose rig, 
+                // or if we want to prioritize head-driven torso motion (smoother for seated mocap)
                 if (this.mode === 'face') {
                     const identity = new THREE.Quaternion();
                     
                     // Neck follows head most closely
                     const neckQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.NECK);
-                    this.targetBoneRotations.set('neck', neckQ);
+                    if (!this.targetBoneRotations.has('neck')) {
+                        this.targetBoneRotations.set('neck', neckQ);
+                    }
                     
                     // Upper chest follows less
                     const upperChestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.UPPER_CHEST);
-                    this.targetBoneRotations.set('upperChest', upperChestQ);
+                    if (!this.targetBoneRotations.has('upperChest')) {
+                        this.targetBoneRotations.set('upperChest', upperChestQ);
+                    }
                     
                     // Chest follows even less
                     const chestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.CHEST);
-                    this.targetBoneRotations.set('chest', chestQ);
+                    if (!this.targetBoneRotations.has('chest')) {
+                        this.targetBoneRotations.set('chest', chestQ);
+                    }
                     
                     // Spine follows least - just a subtle hint
                     const spineQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.SPINE);
-                    this.targetBoneRotations.set('spine', spineQ);
+                    if (!this.targetBoneRotations.has('spine')) {
+                        this.targetBoneRotations.set('spine', spineQ);
+                    }
                 }
              }
       }

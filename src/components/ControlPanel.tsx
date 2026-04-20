@@ -79,6 +79,13 @@ export function ControlPanel({ mode }: ControlPanelProps) {
             <span>Training</span>
           </button>
           <button
+            className={reactionTab === 'mocap' ? 'active' : ''}
+            onClick={() => handleTabClick('reaction', 'mocap')}
+          >
+            <VideoCamera size={16} weight="duotone" />
+            <span>Mocap</span>
+          </button>
+          <button
             className={reactionTab === 'export' ? 'active' : ''}
             onClick={() => handleTabClick('reaction', 'export')}
           >
@@ -92,6 +99,7 @@ export function ControlPanel({ mode }: ControlPanelProps) {
           {reactionTab === 'pose' && <PoseExpressionTab />}
           {reactionTab === 'scene' && <SceneTab />}
           {reactionTab === 'training' && <TrainingTab />}
+          {reactionTab === 'mocap' && <MocapTab />}
           {reactionTab === 'export' && <ExportTab />}
         </div>
       </aside>

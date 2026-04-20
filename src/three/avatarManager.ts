@@ -184,39 +184,47 @@ class AvatarManager {
 
   private startTickLoop() {
     this.tickDispose?.();
-    this.tickDispose = sceneManager.registerTick((delta) => {
+    
+    const disposers: (() => void)[] = [];
+
+    // 1. Animation Phase (Priority 50)
+    disposers.push(sceneManager.registerTick((delta) => {
+      if (this.vrm && this.isAnimated && !this.isInteracting) {
+        animationManager.update(delta);
+      }
+    }, 50));
+
+    // 2. Procedural Phase (Priority 40)
+    disposers.push(sceneManager.registerTick((delta) => {
       if (this.vrm) {
-        // Update blink state first
         this.blinkManager.update(delta);
         
-        // 1. Root Motion Pre-Update: Capture Hips position
         if (this.isAnimated && this.isRootMotionEnabled && !this.isInteracting) {
           this.rootMotionManager.captureHipsPosition();
         }
+      }
+    }, 40));
 
-        // Update VRM (this applies expression updates if we called update() in updateBlink)
+    // 3. Finalization Phase (Priority -100)
+    // Runs after Mocap (priority 30) has applied its bone transforms
+    disposers.push(sceneManager.registerTick((delta) => {
+      if (this.vrm) {
+        // Final VRM update applies humanoid bone transforms to the scene 
+        // and calculates secondary motion (spring bones/physics)
         this.vrm.update(delta);
         
-        // ALWAYS update the animation mixer if an animation is playing
-        if (this.isAnimated) {
-          if (!this.isInteracting) {
-            animationManager.update(delta);
-          }
-        }
-
-        // 2. Root Motion Post-Update: Extract delta and handle Collisions
         if (this.isAnimated && this.isRootMotionEnabled && !this.isInteracting) {
           this.rootMotionManager.update(delta);
-        } else if (this.vrm && !this.isInteracting) {
-          // Even without root motion, handle basic grounding if an environment is present
+        } else if (!this.isInteracting) {
           this.rootMotionManager.updateGrounding(delta);
         }
         
-        // CRITICAL: Enforce locked Hips rotation AFTER all other updates
         const rotationLocked = useSceneSettingsStore.getState().rotationLocked;
         this.enforceLockedHipsRotation(rotationLocked);
       }
-    });
+    }, -100));
+
+    this.tickDispose = () => disposers.forEach(d => d());
   }
 
   rebindToScene() {

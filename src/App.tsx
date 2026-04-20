@@ -13,6 +13,7 @@ import { useSettingsStore } from './state/useSettingsStore';
 import { projectManager } from './persistence/projectManager';
 import { autosaveManager } from './persistence/autosaveManager';
 import { initAvatarBridge } from './multiplayer/avatarBridge';
+import { initMocapManager } from './utils/mocapInstance';
 import { ConnectionProgressPanel } from './components/ConnectionProgressPanel';
 import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
@@ -31,6 +32,7 @@ import { useToastStore } from './state/useToastStore';
 
 // Initialize multiplayer avatar bridge on app startup
 initAvatarBridge();
+initMocapManager();
 
 const IS_DEV = import.meta.env.DEV;
 

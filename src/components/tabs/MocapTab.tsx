@@ -7,12 +7,13 @@ import { useToastStore } from '../../state/useToastStore';
 import { useUIStore } from '../../state/useUIStore';
 import { useReactionStore } from '../../state/useReactionStore';
 import { useUserStore } from '../../state/useUserStore';
+import { useMocapStore } from '../../state/useMocapStore';
 import { convertAnimationToScenePaths } from '../../pose-lab/convertAnimationToScenePaths';
 import { CalibrationWizard } from '../CalibrationWizard';
 import { sceneManager } from '../../three/sceneManager';
 import { webXRManager } from '../../utils/webXRManager';
 import { vmcInputManager } from '../../utils/vmcInput';
-import { setMocapManager } from '../../utils/mocapInstance';
+import { initMocapManager, getMocapVideo } from '../../utils/mocapInstance';
 import { useMediaDevices } from '../../hooks/useMediaDevices';
 import { 
   VideoCamera, 
@@ -33,7 +34,7 @@ import {
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
-    const { startCalibration, isCalibrationActive } = useUIStore();
+  const { startCalibration, isCalibrationActive } = useUIStore();
   const {
     liveModeEnabled,
     liveControlsEnabled,
@@ -46,25 +47,36 @@ export function MocapTab() {
     setVmcEnabled,
     setVmcWebSocketUrl,
   } = useReactionStore();
+
+  const {
+    isActive,
+    isRecording,
+    recordingTime,
+    error,
+    selectedDeviceId,
+    isVoiceLipSyncActive,
+    voiceVolume,
+    voiceSensitivity,
+    setIsActive,
+    setIsRecording,
+    setRecordingTime,
+    setError,
+    setSelectedDeviceId,
+    setIsVoiceLipSyncActive,
+    setVoiceVolume,
+    setVoiceSensitivity,
+  } = useMocapStore();
   
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isActive, setIsActive] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const managerRef = useRef<MotionCaptureManager | null>(null);
   const timerRef = useRef<number | null>(null);
   
   const [isGreenScreen, setIsGreenScreen] = useState(false);
   const [isSelfieMode, setIsSelfieMode] = useState(false);
   
-  // Voice Lip Sync state
-  const [isVoiceLipSyncActive, setIsVoiceLipSyncActive] = useState(false);
-  const [voiceVolume, setVoiceVolume] = useState(0);
-  const [voiceSensitivity, setVoiceSensitivity] = useState(2.0);
-  const previousMocapModeRef = useRef<'full' | 'face'>('full');
-  const previousMocapActiveRef = useRef(false);
-  const previousVoiceActiveRef = useRef(false);
+  const previousMocapModeRef = useRef<'full' | 'face'>(mocapMode);
+  const previousMocapActiveRef = useRef(isActive);
+  const previousVoiceActiveRef = useRef(isVoiceLipSyncActive);
   const liveModeEnabledRef = useRef(liveModeEnabled);
   const previousLiveModeEnabledRef = useRef(liveModeEnabled);
   const liveShutdownRef = useRef(false);
@@ -76,30 +88,38 @@ export function MocapTab() {
 
   // Camera Selection
   const { devices } = useMediaDevices();
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
 
+  // Initialize Global Manager
   useEffect(() => {
     webXRManager.isSupported().then(setArSupported);
+    managerRef.current = initMocapManager();
+    managerRef.current.setMode(mocapMode);
+  }, [mocapMode]);
 
-
-    if (videoRef.current && !managerRef.current) {
-        managerRef.current = new MotionCaptureManager(videoRef.current);
-        managerRef.current.setMode(mocapMode);
-        setMocapManager(managerRef.current);
-    }
-    
-    // cleanup in separate effect
-  }, []); // Run once on mount
-
+  // Synchronize local preview video with global video source
   useEffect(() => {
-    return () => {
-        if (managerRef.current) {
-            managerRef.current.stop();
+    const globalVideo = getMocapVideo();
+    if (globalVideo && videoRef.current) {
+        // If the global video already has a stream, mirror it
+        if (globalVideo.srcObject) {
+            videoRef.current.srcObject = globalVideo.srcObject;
+            videoRef.current.play().catch(e => console.warn('Preview play blocked:', e));
         }
-        vmcInputManager.disconnect();
-        if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+        
+        // Listen for changes in the global video's stream
+        const handleLoadedMetadata = () => {
+            if (videoRef.current) {
+                videoRef.current.srcObject = globalVideo.srcObject;
+                videoRef.current.play().catch(e => console.warn('Preview play blocked:', e));
+            }
+        };
+        
+        globalVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+        return () => {
+            globalVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        };
+    }
+  }, [isActive]);
 
   useEffect(() => {
     const unsubscribe = vmcInputManager.subscribeStatus((status) => {
@@ -171,14 +191,14 @@ export function MocapTab() {
               addToast("Full Body Mode: Animation Frozen for Tracking", "info");
           }
       }
-  }, [addToast, isActive]);
+  }, [addToast, isActive, setMocapMode]);
 
   const setMocapModeOnly = useCallback((mode: 'full' | 'face') => {
     setMocapMode(mode);
     if (managerRef.current) {
       managerRef.current.setMode(mode);
     }
-  }, []);
+  }, [setMocapMode]);
 
   const toggleRecording = () => {
       if (!managerRef.current || !isActive) return;
@@ -219,13 +239,28 @@ export function MocapTab() {
       }
   };
 
+  // Sync recording timer if already recording when mounting
+  useEffect(() => {
+    if (isRecording && !timerRef.current) {
+        timerRef.current = window.setInterval(() => {
+            setRecordingTime(t => t + 1);
+        }, 1000);
+    }
+    return () => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    };
+  }, [isRecording, setRecordingTime]);
+
   // Voice Lip Sync handlers
   const stopVoiceLipSync = useCallback(() => {
     if (!isVoiceLipSyncActive) return;
     voiceLipSync.stop();
     setIsVoiceLipSyncActive(false);
     setVoiceVolume(0);
-  }, [isVoiceLipSyncActive]);
+  }, [isVoiceLipSyncActive, setIsVoiceLipSyncActive, setVoiceVolume]);
 
   const startVoiceLipSync = useCallback(async () => {
     if (isVoiceLipSyncActive || voiceStartingRef.current) return;
@@ -259,7 +294,7 @@ export function MocapTab() {
     } finally {
       voiceStartingRef.current = false;
     }
-  }, [addToast, isVoiceLipSyncActive, voiceSensitivity]);
+  }, [addToast, isVoiceLipSyncActive, voiceSensitivity, setVoiceVolume, setIsVoiceLipSyncActive, liveModeEnabled]);
 
   const toggleVoiceLipSync = async () => {
     if (isVoiceLipSyncActive) {
@@ -274,15 +309,6 @@ export function MocapTab() {
     voiceLipSync.setSensitivity(value);
   };
 
-  // Cleanup voice lip sync on unmount
-  useEffect(() => {
-    return () => {
-      if (isVoiceLipSyncActive) {
-        voiceLipSync.stop();
-      }
-    };
-  }, [isVoiceLipSyncActive]);
-
   const stopMocap = useCallback(() => {
     if (!managerRef.current || !isActive) return;
     managerRef.current.stop();
@@ -294,7 +320,7 @@ export function MocapTab() {
       setIsSelfieMode(false);
     }
     mocapStartingRef.current = false;
-  }, [isActive, isSelfieMode]);
+  }, [isActive, isSelfieMode, setIsActive]);
 
   const startMocap = useCallback(async (modeOverride?: 'full' | 'face') => {
     if (!managerRef.current || isActive || mocapStartingRef.current) return;
@@ -353,7 +379,7 @@ export function MocapTab() {
     } finally {
       mocapStartingRef.current = false;
     }
-  }, [isActive, mocapMode]);
+  }, [isActive, mocapMode, setError, setIsActive, setMocapMode, selectedDeviceId, liveModeEnabled]);
 
   const toggleMocap = async () => {
     if (!managerRef.current) return;
@@ -514,7 +540,7 @@ export function MocapTab() {
                     transform: 'scaleX(-1)' // Mirror effect
                 }} 
                 playsInline 
-                muted // Important to avoid feedback loop if mic is involved (though we don't use it)
+                muted 
             />
             {!isActive && (
                 <div style={{

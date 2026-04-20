@@ -239,6 +239,17 @@ class AvatarController {
         const elapsed = performance.now() - startTime;
         const normalizedTime = Math.min(elapsed / duration, 1);
 
+        if (avatarManager.isInteracting() || avatarManager.isManualPosingEnabled()) {
+           if (normalizedTime < 1) {
+             requestAnimationFrame(animate);
+           } else {
+             this.state.isAnimating = false;
+             this.state.currentGesture = null;
+             resolve();
+           }
+           return;
+        }
+
         // Find the two keyframes we're between
         const keyframes = gestureData.keyframes;
         let prevKeyframe = keyframes[0];
@@ -364,7 +375,7 @@ class AvatarController {
     const swayFrequency = 0.05;   // sway cycles per second
 
     const animate = () => {
-      if (!this.breathingEnabled || this.state.isAnimating) {
+      if (!this.breathingEnabled || this.state.isAnimating || avatarManager.isManualPosingEnabled()) {
         this.idleAnimationId = requestAnimationFrame(animate);
         return;
       }
@@ -395,9 +406,6 @@ class AvatarController {
         const euler = new THREE.Euler(0, THREE.MathUtils.degToRad(swayPhase * 0.5), THREE.MathUtils.degToRad(swayPhase * 1), 'XYZ');
         hips.quaternion.setFromEuler(euler);
       }
-
-      vrm.humanoid!.update();
-      vrm.update(0);
 
       this.idleAnimationId = requestAnimationFrame(animate);
     };
@@ -432,12 +440,13 @@ class AvatarController {
 
     let time = 0;
     const speakingLoop = () => {
-      if (!this.state.isSpeaking) {
-        // Ensure mouth is closed when stopping
-        if (vrm.expressionManager) {
+      if (!this.state.isSpeaking || avatarManager.isInteracting() || avatarManager.isManualPosingEnabled()) {
+        // Ensure mouth is closed when stopping or overridden
+        if (!this.state.isSpeaking && vrm.expressionManager) {
           vrm.expressionManager.setValue('Aa', 0);
           vrm.expressionManager.update();
         }
+        if (this.state.isSpeaking) requestAnimationFrame(speakingLoop);
         return;
       }
 

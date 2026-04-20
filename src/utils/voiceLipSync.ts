@@ -65,6 +65,7 @@ export class VoiceLipSync {
   
   // State tracking
   private isActive = false;
+  private snappyMode = false;
   private updateLoopId: number | null = null;
   private config: VoiceLipSyncConfig;
   
@@ -81,6 +82,11 @@ export class VoiceLipSync {
 
   constructor(config: Partial<VoiceLipSyncConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  setSnappyMode(enabled: boolean) {
+    this.snappyMode = enabled;
+    console.log(`[VoiceLipSync] Snappy mode: ${enabled ? 'ON' : 'OFF'}`);
   }
 
   /**
@@ -364,11 +370,18 @@ export class VoiceLipSync {
     // Smooth towards target values
     Object.keys(this.currentValues).forEach(vowel => {
       const key = vowel as keyof typeof this.currentValues;
-      this.currentValues[key] = THREE.MathUtils.lerp(
-        this.currentValues[key],
-        this.targetValues[key],
-        SMOOTHING_FACTOR
-      );
+      
+      if (this.snappyMode) {
+        // Instant update for mesh swaps (PNGTuber style)
+        this.currentValues[key] = this.targetValues[key];
+      } else {
+        // Smooth lerp for standard 3D avatars
+        this.currentValues[key] = THREE.MathUtils.lerp(
+          this.currentValues[key],
+          this.targetValues[key],
+          SMOOTHING_FACTOR
+        );
+      }
 
       // Apply to VRM
       const expressionNames = this.availableExpressions.get(vowel);
@@ -423,17 +436,16 @@ export class VoiceLipSync {
     
     const lowerName = expressionName.toLowerCase();
     
-    // Check all mouth expression mappings
+    // Explicitly allow smile expressions so webcam can still control them
+    if (lowerName.includes('smile')) {
+      return false;
+    }
+    
+    // Check all mouth expression mappings (Aa, Ee, Ih, Oh, Ou, jawOpen, mouthOpen, etc.)
     for (const candidates of Object.values(MOUTH_EXPRESSIONS)) {
       if (candidates.some(c => c.toLowerCase() === lowerName)) {
         return true;
       }
-    }
-    
-    // Also check common mouth-related expressions
-    const mouthKeywords = ['mouth', 'jaw', 'lip', 'tongue'];
-    if (mouthKeywords.some(keyword => lowerName.includes(keyword))) {
-      return true;
     }
     
     return false;
