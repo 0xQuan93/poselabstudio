@@ -1,3 +1,4 @@
+import { useRef, useState, useLayoutEffect } from 'react';
 import { useUIStore } from '../state/useUIStore';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
@@ -20,7 +21,9 @@ import {
   VideoCamera,
   FloppyDisk,
   FilmStrip,
-  GraduationCap
+  GraduationCap,
+  CaretLeft,
+  CaretRight
 } from '@phosphor-icons/react';
 
 interface ControlPanelProps {
@@ -29,6 +32,30 @@ interface ControlPanelProps {
 
 export function ControlPanel({ mode }: ControlPanelProps) {
   const { reactionTab, setReactionTab, poseLabTab, setPoseLabTab } = useUIStore();
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = () => {
+    if (tabsRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = tabsRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth);
+    }
+  };
+
+  useLayoutEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [mode]);
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabsRef.current) {
+      const scrollAmount = 120;
+      tabsRef.current.scrollBy({ left: direction === 'left' ? -scrollAmount : scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   const handleTabClick = (tabType: 'reaction' | 'poselab', tabName: any) => {
     if (tabType === 'reaction') {
@@ -49,49 +76,61 @@ export function ControlPanel({ mode }: ControlPanelProps) {
   if (mode === 'reactions') {
     return (
       <aside className="control-panel">
-        <div className="control-panel__tabs">
-          <button
-            className={reactionTab === 'presets' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'presets')}
-          >
-            <Sliders size={16} weight="duotone" />
-            <span>Presets</span>
-          </button>
-          <button
-            className={reactionTab === 'pose' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'pose')}
-          >
-            <PersonArmsSpread size={16} weight="duotone" />
-            <span>Pose</span>
-          </button>
-          <button
-            className={reactionTab === 'scene' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'scene')}
-          >
-            <Gear size={16} weight="duotone" />
-            <span>Scene</span>
-          </button>
-          <button
-            className={reactionTab === 'training' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'training')}
-          >
-            <GraduationCap size={16} weight="duotone" />
-            <span>Training</span>
-          </button>
-          <button
-            className={reactionTab === 'mocap' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'mocap')}
-          >
-            <VideoCamera size={16} weight="duotone" />
-            <span>Mocap</span>
-          </button>
-          <button
-            className={reactionTab === 'export' ? 'active' : ''}
-            onClick={() => handleTabClick('reaction', 'export')}
-          >
-            <Export size={16} weight="duotone" />
-            <span>Export</span>
-          </button>
+        <div className="control-panel__tabs-wrapper">
+          {canScrollLeft && (
+            <button className="tab-scroll-btn left" onClick={() => scrollTabs('left')}>
+              <CaretLeft weight="bold" />
+            </button>
+          )}
+          <div className="control-panel__tabs" ref={tabsRef} onScroll={checkScroll}>
+            <button
+              className={reactionTab === 'presets' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'presets')}
+            >
+              <Sliders size={16} weight="duotone" />
+              <span>Presets</span>
+            </button>
+            <button
+              className={reactionTab === 'pose' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'pose')}
+            >
+              <PersonArmsSpread size={16} weight="duotone" />
+              <span>Pose</span>
+            </button>
+            <button
+              className={reactionTab === 'scene' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'scene')}
+            >
+              <Gear size={16} weight="duotone" />
+              <span>Scene</span>
+            </button>
+            <button
+              className={reactionTab === 'training' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'training')}
+            >
+              <GraduationCap size={16} weight="duotone" />
+              <span>Training</span>
+            </button>
+            <button
+              className={reactionTab === 'mocap' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'mocap')}
+            >
+              <VideoCamera size={16} weight="duotone" />
+              <span>Mocap</span>
+            </button>
+            <button
+              className={reactionTab === 'export' ? 'active' : ''}
+              onClick={() => handleTabClick('reaction', 'export')}
+            >
+              <Export size={16} weight="duotone" />
+              <span>Export</span>
+            </button>
+          </div>
+          {canScrollRight && (
+            <button className="tab-scroll-btn right" onClick={() => scrollTabs('right')}>
+              <CaretRight weight="bold" />
+            </button>
+          )}
         </div>
 
         <div className="control-panel__content">
@@ -109,42 +148,54 @@ export function ControlPanel({ mode }: ControlPanelProps) {
   // Pose Lab mode
   return (
     <aside className="control-panel">
-      <div className="control-panel__tabs" data-tutorial-id="poselab-tabs">
-        <button
-          className={poseLabTab === 'animations' ? 'active' : ''}
-          onClick={() => handleTabClick('poselab', 'animations')}
-        >
-          <Play size={16} weight="duotone" />
-          <span>Anims</span>
-        </button>
-        <button
-          className={poseLabTab === 'poses' ? 'active' : ''}
-          onClick={() => handleTabClick('poselab', 'poses')}
-        >
-          <UserFocus size={16} weight="duotone" />
-          <span>Poses</span>
-        </button>
-        <button
-          className={poseLabTab === 'mocap' ? 'active' : ''}
-          onClick={() => handleTabClick('poselab', 'mocap')}
-        >
-          <VideoCamera size={16} weight="duotone" />
-          <span>Mocap</span>
-        </button>
-        <button
-          className={poseLabTab === 'director' ? 'active' : ''}
-          onClick={() => handleTabClick('poselab', 'director')}
-        >
-          <FilmStrip size={16} weight="duotone" />
-          <span>Director</span>
-        </button>
-        <button
-          className={poseLabTab === 'export' ? 'active' : ''}
-          onClick={() => handleTabClick('poselab', 'export')}
-        >
-          <FloppyDisk size={16} weight="duotone" />
-          <span>Save</span>
-        </button>
+      <div className="control-panel__tabs-wrapper" data-tutorial-id="poselab-tabs">
+        {canScrollLeft && (
+          <button className="tab-scroll-btn left" onClick={() => scrollTabs('left')}>
+            <CaretLeft weight="bold" />
+          </button>
+        )}
+        <div className="control-panel__tabs" ref={tabsRef} onScroll={checkScroll}>
+          <button
+            className={poseLabTab === 'animations' ? 'active' : ''}
+            onClick={() => handleTabClick('poselab', 'animations')}
+          >
+            <Play size={16} weight="duotone" />
+            <span>Anims</span>
+          </button>
+          <button
+            className={poseLabTab === 'poses' ? 'active' : ''}
+            onClick={() => handleTabClick('poselab', 'poses')}
+          >
+            <UserFocus size={16} weight="duotone" />
+            <span>Poses</span>
+          </button>
+          <button
+            className={poseLabTab === 'mocap' ? 'active' : ''}
+            onClick={() => handleTabClick('poselab', 'mocap')}
+          >
+            <VideoCamera size={16} weight="duotone" />
+            <span>Mocap</span>
+          </button>
+          <button
+            className={poseLabTab === 'director' ? 'active' : ''}
+            onClick={() => handleTabClick('poselab', 'director')}
+          >
+            <FilmStrip size={16} weight="duotone" />
+            <span>Director</span>
+          </button>
+          <button
+            className={poseLabTab === 'export' ? 'active' : ''}
+            onClick={() => handleTabClick('poselab', 'export')}
+          >
+            <FloppyDisk size={16} weight="duotone" />
+            <span>Save</span>
+          </button>
+        </div>
+        {canScrollRight && (
+          <button className="tab-scroll-btn right" onClick={() => scrollTabs('right')}>
+            <CaretRight weight="bold" />
+          </button>
+        )}
       </div>
 
       <div className="control-panel__content">
