@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { directorManager } from '../../three/DirectorManager';
 import { useDirectorStore } from '../../state/useDirectorStore';
 import { useToastStore } from '../../state/useToastStore';
+import { exportAsWebM } from '../../export/exportVideo';
+import { useSettingsStore } from '../../state/useSettingsStore';
 import { 
   Play, 
   Stop, 
@@ -83,11 +85,10 @@ export function DirectorTab() {
       // We use exportAsWebM directly instead of exportOfflineWebM
       // primarily because DirectorManager relies on setTimeout/wall-clock time
       // which gets broken by the offline renderer's manual time stepping.
-      const { exportAsWebM } = await import('../../export/exportVideo');
       
       // Check global quality setting to determine export resolution
       // If Ultra, use 4K. Otherwise default to 1080p High Quality.
-      const { quality } = await import('../../state/useSettingsStore').then(m => m.useSettingsStore.getState());
+      const quality = useSettingsStore.getState().quality;
       const isUltra = quality === 'ultra';
       
       const width = isUltra ? 3840 : 1920;

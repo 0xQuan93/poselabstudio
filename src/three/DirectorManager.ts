@@ -2,8 +2,8 @@ import { sceneManager } from './sceneManager';
 import { avatarManager } from './avatarManager';
 import type { DirectorScript } from '../types/director';
 import { useToastStore } from '../state/useToastStore';
-import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
-
+import { useSceneSettingsStore } from '../state/useSceneSettingsStore';    
+import { ActionParser } from '../ai/utils/ActionParser';
 class DirectorManager {
   private isPlaying = false;
   private currentScript: DirectorScript | null = null;
@@ -108,14 +108,11 @@ class DirectorManager {
     
     // 4. Execute Arbitrary Actions (Lighting, Music, etc.)
     if (shot.actions && shot.actions.length > 0) {
-      // Dynamic import to avoid circular dependencies
-      import('../ai/utils/ActionParser').then(({ ActionParser }) => {
         shot.actions!.forEach(action => {
           console.log(`[Director] Executing action: ${action}`);
           // Pass empty speak function as we don't want TTS during script execution unless specified
           ActionParser.execute(action, () => {}); 
         });
-      });
     }
 
     // 5. Schedule next shot
