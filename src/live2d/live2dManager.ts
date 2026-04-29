@@ -44,7 +44,7 @@ class Live2DManager {
     stop: () => {}
   };
 
-  attachToCanvas(hostCanvas: HTMLCanvasElement, container: HTMLElement) {
+  async attachToCanvas(hostCanvas: HTMLCanvasElement, container: HTMLElement) {
     this.hostCanvas = hostCanvas;
 
     if (!this.canvas) {
@@ -58,8 +58,9 @@ class Live2DManager {
       container.appendChild(this.canvas);
 
       // Initialize Pixi Application
-      this.app = new Application({
-        view: this.canvas,
+      this.app = new Application();
+      await this.app.init({
+        canvas: this.canvas,
         backgroundAlpha: 0, // Transparent
         autoStart: false,   // We drive the loop manually
         resizeTo: hostCanvas, // Auto resize to match host
@@ -238,7 +239,13 @@ class Live2DManager {
     }
     
     if (this.app) {
-      this.app.destroy(true, { children: true, texture: true, baseTexture: true });
+      // PixiJS v8 destroy signature is different.
+      // Calling destroy() with { removeView: true } or just using default arguments
+      try {
+        this.app.destroy({ removeView: false });
+      } catch (e) {
+        console.warn('[Live2DManager] Error destroying Pixi app:', e);
+      }
       this.app = undefined;
     }
     
@@ -254,7 +261,9 @@ class Live2DManager {
   }
 
   private resizeToHost() {
-    if (!this.app || !this.hostCanvas) return;
+    // Ensure the app and renderer are fully initialized before trying to resize
+    if (!this.app || !this.app.renderer || !this.hostCanvas) return;
+    
     const width = this.hostCanvas.clientWidth;
     const height = this.hostCanvas.clientHeight;
     

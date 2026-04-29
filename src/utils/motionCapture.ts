@@ -1,4 +1,6 @@
-import { Holistic, type Results } from '@mediapipe/holistic';
+// MediaPipe is loaded dynamically or via global to avoid Vite ESM issues.
+type Results = any;
+
 import * as Kalidokit from 'kalidokit';
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import * as THREE from 'three';
@@ -140,7 +142,7 @@ interface RecordedFrame {
 type HandLandmarks2D = any; 
 
 export class MotionCaptureManager {
-  private holistic: Holistic | null = null; // Main thread holistic instance
+  private holistic: any = null; // Main thread holistic instance
   private vrm?: VRM;
   private videoElement: HTMLVideoElement;
   private isTracking = false;
@@ -196,9 +198,14 @@ export class MotionCaptureManager {
 
   private initHolistic() {
       // Main Thread Initialization
+      const Holistic = (window as any).Holistic;
+      if (!Holistic) {
+          console.error('[MotionCaptureManager] Holistic not found on window. Ensure the CDN script is loaded in index.html.');
+          return;
+      }
       this.holistic = new Holistic({
-          locateFile: (file) => {
-              return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
+          locateFile: (file: string) => {
+              return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`;
           }
       });
 

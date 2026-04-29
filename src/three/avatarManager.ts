@@ -64,7 +64,7 @@ class AvatarManager {
   private tickDispose?: () => void;
   private isAnimated = false;
   private isRootMotionEnabled = false;
-  private isInteracting = false; 
+  private _isInteracting = false; 
   private isManualPosing = false;
   private defaultHipsPosition: THREE.Vector3 = new THREE.Vector3(0, 1.0, 0);
   
@@ -91,6 +91,7 @@ class AvatarManager {
   
   
     isManualPosingEnabled(): boolean { return this.isManualPosing; }
+    isInteracting(): boolean { return this._isInteracting; }
   getCurrentUrl(): string | undefined { return this.currentUrl; }
   setManualPosing(enabled: boolean) { 
     this.isManualPosing = enabled;
@@ -100,7 +101,7 @@ class AvatarManager {
       this.saveLockedHipsRotation();
     }
   }
-  setInteraction(interacting: boolean) { this.isInteracting = interacting; }
+  setInteraction(interacting: boolean) { this._isInteracting = interacting; }
 
   /**
    * Save the current Hips rotation to be enforced while rotation is locked.
@@ -161,7 +162,7 @@ class AvatarManager {
     
     // Don't enforce while user is actively dragging with gizmo
     // This allows the user to rotate freely, then we save the new rotation when they release
-    if (this.isInteracting || this.isManualPosing) return;
+    if (this._isInteracting || this.isManualPosing) return;
     
     if (!rotationLocked) return;
     
@@ -189,7 +190,7 @@ class AvatarManager {
 
     // 1. Animation Phase (Priority 50)
     disposers.push(sceneManager.registerTick((delta) => {
-      if (this.vrm && this.isAnimated && !this.isInteracting) {
+      if (this.vrm && this.isAnimated && !this._isInteracting) {
         animationManager.update(delta);
       }
     }, 50));
@@ -199,7 +200,7 @@ class AvatarManager {
       if (this.vrm) {
         this.blinkManager.update(delta);
         
-        if (this.isAnimated && this.isRootMotionEnabled && !this.isInteracting) {
+        if (this.isAnimated && this.isRootMotionEnabled && !this._isInteracting) {
           this.rootMotionManager.captureHipsPosition();
         }
       }
@@ -213,9 +214,9 @@ class AvatarManager {
         // and calculates secondary motion (spring bones/physics)
         this.vrm.update(delta);
         
-        if (this.isAnimated && this.isRootMotionEnabled && !this.isInteracting) {
+        if (this.isAnimated && this.isRootMotionEnabled && !this._isInteracting) {
           this.rootMotionManager.update(delta);
-        } else if (!this.isInteracting) {
+        } else if (!this._isInteracting) {
           this.rootMotionManager.updateGrounding(delta);
         }
         
@@ -363,7 +364,7 @@ class AvatarManager {
       return;
     }
     
-    this.isInteracting = false;
+    this._isInteracting = false;
 
     // Only apply scene rotation if not locked AND not in manual posing mode
     // Manual posing mode should always preserve the current rotation
@@ -543,7 +544,7 @@ class AvatarManager {
     }
     
     console.log(`[AvatarManager] playAnimationClip: ${clipToPlay.name}, loop=${loop}, tracks=${clipToPlay.tracks.length}`);
-    this.isInteracting = false;
+    this._isInteracting = false;
     this.isAnimated = true;
     animationManager.playAnimation(clipToPlay, loop, fade);
   }

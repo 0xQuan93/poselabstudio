@@ -89,8 +89,9 @@ export function CanvasStage() {
 
     const container = containerRef.current;
     if (container) {
-      live2dManager.attachToCanvas(canvas, container);
-      live2dManager.setTickRegistrar(sceneManager.registerTick.bind(sceneManager));
+      live2dManager.attachToCanvas(canvas, container).then(() => {
+        live2dManager.setTickRegistrar(sceneManager.registerTick.bind(sceneManager));
+      });
     }
     
     // Ensure avatar is in the new scene (if one is already loaded)

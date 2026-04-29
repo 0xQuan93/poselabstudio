@@ -49,7 +49,7 @@ class MultiAvatarManager {
   private avatars = new Map<PeerId, AvatarInstance>();
   private localPeerId: PeerId | null = null;
   private tickDispose?: () => void;
-  private isInteracting = false;
+  private _isInteracting = false;
   private isManualPosing = false;
   private gestureAnimations = new Map<PeerId, { 
     gesture: string; 
@@ -88,6 +88,11 @@ class MultiAvatarManager {
     return this.isManualPosing;
   }
 
+  /** Check if interaction is active */
+  isInteracting(): boolean {
+    return this._isInteracting;
+  }
+
   /** Get an avatar instance by peerId */
   getAvatar(peerId: PeerId): AvatarInstance | undefined {
     return this.avatars.get(peerId);
@@ -100,7 +105,7 @@ class MultiAvatarManager {
 
   /** Set interaction state */
   setInteraction(interacting: boolean) {
-    this.isInteracting = interacting;
+    this._isInteracting = interacting;
   }
 
   // ==================
@@ -1029,7 +1034,7 @@ class MultiAvatarManager {
         instance.vrm.update(delta);
 
         // Update animation mixer if animated and not interacting
-        if (instance.isAnimated && !(instance.isLocal && this.isInteracting)) {
+        if (instance.isAnimated && !(instance.isLocal && this._isInteracting)) {
           instance.mixer.update(delta);
         }
         
