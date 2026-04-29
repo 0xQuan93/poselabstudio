@@ -1,8 +1,23 @@
 import * as THREE from 'three';
 import { avatarManager } from "../../three/avatarManager";
 import { sceneManager } from "../../three/sceneManager";
+import { useAvatarSource } from "../../state/useAvatarSource";
 import { useAIStore } from "../../state/useAIStore";
 import { useSceneSettingsStore } from "../../state/useSceneSettingsStore";
+import { useAvatarListStore } from "../../state/useAvatarListStore";
+import { useUIStore } from "../../state/useUIStore";
+import { useReactionStore } from "../../state/useReactionStore";
+import { useDirectorStore } from "../../state/useDirectorStore";
+import { useTimelineStore } from "../../state/useTimelineStore";
+import { useSettingsStore } from "../../state/useSettingsStore";
+import { useMusicStore } from "../../state/useMusicStore";
+import { lightingManager } from "../../three/lightingManager";
+import { postProcessingManager } from "../../three/postProcessingManager";
+import { environmentManager } from "../../three/environmentManager";
+import { directorManager } from "../../three/DirectorManager";
+import { agentManager } from "../AgentManager";
+import { exportAsWebM, exportOfflineWebM } from "../../export/exportVideo";
+import { getMocapManager } from "../../utils/mocapInstance";
 import { geminiService } from "../../services/gemini";
 import { avatarController, type GestureType, type EmotionState } from "../AvatarController";
 import type { PoseId } from "../../types/reactions";
@@ -164,7 +179,6 @@ export class ActionParser {
 
           case 'LIGHTING':
             {
-              const { lightingManager } = await import('../../three/lightingManager');
               lightingManager.applyPreset(value);
               actionTaken = true;
             }
@@ -172,7 +186,6 @@ export class ActionParser {
 
           case 'EFFECTS':
             {
-              const { postProcessingManager } = await import('../../three/postProcessingManager');
               postProcessingManager.applyPreset(value);
               actionTaken = true;
             }
@@ -181,7 +194,6 @@ export class ActionParser {
           case 'EFFECTS_CONFIG':
             try {
               const config = JSON.parse(value);
-              const { postProcessingManager } = await import('../../three/postProcessingManager');
               if (config && typeof config === 'object') {
                 const current = postProcessingManager.getSettings();
                 // Deep merge for nested settings
@@ -236,7 +248,6 @@ export class ActionParser {
           case 'LIGHT_CONFIG':
             try {
               const config = JSON.parse(value);
-              const { lightingManager } = await import('../../three/lightingManager');
               
               const validTypes = ['keyLight', 'fillLight', 'rimLight', 'ambient'];
               
@@ -261,7 +272,6 @@ export class ActionParser {
           case 'ENV_CONFIG':
             try {
               const config = JSON.parse(value);
-              const { environmentManager } = await import('../../three/environmentManager');
               if (config && typeof config === 'object') {
                 const current = environmentManager.getSettings();
                 environmentManager.applySettings({ ...current, ...config });
@@ -274,7 +284,6 @@ export class ActionParser {
 
           case 'MUSIC':
             try {
-              const { useMusicStore } = await import('../../state/useMusicStore');
               const store = useMusicStore.getState();
               const args = value.split(' ');
               const action = args[0];
@@ -302,8 +311,6 @@ export class ActionParser {
           case 'AVATAR':
             try {
               useAIStore.getState().setThought("Searching Avatar...");
-              const { useAvatarListStore } = await import('../../state/useAvatarListStore');
-              const { useAvatarSource } = await import('../../state/useAvatarSource');
               
               const listStore = useAvatarListStore.getState();
               // Ensure list is loaded
@@ -340,7 +347,6 @@ export class ActionParser {
 
           case 'UI':
             try {
-              const { useUIStore } = await import('../../state/useUIStore');
               const ui = useUIStore.getState();
               
               if (value === 'clean' || value === 'stream') {
@@ -376,7 +382,6 @@ export class ActionParser {
                 actionTaken = true;
               }
             } else if (value === 'video') {
-              const { exportAsWebM } = await import('../../export/exportVideo');
               const canvas = sceneManager.getCanvas();
               if (canvas) {
                 useAIStore.getState().setThought("Recording Video...");
@@ -386,7 +391,6 @@ export class ActionParser {
                 actionTaken = true;
               }
             } else if (value === 'render') {
-              const { exportOfflineWebM } = await import('../../export/exportVideo');
               useAIStore.getState().setThought("Rendering High-Quality Video...");
               // 5 second default duration
               await exportOfflineWebM({ duration: 5 });
@@ -397,7 +401,7 @@ export class ActionParser {
 
           case 'VMC':
             {
-              const { setVmcEnabled } = (await import('../../state/useReactionStore')).useReactionStore.getState();
+              const { setVmcEnabled } = useReactionStore.getState();
               if (value === 'connect' || value === 'on') setVmcEnabled(true);
               else if (value === 'disconnect' || value === 'off') setVmcEnabled(false);
               actionTaken = true;
@@ -407,7 +411,6 @@ export class ActionParser {
           case 'LOOK_AT_USER':
             {
               useAIStore.getState().setThought("Watching...");
-              const { getMocapManager } = await import('../../utils/mocapInstance');
               const manager = getMocapManager();
               if (manager) {
                 await manager.aiInterpret("The user wants you to look at them and interpret their state.");
@@ -441,13 +444,8 @@ export class ActionParser {
           case 'DIRECTOR':
             {
               useAIStore.getState().setThought("Directing Sequence...");
-              const { agentManager } = await import('../AgentManager');
               const script = await agentManager.generateDirectorScript(value);
               if (script) {
-                const { directorManager } = await import('../../three/DirectorManager');
-                const { useDirectorStore } = await import('../../state/useDirectorStore');
-                const { useUIStore } = await import('../../state/useUIStore');
-
                 // 1. Set the script in the store so it's visible/editable
                 useDirectorStore.getState().setScript(script);
                 
@@ -464,7 +462,6 @@ export class ActionParser {
 
           case 'TIMELINE':
             {
-              const { useTimelineStore } = await import('../../state/useTimelineStore');
               const tl = useTimelineStore.getState();
               const tlArgs = value.split(' ');
               const tlAction = tlArgs[0];
@@ -475,7 +472,6 @@ export class ActionParser {
               else if (tlAction === 'clear') tl.clearTimeline();
               else if (tlAction === 'time' && tlArgs[1]) tl.setCurrentTime(parseFloat(tlArgs[1]));
               else if (tlAction === 'keyframe') {
-                const { avatarManager } = await import('../../three/avatarManager');
                 const pose = avatarManager.captureCurrentPose();
                 if (pose && Object.keys(pose).length > 0) {
                     tl.addKeyframe({ 
@@ -493,7 +489,6 @@ export class ActionParser {
 
           case 'SETTINGS':
             {
-              const { useSettingsStore } = await import('../../state/useSettingsStore');
               const setStore = useSettingsStore.getState();
               const setArgs = value.split(' ');
               const setType = setArgs[0];
@@ -509,7 +504,6 @@ export class ActionParser {
 
           case 'CALIBRATE':
             {
-              const { getMocapManager } = await import('../../utils/mocapInstance');
               const mManager = getMocapManager();
               if (mManager) {
                   mManager.calibrate();
