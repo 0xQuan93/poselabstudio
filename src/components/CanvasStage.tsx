@@ -9,6 +9,8 @@ import type { ReactionPreset } from '../types/reactions';
 import { findPresetById } from '../data/reactions';
 import { useAvatarSource } from '../state/useAvatarSource';
 import { live2dManager } from '../live2d/live2dManager';
+import { getMocapManager } from '../utils/mocapInstance';
+import { voiceLipSync } from '../utils/voiceLipSync';
 import { OnboardingOverlay } from './OnboardingOverlay';
 import { useMultiplayerStore } from '../state/useMultiplayerStore';
 import { multiAvatarManager } from '../three/multiAvatarManager';
@@ -122,6 +124,8 @@ export function CanvasStage() {
     if (avatarType === 'none') {
       avatarManager.clear();
       live2dManager.dispose();
+      getMocapManager()?.setVRM(null);
+      voiceLipSync.setVRM(null);
       setAvatarReady(false);
       useReactionStore.setState({ isAvatarReady: false });
       return;
@@ -149,6 +153,13 @@ export function CanvasStage() {
           live2dManager.dispose();
           // Load via avatarManager (original system)
           await avatarManager.load(currentUrl, setRotationLockedCallback);
+          const loadedVRM = avatarManager.getVRM();
+          if (loadedVRM) {
+            getMocapManager()?.setVRM(loadedVRM);
+            if (voiceLipSync.getIsActive()) {
+              voiceLipSync.setVRM(loadedVRM);
+            }
+          }
         }
         
         if (cancelled) return;

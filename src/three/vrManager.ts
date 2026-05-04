@@ -34,8 +34,13 @@ class VRManager {
   private firstPersonMode: boolean = true;
   private cameraGroup = new THREE.Group();
   private originalCameraParent: THREE.Object3D | null = null;
+  private originalCameraPosition = new THREE.Vector3();
+  private originalCameraQuaternion = new THREE.Quaternion();
+  private originalControlsTarget = new THREE.Vector3();
+  private originalControlsEnabled: boolean | null = null;
   private headMeshes: THREE.Mesh[] = [];
   private currentVrm: VRM | null = null;
+  private originalRendererXrEnabled: boolean | null = null;
   private originalRendererPixelRatio: number | null = null;
   private originalRendererShadowMapEnabled: boolean | null = null;
 
@@ -198,8 +203,9 @@ class VRManager {
 
     if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
 
-    this.originalRendererShadowMapEnabled ??= this.renderer.shadowMap.enabled;
-    this.originalRendererPixelRatio ??= this.renderer.getPixelRatio();
+    this.originalRendererXrEnabled = this.renderer.xr.enabled;
+    this.originalRendererShadowMapEnabled = this.renderer.shadowMap.enabled;
+    this.originalRendererPixelRatio = this.renderer.getPixelRatio();
     this.renderer.shadowMap.enabled = false;
     this.renderer.setPixelRatio(1.0);
 
@@ -213,8 +219,21 @@ class VRManager {
       this.renderer.xr.enabled = true;
       this.renderer.xr.setSession(session);
       
-      scene.add(this.cameraGroup);
       this.originalCameraParent = camera.parent;
+      this.originalCameraPosition.copy(camera.position);
+      this.originalCameraQuaternion.copy(camera.quaternion);
+      const controls = sceneManager.getControls();
+      if (controls) {
+        this.originalControlsTarget.copy(controls.target);
+        this.originalControlsEnabled = controls.enabled;
+      } else {
+        this.originalControlsEnabled = null;
+      }
+
+      scene.add(this.cameraGroup);
+      this.cameraGroup.position.set(0, 0, 0);
+      this.cameraGroup.rotation.set(0, 0, 0);
+      this.cameraGroup.scale.set(1, 1, 1);
       this.cameraGroup.add(camera);
       
       this.setupControllers();
@@ -222,14 +241,14 @@ class VRManager {
       // Anchor rig to avatar position
       if (vrm) {
         this.cameraGroup.position.copy(vrm.scene.position);
-        this.cameraGroup.rotation.y = vrm.scene.rotation.y;
+        this.cameraGroup.rotation.set(0, vrm.scene.rotation.y, 0);
       }
       
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
       session.addEventListener('end', () => this.onSessionEnded());
       this.tickDispose?.();
-      this.tickDispose = sceneManager.registerTick(this.update, -100);
+      this.tickDispose = sceneManager.registerTick(this.update, -90);
 
       // Trigger auto-calibration after 2 seconds
       setTimeout(() => this.calibrate(), 2000);
@@ -238,8 +257,11 @@ class VRManager {
       console.log('[VRManager] VRIK Session Started');
     } catch (error) {
       console.error('[VRManager] Error:', error);
+      if (camera.parent === this.cameraGroup) {
+        this.restoreCameraHierarchy(camera);
+      }
+      scene.remove(this.cameraGroup);
       this.restoreRendererState();
-      if (this.renderer) this.renderer.xr.enabled = false;
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
       throw error;
@@ -945,11 +967,36 @@ class VRManager {
 
   private restoreRendererState() {
     if (!this.renderer) return;
+    if (this.originalRendererXrEnabled !== null) {
+      this.renderer.xr.enabled = this.originalRendererXrEnabled;
+      this.originalRendererXrEnabled = null;
+    }
     if (this.originalRendererShadowMapEnabled !== null) {
       this.renderer.shadowMap.enabled = this.originalRendererShadowMapEnabled;
+      this.originalRendererShadowMapEnabled = null;
     }
     if (this.originalRendererPixelRatio !== null) {
       this.renderer.setPixelRatio(this.originalRendererPixelRatio);
+      this.originalRendererPixelRatio = null;
+    }
+  }
+
+  private restoreCameraHierarchy(camera: THREE.PerspectiveCamera) {
+    if (this.originalCameraParent) {
+      this.originalCameraParent.add(camera);
+    } else {
+      camera.removeFromParent();
+    }
+
+    camera.position.copy(this.originalCameraPosition);
+    camera.quaternion.copy(this.originalCameraQuaternion);
+    camera.updateMatrixWorld(true);
+
+    const controls = sceneManager.getControls();
+    if (controls) {
+      controls.target.copy(this.originalControlsTarget);
+      controls.enabled = this.originalControlsEnabled ?? true;
+      controls.update();
     }
   }
 
@@ -976,9 +1023,8 @@ class VRManager {
     }
     const cam = sceneManager.getCamera();
     const scene = sceneManager.getScene();
-    if (cam && this.originalCameraParent) this.originalCameraParent.add(cam);
+    if (cam) this.restoreCameraHierarchy(cam);
     this.restoreRendererState();
-    if (this.renderer) this.renderer.xr.enabled = false;
     cam?.layers.enable(10);
     this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
     if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
@@ -995,6 +1041,7 @@ class VRManager {
     this.controllers = [];
     this.controllerGrips = [];
     this.originalCameraParent = null;
+    this.originalControlsEnabled = null;
     this.poseBeforeVR = null;
     console.log('[VRManager] Session Ended');
   }

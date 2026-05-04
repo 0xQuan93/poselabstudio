@@ -697,7 +697,13 @@ class AvatarManager {
   seekAnimation(time: number): void { if (this.isAnimated) animationManager.seek(time); }
   isAnimationPlaying(): boolean { return this.isAnimated && animationManager.isPlaying(); }
   getCurrentAnimationAction(): THREE.AnimationAction | undefined { return animationManager.getCurrentAction(); }
-  getVRM(): VRM | undefined { return this.vrm; }
+    getVRM(): VRM | undefined { return this.vrm; }
+
+  setVisibility(visible: boolean) {
+    if (this.vrm) {
+      this.vrm.scene.visible = visible;
+    }
+  }
   clear() {
     const scene = sceneManager.getScene();
     if (this.vrm && scene) {

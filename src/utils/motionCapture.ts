@@ -268,12 +268,26 @@ export class MotionCaptureManager {
       if (rigs.leftHand) this.applyHandRig(rigs.leftHand, 'Left');
   }
 
-  setVRM(vrm: VRM) {
-    this.vrm = vrm;
+  setVRM(vrm: VRM | null) {
+    this.vrm = vrm ?? undefined;
+    this.targetRootPosition = null;
+    this.calibrationOffset.set(0, 0, 0);
+    this.shouldCalibrateVMC = true;
+
+    if (!vrm) {
+      this.baseHipsPosition.set(0, 1.0, 0);
+      this.currentRootPosition.copy(this.baseHipsPosition);
+      this.updateAvailableBlendshapes();
+      return;
+    }
+
     const hipsNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Hips);
     if (hipsNode) {
       this.baseHipsPosition.copy(hipsNode.position);
+    } else {
+      this.baseHipsPosition.set(0, 1.0, 0);
     }
+    this.currentRootPosition.copy(this.baseHipsPosition);
     this.updateAvailableBlendshapes();
   }
 
@@ -432,7 +446,7 @@ export class MotionCaptureManager {
 
   applyExternalExpression(name: string, value: number) {
       // Skip mouth expressions if voice lip sync is active (local mic takes priority)
-      if (voiceLipSync.isExpressionControlled(name)) {
+      if (voiceLipSync.getIsActive() && voiceLipSync.isExpressionControlled(name)) {
           return;
       }
       
@@ -497,7 +511,7 @@ export class MotionCaptureManager {
   }
 
   private updateFrame(_delta: number) {
-      if (!this.vrm || !this.vrm.humanoid || !this.vrm.expressionManager) return;
+      if (!this.vrm || !this.vrm.humanoid) return;
       
       const timestamp = performance.now() / 1000;
 
@@ -509,51 +523,53 @@ export class MotionCaptureManager {
       // 1. Smooth Facial Expressions
       const isVMC = this.updateSources.has('vmc');
       const renderTimeMs = performance.now();
-      
-      this.targetFaceValues.forEach((targetVal, name) => {
-          // Skip mouth expressions if voice lip sync is active (local mic has priority)
-          if (voiceLipSync.getIsActive() && voiceLipSync.isExpressionControlled(name)) {
-              return;
-          }
-          
-          let filter = this.faceFilters.get(name);
-          if (!filter) {
-              const lowerName = name.toLowerCase();
-              const isEyeRelated = lowerName.includes('eye') || lowerName.includes('blink') || lowerName.includes('look');
-              
-              let minCutoff: number;
-              let beta: number;
-              
+
+      if (this.vrm.expressionManager) {
+          this.targetFaceValues.forEach((targetVal, name) => {
+              // Skip mouth expressions if voice lip sync is active (local mic has priority)
+              if (voiceLipSync.getIsActive() && voiceLipSync.isExpressionControlled(name)) {
+                  return;
+              }
+
+              let filter = this.faceFilters.get(name);
+              if (!filter) {
+                  const lowerName = name.toLowerCase();
+                  const isEyeRelated = lowerName.includes('eye') || lowerName.includes('blink') || lowerName.includes('look');
+
+                  let minCutoff: number;
+                  let beta: number;
+
+                  if (isVMC) {
+                      // VMC expressions - use tuned parameters
+                      minCutoff = isEyeRelated ? SMOOTHING.EYE_MIN_CUTOFF : VMC_SMOOTHING.EXPRESSION_MIN_CUTOFF;
+                      beta = VMC_SMOOTHING.EXPRESSION_BETA;
+                  } else {
+                      // Webcam - original parameters
+                      minCutoff = isEyeRelated ? SMOOTHING.EYE_MIN_CUTOFF : SMOOTHING.MIN_CUTOFF;
+                      beta = SMOOTHING.BETA;
+                  }
+
+                  filter = new OneEuroFilter(minCutoff, beta);
+                  this.faceFilters.set(name, filter);
+              }
+
+              // For VMC: Use interpolated value from buffer for timing jitter reduction
+              let valueToFilter = targetVal;
               if (isVMC) {
-                  // VMC expressions - use tuned parameters
-                  minCutoff = isEyeRelated ? SMOOTHING.EYE_MIN_CUTOFF : VMC_SMOOTHING.EXPRESSION_MIN_CUTOFF;
-                  beta = VMC_SMOOTHING.EXPRESSION_BETA;
-              } else {
-                  // Webcam - original parameters
-                  minCutoff = isEyeRelated ? SMOOTHING.EYE_MIN_CUTOFF : SMOOTHING.MIN_CUTOFF;
-                  beta = SMOOTHING.BETA;
+                  const interpolatedVal = vmcFrameBuffer.getInterpolatedExpression(name, renderTimeMs);
+                  if (interpolatedVal !== null) {
+                      valueToFilter = interpolatedVal;
+                  }
               }
-              
-              filter = new OneEuroFilter(minCutoff, beta);
-              this.faceFilters.set(name, filter);
-          }
-          
-          // For VMC: Use interpolated value from buffer for timing jitter reduction
-          let valueToFilter = targetVal;
-          if (isVMC) {
-              const interpolatedVal = vmcFrameBuffer.getInterpolatedExpression(name, renderTimeMs);
-              if (interpolatedVal !== null) {
-                  valueToFilter = interpolatedVal;
-              }
-          }
-          
-          const newVal = filter.filter(valueToFilter, timestamp);
-          this.currentFaceValues.set(name, newVal);
-          
-          this.vrm!.expressionManager!.setValue(name, newVal);
-      });
-      this.vrm.expressionManager.update();
-      
+
+              const newVal = filter.filter(valueToFilter, timestamp);
+              this.currentFaceValues.set(name, newVal);
+
+              this.vrm!.expressionManager!.setValue(name, newVal);
+          });
+          this.vrm.expressionManager.update();
+      }
+
       // 2. Smooth Bone Rotations
       this.targetBoneRotations.forEach((targetQ, boneName) => {
           if (this.mode === 'face' && !isVMC) {

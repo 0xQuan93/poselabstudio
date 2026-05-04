@@ -19,13 +19,12 @@ import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
 import { TickerTape } from './components/TickerTape';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
-import { GearSix, X, Fire } from '@phosphor-icons/react';
+import { Fire } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
 import { StudioChatPanel } from './components/studio/StudioChatPanel';
+import { WearableFitter } from './components/studio/WearableFitter';
 import { useUserStore } from './state/useUserStore';
-
-// import { LobbyPanel } from './components/LobbyPanel';
 
 import { useAvatarSource } from './state/useAvatarSource';
 import { useToastStore } from './state/useToastStore';
@@ -38,7 +37,7 @@ const IS_DEV = import.meta.env.DEV;
 
 function App() {
   const { isReady, error, discordSdk } = useDiscordActivity();
-  const { mode, setMode, mobileDrawerOpen, setMobileDrawerOpen, focusModeActive, sidebarOpen } = useUIStore();
+  const { mode, setMode, focusModeActive, sidebarOpen } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
@@ -47,7 +46,6 @@ function App() {
   const { setFileSource } = useAvatarSource();
   const { addToast } = useToastStore();
 
-  // Handle global drag and drop for VRM files
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
       e.preventDefault();
@@ -72,13 +70,8 @@ function App() {
         if (file.name.toLowerCase().endsWith('.vrm')) {
           setFileSource(file);
           addToast(`Loading ${file.name}...`, 'info');
-          useUserStore.getState().recordGamifiedAction('first_avatar_load').then(reward => {
-            if (reward > 0) {
-              addToast(`+${reward} LP for loading your first avatar!`, 'success');
-            }
-          });
         } else {
-          addToast('Only .vrm files are supported via drag and drop.', 'warning');
+          addToast('Only .vrm files supported via drag and drop.', 'warning');
         }
       }
     };
@@ -94,14 +87,13 @@ function App() {
     };
   }, [setFileSource, addToast]);
 
-  // Sync LP and Activity State to Discord
   useEffect(() => {
     if (isReady && isEmbeddedApp && discordSdk && user) {
       const level = Math.floor(user.lp / 100) + 1;
-      
       let modeName = 'Reaction Forge';
       if (mode === 'studio') modeName = 'Browsing the Studio Feed';
       else if (mode === 'poselab') modeName = 'Crafting Poses in Pose Lab';
+      else if (mode === 'wearables') modeName = 'Fitting Wearables';
       else if (mode === 'reactions') modeName = 'Triggering Reactions';
 
       discordSdk.commands.setActivity({
@@ -112,51 +104,32 @@ function App() {
         }
       }).catch((err) => console.error('Failed to sync Activity', err));
     }
-  }, [isReady, discordSdk, user?.lp, mode]);
+  }, [isReady, discordSdk, user, mode]);
 
-  // Handle body transparency for Stream Mode
   useEffect(() => {
     if (streamMode) {
-      // Force transparent background on body and html to allow OBS transparency
       document.body.style.backgroundColor = 'transparent';
       document.documentElement.style.backgroundColor = 'transparent';
     } else {
       document.body.style.backgroundColor = '';
       document.documentElement.style.backgroundColor = '';
     }
-    
-    return () => {
-      document.body.style.backgroundColor = '';
-      document.documentElement.style.backgroundColor = '';
-    };
   }, [streamMode]);
 
   useEffect(() => {
-    // Apply theme to HTML element
     const root = document.documentElement;
     if (theme !== 'system') {
       root.setAttribute('data-theme', theme);
-      return undefined;
+      return;
     }
-
     const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-    const applyTheme = () => {
-      root.setAttribute('data-theme', mediaQuery.matches ? 'light' : 'dark');
-    };
-
+    const applyTheme = () => root.setAttribute('data-theme', mediaQuery.matches ? 'light' : 'dark');
     applyTheme();
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', applyTheme);
-      return () => mediaQuery.removeEventListener('change', applyTheme);
-    }
-
-    mediaQuery.addListener(applyTheme);
-    return () => mediaQuery.removeListener(applyTheme);
+    mediaQuery.addEventListener('change', applyTheme);
+    return () => mediaQuery.removeEventListener('change', applyTheme);
   }, [theme]);
 
-  useEffect(() => {
-    document.documentElement.lang = locale;
-  }, [locale]);
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
   useEffect(() => {
     const baseSize = 16;
@@ -164,104 +137,40 @@ function App() {
   }, [textScale]);
 
   useEffect(() => {
-    if (!autosaveEnabled) return undefined;
+    if (!autosaveEnabled) return;
     const intervalMs = autosaveIntervalMinutes * 60 * 1000;
-    if (intervalMs <= 0) return undefined;
-
     const saveSnapshot = () => {
       const project = projectManager.serializeProject('Autosave', false);
-      try {
-        autosaveManager.addAutosave(project, autosaveMaxEntries);
-      } catch (e) {
-        console.warn('Autosave failed:', e);
-      }
+      autosaveManager.addAutosave(project, autosaveMaxEntries);
     };
-
-    saveSnapshot();
     const intervalId = window.setInterval(saveSnapshot, intervalMs);
     return () => window.clearInterval(intervalId);
   }, [autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries]);
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= 960);
-    };
+    const handleResize = () => setIsMobile(window.innerWidth <= 960);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Trigger resize when layout modes change to ensure 3D canvas fills the space
-  useEffect(() => {
-    // Small timeout to allow CSS transition/reflow to complete
-    const timeout = setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 50);
-    return () => clearTimeout(timeout);
-  }, [streamMode, focusModeActive, mobileDrawerOpen]);
-
-  // Handle URL parameters for auto-stream mode
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('stream') === 'true' || params.get('clean') === 'true') {
-      useUIStore.getState().setStreamMode(true);
-    }
-  }, []);
-
-  // Handle Esc to exit Stream Mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && useUIStore.getState().streamMode) {
-        // Prevent if default prevented (e.g. closing a modal)
-        if (e.defaultPrevented) return;
-        useUIStore.getState().setStreamMode(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  if (isEmbeddedApp && error) {
-    return (
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', color: 'red', backgroundColor: '#111' }}>
-        <h2>Failed to load Discord Activity: {error.message}</h2>
-      </div>
-    );
-  }
-
-  if (isEmbeddedApp && !isReady) {
-    return (
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', color: 'white', backgroundColor: '#111' }}>
-        <h2>Connecting to Discord...</h2>
-      </div>
-    );
-  }
+  if (isEmbeddedApp && error) return <div>Error: {error.message}</div>;
+  if (isEmbeddedApp && !isReady) return <div>Loading...</div>;
 
   return (
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
       <AppHeader mode={mode} onModeChange={setMode} />
-      
+
       {isDragging && (
         <div className="drag-drop-overlay">
           <div className="drag-drop-content">
             <Fire size={48} weight="duotone" className="drag-icon" />
             <h2>Drop VRM to Load</h2>
-            <p>Release to import your custom avatar</p>
           </div>
         </div>
       )}
 
       <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''} ${!sidebarOpen ? 'sidebar-closed' : ''}`}>
-        <div 
-          className="studio-mode-wrapper" 
-          style={{ 
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            display: mode === 'studio' ? 'flex' : 'none',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}
-        >
+        <div className="studio-mode-wrapper" style={{ display: mode === 'studio' ? 'flex' : 'none', flex: 1 }}>
           <CreatorFeed />
         </div>
 
@@ -271,60 +180,23 @@ function App() {
           <ErrorBoundary>
             <CanvasStage />
             <ViewportEffectOverlay />
-            <ViewportOverlay mode={mode === 'studio' ? 'reactions' : mode} />
+            {mode === 'wearables' && <WearableFitter />}
+            {(mode === 'reactions' || mode === 'poselab') && <ViewportOverlay mode={mode} />}
           </ErrorBoundary>
         </section>
 
-        {!isMobile && (
+        {!isMobile && mode !== 'wearables' && (
           <div className={`desktop-sidebar ${!sidebarOpen ? 'closed' : ''}`} style={{ display: mode === 'studio' ? 'none' : 'block' }}>
-            <ControlPanel mode={mode === 'studio' ? 'reactions' : mode} />
+            <ControlPanel mode={mode} />
           </div>
         )}
       </main>
-
-      {/* Exit Stream Mode Button */}
-      {streamMode && (
-        <button 
-          className="exit-stream-mode-btn"
-          onClick={() => useUIStore.getState().setStreamMode(false)}
-          title="Exit Virtual Cam Mode (Esc)"
-        >
-          Exit Virtual Cam Mode
-        </button>
-      )}
-
-      {/* Mobile drawer toggle */}
-      {isMobile && (
-        <button
-          className={`control-toggle ${mobileDrawerOpen ? 'open' : ''}`}
-          onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
-          aria-label={mobileDrawerOpen ? 'Close Controls' : 'Open Controls'}
-        >
-          {mobileDrawerOpen ? <X size={24} weight="bold" /> : <GearSix size={24} weight="bold" />}
-        </button>
-      )}
-
-      {/* Mobile Backdrop */}
-      {isMobile && mobileDrawerOpen && (
-        <div 
-          className="drawer-backdrop" 
-          onClick={() => setMobileDrawerOpen(false)}
-        />
-      )}
-
-      {/* Mobile drawer */}
-      {isMobile && (
-        <div className={`control-drawer ${mobileDrawerOpen ? 'open' : ''}`}>
-          <ControlPanel mode={mode} />
-        </div>
-      )}
 
       <ToastHost />
       <ConnectionProgressPanel />
       {IS_DEV && <AIAgentWidget />}
       <SessionHUD />
       <MobileWelcomeModal />
-      {/* <LobbyPanel /> */}
       <TickerTape />
     </div>
   );
