@@ -91,7 +91,7 @@ export class NodeLoader {
     for (const object3d of object3ds) {
       const props = object3d.userData || {};
       
-      let node: Node | null = null;
+      let node: Node;
 
       // Detect special Hyperfy/Blender metadata nodes
       if (props.node === 'rigidbody') {

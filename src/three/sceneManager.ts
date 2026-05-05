@@ -1103,8 +1103,8 @@ class SceneManager {
         distanceModifier = 1 / aspect;
     }
 
-    let destPos = new THREE.Vector3();
-    let destTarget = new THREE.Vector3();
+    const destPos = new THREE.Vector3();
+    const destTarget = new THREE.Vector3();
 
     switch (preset) {
       case 'headshot':
@@ -1296,8 +1296,8 @@ class SceneManager {
   private startCameraAnimation(type: 'orbit-slow' | 'orbit-fast' | 'dolly-in' | 'dolly-out', transitionDuration = 0) {
     if (!this.camera || !this.controls) return;
 
-    let startPos = new THREE.Vector3();
-    let startTarget = new THREE.Vector3();
+    const startPos = new THREE.Vector3();
+    const startTarget = new THREE.Vector3();
     
     // Determine start state based on animation type
     if (type.startsWith('orbit')) {

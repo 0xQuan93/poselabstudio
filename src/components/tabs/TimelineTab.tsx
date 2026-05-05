@@ -25,7 +25,7 @@ export function TimelineTab() {
 
   const { isAvatarReady } = useReactionStore();
   const rotationLocked = useSceneSettingsStore((state) => state.rotationLocked);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const [_, setClip] = useState<THREE.AnimationClip | null>(null);
 
   // Reset animation speed on unmount to prevent "stuck" playback speed

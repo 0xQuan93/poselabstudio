@@ -665,6 +665,7 @@ export function MocapTab() {
         </div>
 
         {/* Calibration Wizard Overlay */}
+        {/* eslint-disable-next-line react-hooks/refs */}
         {isCalibrationActive && <CalibrationWizard manager={managerRef.current} />}
       </div>
       

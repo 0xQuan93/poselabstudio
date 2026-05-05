@@ -33,7 +33,7 @@ export const handler: Handler = async (event) => {
     }
 
     // Extract base64 data
-    const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const matches = image.match(/^data:([^;]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
       console.error('Invalid image format');
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid image format. Expected base64 data URI.' }) };

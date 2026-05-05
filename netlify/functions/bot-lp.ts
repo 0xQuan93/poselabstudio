@@ -81,7 +81,9 @@ export const handler: Handler = async (event) => {
             if (matchActions && matchActions[1]) {
               try {
                 actionTimestamps = JSON.parse(matchActions[1]);
-              } catch (e) {}
+              } catch (_e) {
+                // Ignore parse errors
+              }
             } else {
                // Fallback to check if they had a DAILY_LOGIN message in the past to prevent reset (legacy support)
                const matchLegacyLogin = msg.content.match(/\[DAILY_LOGIN\].*TS:(\d+)/);
@@ -133,7 +135,7 @@ export const handler: Handler = async (event) => {
     ];
 
     const assignRoles = async (discordUserId: string, newLp: number) => {
-      let newlyAssignedRole = null;
+      const newlyAssignedRole = null;
       for (const { threshold, roleId, name } of ROLE_THRESHOLDS) {
         if (newLp >= threshold && roleId) {
           try {

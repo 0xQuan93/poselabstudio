@@ -1,6 +1,6 @@
 import { Handler } from '@netlify/functions';
 
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (_event) => {
   // Support both standard and Vite-prefixed env vars
   const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || process.env.VITE_DISCORD_CLIENT_ID;
 

@@ -62,7 +62,7 @@ export const handler: Handler = async (event) => {
         return { statusCode: 400, body: JSON.stringify({ error: 'Missing body' }) };
       }
       
-      const { content, username, avatar_url } = JSON.parse(event.body);
+      const { content, username } = JSON.parse(event.body);
       
       if (!content) {
         return { statusCode: 400, body: JSON.stringify({ error: 'Missing content' }) };

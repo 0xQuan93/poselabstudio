@@ -145,7 +145,9 @@ class VRManager {
         gain.connect(audioCtx.destination);
         osc.start();
         osc.stop(audioCtx.currentTime + 0.05);
-    } catch (e) {}
+    } catch (_e) {
+        // Ignore audio context errors
+    }
   }
 
   private initReviewPlane() {

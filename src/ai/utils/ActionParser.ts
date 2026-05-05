@@ -130,16 +130,17 @@ export class ActionParser {
             actionTaken = true;
             break;
 
-          case 'GESTURE':
+          case 'GESTURE': {
             const gesture = GESTURE_COMMAND_MAP[value];
             if (gesture) {
               await avatarController.performGesture(gesture);
               actionTaken = true;
             }
             break;
+          }
 
           case 'EMOTION':
-          case 'EXPRESSION':
+          case 'EXPRESSION': {
             const emotion = EMOTION_COMMAND_MAP[value];
             if (emotion) {
               await avatarController.setEmotion(emotion);
@@ -149,8 +150,9 @@ export class ActionParser {
               actionTaken = true;
             }
             break;
+          }
 
-          case 'POSE':
+          case 'POSE': {
             const mappedPoseId = POSE_COMMAND_MAP[value];
             const finalPoseId = mappedPoseId || (VALID_POSE_IDS.includes(value as any) ? value : null);
             if (finalPoseId) {
@@ -160,13 +162,14 @@ export class ActionParser {
               actionTaken = true;
             }
             break;
+          }
 
           case 'BACKGROUND':
             await sceneManager.setBackground(value);
             actionTaken = true;
             break;
 
-          case 'SCENE_ROTATION':
+          case 'SCENE_ROTATION': {
             const deg = parseInt(value);
             const vrm = avatarManager.getVRM();
             const rotationLocked = useSceneSettingsStore.getState().rotationLocked;
@@ -176,6 +179,7 @@ export class ActionParser {
               actionTaken = true;
             }
             break;
+          }
 
           case 'LIGHTING':
             {

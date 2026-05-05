@@ -88,9 +88,9 @@ export async function createVideoFromFrames(
   // Cleanup files
   for (let i = 0; i < frames.length; i++) {
     const filename = `frame_${i.toString().padStart(3, '0')}.png`;
-    try { await ffmpeg.deleteFile(filename); } catch(e) {}
+    try { await ffmpeg.deleteFile(filename); } catch(_e) { /* ignore */ }
   }
-  try { await ffmpeg.deleteFile('output.webm'); } catch(e) {}
+  try { await ffmpeg.deleteFile('output.webm'); } catch(_e) { /* ignore */ }
 
   return new Blob([data as any], { type: 'video/webm' });
 }

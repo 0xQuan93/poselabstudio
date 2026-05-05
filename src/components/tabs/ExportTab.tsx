@@ -95,19 +95,8 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
   };
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if Command/Control + S is pressed
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault(); // Prevent browser save dialog
-        if (!isAvatarReady || isExporting) return;
-        
-        handleExport();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAvatarReady, isExporting, exportFormat, resolution, includeLogo, transparentBg]);
+    // This effect is moved below handleExport
+  }, []);
 
   const handleExportPNG = async () => {
     // Get current aspect ratio to ensure we're using the latest
@@ -530,6 +519,21 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
       }
     });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if Command/Control + S is pressed
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault(); // Prevent browser save dialog
+        if (!isAvatarReady || isExporting) return;
+        
+        handleExport();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAvatarReady, isExporting, exportFormat, resolution, includeLogo, transparentBg, handleExport]);
 
   return (
     <div className="tab-content">

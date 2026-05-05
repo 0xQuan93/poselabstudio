@@ -38,6 +38,7 @@ function PoseLab() {
   const vrmRef = useRef<VRM | null>(null);
   const animationClipRef = useRef<THREE.AnimationClip | null>(null);
   const [status, setStatus] = useState('🎭 Drag & drop a VRM file to begin');
+  const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
   const [isDraggingVRM, setIsDraggingVRM] = useState(false);
   const [isDraggingFBX, setIsDraggingFBX] = useState(false);
@@ -46,6 +47,50 @@ function PoseLab() {
   const [isLooping, setIsLooping] = useState(true);
   const clockRef = useRef(new THREE.Clock());
   const isPlayingRef = useRef(false); // Ref for render loop access
+
+  const loadVRM = async (source: File | string) => {
+    setStatus('Loading VRM…');
+    
+    // Dispose of old VRM if exists
+    if (vrmRef.current) {
+      console.log('[PoseLab] Disposing old VRM');
+      scene.remove(vrmRef.current.scene);
+      vrmRef.current.scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((mat) => mat.dispose());
+          } else {
+            obj.material?.dispose();
+          }
+        }
+      });
+      vrmRef.current = null;
+      setIsVRMLoaded(false);
+    }
+    
+    let arrayBuffer: ArrayBuffer;
+    if (typeof source === 'string') {
+      const res = await fetch(source);
+      arrayBuffer = await res.arrayBuffer();
+    } else {
+      arrayBuffer = await source.arrayBuffer();
+    }
+
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+    const gltf = await loader.parseAsync(arrayBuffer, '');
+    const vrm = gltf.userData.vrm as VRM;
+    vrmRef.current = vrm;
+    setIsVRMLoaded(true);
+    
+    // Rotate VRM to face camera (VRM models load facing backwards by default)
+    vrm.scene.rotation.set(0, THREE.MathUtils.degToRad(180), 0);
+    
+    scene.add(vrm.scene);
+    setStatus('✅ VRM loaded! Now drop an FBX/GLTF animation.');
+    renderer.render(scene, camera);
+  };
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -87,55 +132,15 @@ function PoseLab() {
 
   // Auto-load avatar from main app
   useEffect(() => {
-    if (avatarType === 'vrm' && currentUrl && !vrmRef.current) {
+    if (avatarType === 'vrm' && currentUrl && !isVRMLoaded) {
         loadVRM(currentUrl);
     }
   }, [avatarType, currentUrl]);
 
-  const loadVRM = async (source: File | string, _options?: { syncSource?: boolean }) => {
-    setStatus('Loading VRM…');
-    
-    // Dispose of old VRM if exists
-    if (vrmRef.current) {
-      console.log('[PoseLab] Disposing old VRM');
-      scene.remove(vrmRef.current.scene);
-      vrmRef.current.scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry?.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((mat) => mat.dispose());
-          } else {
-            obj.material?.dispose();
-          }
-        }
-      });
-      vrmRef.current = null;
-    }
-    
-    let arrayBuffer: ArrayBuffer;
-    if (typeof source === 'string') {
-      const res = await fetch(source);
-      arrayBuffer = await res.arrayBuffer();
-    } else {
-      arrayBuffer = await source.arrayBuffer();
-    }
 
-    const loader = new GLTFLoader();
-    loader.register((parser) => new VRMLoaderPlugin(parser));
-    const gltf = await loader.parseAsync(arrayBuffer, '');
-    const vrm = gltf.userData.vrm as VRM;
-    vrmRef.current = vrm;
-    
-    // Rotate VRM to face camera (VRM models load facing backwards by default)
-    vrm.scene.rotation.set(0, THREE.MathUtils.degToRad(180), 0);
-    
-    scene.add(vrm.scene);
-    setStatus('✅ VRM loaded! Now drop an FBX/GLTF animation.');
-    renderer.render(scene, camera);
-  };
 
   const retarget = async (file: File) => {
-    if (!vrmRef.current) {
+    if (!isVRMLoaded) {
       setStatus('Load a VRM first.');
       return;
     }
@@ -143,7 +148,7 @@ function PoseLab() {
     setStatus('Loading Mixamo pose…');
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const { animationClip } = await applyMixamoBuffer(arrayBuffer, file.name, vrmRef.current);
+      const { animationClip } = await applyMixamoBuffer(arrayBuffer, file.name, vrmRef.current!);
       animationClipRef.current = animationClip;
       setCurrentAnimationClip(animationClip);
       
@@ -276,7 +281,7 @@ function PoseLab() {
   };
 
   const batchExport = async () => {
-    if (!vrmRef.current) {
+    if (!isVRMLoaded) {
       setStatus('Load a VRM before running batch export.');
       return;
     }
@@ -290,7 +295,7 @@ function PoseLab() {
           throw new Error(`Failed to fetch ${config.label} (${response.status})`);
         }
         const buffer = await response.arrayBuffer();
-        const { pose, animationClip } = await applyMixamoBuffer(buffer, config.fileName, vrmRef.current);
+        const { pose, animationClip } = await applyMixamoBuffer(buffer, config.fileName, vrmRef.current!);
         await savePoseToDisk(config.id, {
           sceneRotation: config.sceneRotation ?? DEFAULT_SCENE_ROTATION,
           vrmPose: pose,
@@ -346,7 +351,7 @@ function PoseLab() {
           <div className="step-content">
             <h3>Load VRM Avatar</h3>
             <div
-              className={`drop-zone ${isDraggingVRM ? 'drop-zone--active' : ''} ${vrmRef.current ? 'drop-zone--loaded' : ''}`}
+              className={`drop-zone ${isDraggingVRM ? 'drop-zone--active' : ''} ${isVRMLoaded ? 'drop-zone--loaded' : ''}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDraggingVRM(true);
@@ -357,7 +362,7 @@ function PoseLab() {
             >
               <div className="drop-zone__icon">📦</div>
               <div className="drop-zone__text">
-                {vrmRef.current ? (
+                {isVRMLoaded ? (
                   <>
                     <strong>✅ VRM Loaded</strong>
                     <span>Drop another to replace</span>
@@ -374,7 +379,7 @@ function PoseLab() {
                 id="vrm-upload"
                 accept=".vrm"
                 style={{ display: 'none' }}
-                onChange={(e) => e.target.files?.[0] && loadVRM(e.target.files[0], { syncSource: true })}
+                onChange={(e) => e.target.files?.[0] && loadVRM(e.target.files[0])}
               />
             </div>
           </div>
@@ -462,16 +467,16 @@ function PoseLab() {
 
       {/* Export Actions */}
       <div className="pose-lab__actions">
-        <button type="button" onClick={exportPose} disabled={!vrmRef.current}>
+        <button type="button" onClick={exportPose} disabled={!isVRMLoaded}>
           💾 Export Pose JSON
         </button>
-        <button type="button" onClick={batchExport} disabled={!vrmRef.current || isBatchExporting}>
+        <button type="button" onClick={batchExport} disabled={!isVRMLoaded || isBatchExporting}>
           {isBatchExporting ? 'Processing...' : '📦 Batch Export All Poses'}
         </button>
       </div>
 
       {/* Batch FBX Converter */}
-      {vrmRef.current && (
+      {isVRMLoaded && vrmRef.current && (
         <BatchFBXConverter vrm={vrmRef.current} />
       )}
     </div>
