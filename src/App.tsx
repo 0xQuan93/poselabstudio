@@ -23,7 +23,6 @@ import { Fire } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
 import { StudioChatPanel } from './components/studio/StudioChatPanel';
-import { WearableFitter } from './components/studio/WearableFitter';
 import { useUserStore } from './state/useUserStore';
 
 import { useAvatarSource } from './state/useAvatarSource';
@@ -93,7 +92,6 @@ function App() {
       let modeName = 'Reaction Forge';
       if (mode === 'studio') modeName = 'Browsing the Studio Feed';
       else if (mode === 'poselab') modeName = 'Crafting Poses in Pose Lab';
-      else if (mode === 'wearables') modeName = 'Fitting Wearables';
       else if (mode === 'reactions') modeName = 'Triggering Reactions';
 
       discordSdk.commands.setActivity({
@@ -180,12 +178,11 @@ function App() {
           <ErrorBoundary>
             <CanvasStage />
             <ViewportEffectOverlay />
-            {mode === 'wearables' && <WearableFitter />}
             {(mode === 'reactions' || mode === 'poselab') && <ViewportOverlay mode={mode} />}
           </ErrorBoundary>
         </section>
 
-        {!isMobile && mode !== 'wearables' && (
+        {!isMobile && (
           <div className={`desktop-sidebar ${!sidebarOpen ? 'closed' : ''}`} style={{ display: mode === 'studio' ? 'none' : 'block' }}>
             <ControlPanel mode={mode} />
           </div>

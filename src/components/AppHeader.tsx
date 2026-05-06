@@ -5,7 +5,6 @@ import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
 import { useUserStore } from '../state/useUserStore';
 import { sceneManager } from '../three/sceneManager';
 import { avatarManager } from '../three/avatarManager';
-import { wearableManager } from '../three/wearableManager';
 import { AboutModal } from './AboutModal';
 import { SettingsModal } from './SettingsModal';
 import { projectManager } from '../persistence/projectManager';
@@ -15,16 +14,15 @@ import {
   Atom,
   Flask,
   Fire,
-  List,
-  TShirt
+  List
 } from '@phosphor-icons/react';
 import { useUIStore } from '../state/useUIStore';
 
 import { LoginButton } from './auth/LoginButton';
 
 interface AppHeaderProps {
-  mode: 'reactions' | 'poselab' | 'studio' | 'wearables';
-  onModeChange: (mode: 'reactions' | 'poselab' | 'studio' | 'wearables') => void;
+  mode: 'reactions' | 'poselab' | 'studio';
+  onModeChange: (mode: 'reactions' | 'poselab' | 'studio') => void;
 }
 
 export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
@@ -38,17 +36,9 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
   const sidebarOpen = useUIStore((state) => state.sidebarOpen);
   const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
 
-  const handleModeChange = (newMode: 'reactions' | 'poselab' | 'studio' | 'wearables') => {
+  const handleModeChange = (newMode: 'reactions' | 'poselab' | 'studio') => {
     onModeChange(newMode);
-    
-    // Toggle VRM visibility based on mode
-    if (newMode === 'wearables') {
-      avatarManager.setVisibility(false);
-      wearableManager.setVisibility(true);
-    } else {
-      avatarManager.setVisibility(true);
-      wearableManager.setVisibility(false);
-    }
+    avatarManager.setVisibility(true);
 
     if (user) {
       recordExploration(`explore_mode_${newMode}`).then(reward => {
@@ -82,10 +72,6 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
             <button className={mode === 'poselab' ? 'active' : ''} onClick={() => handleModeChange('poselab')}>
               <Flask size={16} weight="duotone" />
               <span>Pose Lab</span>
-            </button>
-            <button className={mode === 'wearables' ? 'active' : ''} onClick={() => handleModeChange('wearables')}>
-              <TShirt size={16} weight="duotone" />
-              <span>Wearables</span>
             </button>
             <button className={mode === 'studio' ? 'active' : ''} onClick={() => handleModeChange('studio')}>
               <Fire size={16} weight="duotone" />
