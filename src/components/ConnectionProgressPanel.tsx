@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect } from 'react';
 import { useMultiplayerStore } from '../state/useMultiplayerStore';
 import { Link, UploadSimple, DownloadSimple, CheckCircle, XCircle } from '@phosphor-icons/react';

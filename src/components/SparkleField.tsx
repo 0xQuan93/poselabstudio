@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * SparkleField - Kawaii-style sparkle/star effect
  * ═══════════════════════════════════════════════════════════════════════════

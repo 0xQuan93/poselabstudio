@@ -37,6 +37,7 @@ function PoseLab() {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const animationClipRef = useRef<THREE.AnimationClip | null>(null);
+  const [currentVrm, setCurrentVrm] = useState<VRM | null>(null);
   const [status, setStatus] = useState('🎭 Drag & drop a VRM file to begin');
   const [isVRMLoaded, setIsVRMLoaded] = useState(false);
   const [isBatchExporting, setIsBatchExporting] = useState(false);
@@ -66,6 +67,7 @@ function PoseLab() {
         }
       });
       vrmRef.current = null;
+      setCurrentVrm(null);
       setIsVRMLoaded(false);
     }
     
@@ -82,6 +84,7 @@ function PoseLab() {
     const gltf = await loader.parseAsync(arrayBuffer, '');
     const vrm = gltf.userData.vrm as VRM;
     vrmRef.current = vrm;
+    setCurrentVrm(vrm);
     setIsVRMLoaded(true);
     
     // Rotate VRM to face camera (VRM models load facing backwards by default)
@@ -133,9 +136,9 @@ function PoseLab() {
   // Auto-load avatar from main app
   useEffect(() => {
     if (avatarType === 'vrm' && currentUrl && !isVRMLoaded) {
-        loadVRM(currentUrl);
+      void loadVRM(currentUrl);
     }
-  }, [avatarType, currentUrl]);
+  }, [avatarType, currentUrl, isVRMLoaded]);
 
 
 
@@ -476,9 +479,7 @@ function PoseLab() {
       </div>
 
       {/* Batch FBX Converter */}
-      {isVRMLoaded && vrmRef.current && (
-        <BatchFBXConverter vrm={vrmRef.current} />
-      )}
+      {isVRMLoaded && currentVrm ? <BatchFBXConverter vrm={currentVrm} /> : null}
     </div>
   );
 }

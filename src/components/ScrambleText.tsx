@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * ScrambleText - Cyberpunk character scramble reveal effect
  * ═══════════════════════════════════════════════════════════════════════════

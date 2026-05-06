@@ -31,7 +31,7 @@ class Live2DManager {
   constructor() {
     // Register the Ticker for shared updating if needed, 
     // but we usually prefer manual update via our main loop to sync with Three.js
-    // @ts-ignore - Shim for Live2D ticker requirement
+    // @ts-expect-error - requires description - Shim for Live2D ticker requirement
     Live2DModel.registerTicker(this.updateTicker);
   }
 
@@ -161,7 +161,6 @@ class Live2DManager {
   setPhysicsEnabled(enabled: boolean) {
     this.physicsEnabled = enabled;
     if (this.model && this.model.internalModel && this.model.internalModel.physics) {
-       // @ts-ignore - internalModel typing varies
        this.model.internalModel.physics.enabled = enabled;
     }
   }
@@ -180,9 +179,9 @@ class Live2DManager {
 
     // Helper to safely set parameter
     const setParam = (id: string, value: number) => {
-        // @ts-ignore - internalModel typing
+        // @ts-expect-error - requires description - internalModel typing
         if (this.model.internalModel && this.model.internalModel.coreModel) {
-            // @ts-ignore
+            // @ts-expect-error - requires description
             this.model.internalModel.coreModel.setParameterValueById(id, value);
         }
     };

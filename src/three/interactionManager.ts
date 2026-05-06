@@ -57,7 +57,7 @@ class InteractionManager {
 
     this.transformControls = new TransformControls(camera, renderer.domElement);
     
-    // @ts-ignore
+    // @ts-expect-error - fix type error
     this.transformControls.addEventListener('dragging-changed', (event: any) => {
       const orbit = sceneManager.getControls();
       if (orbit) orbit.enabled = !event.value;
@@ -175,7 +175,7 @@ class InteractionManager {
     } else {
       // Small delay to allow gizmo click
       setTimeout(() => {
-          // @ts-ignore
+          // @ts-expect-error - fix type error
           if (this.transformControls && !this.transformControls.dragging) {
               this.transformControls.detach();
               this.boneHelpers.forEach(h => (h.material as THREE.MeshBasicMaterial).color.setHex(0x00ffd6));

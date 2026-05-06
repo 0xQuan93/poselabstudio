@@ -213,11 +213,10 @@ export default defineConfig(({ mode }) => {
              console.log('[vmc-bridge] UDP listener active on 39539')
           })
 
-          // @ts-ignore - node-osc types might not fully reflect EventEmitter inheritance in some versions
           oscServer.on('error', (e: any) => {
             if (e.code === 'EADDRINUSE') {
               console.log('[vmc-bridge] Port 39539 in use, VMC bridge (UDP) will be disabled for this instance.');
-              try { oscServer.close(); } catch {}
+              try { oscServer.close(); } catch { /* ignore */ }
             } else {
               console.error('[vmc-bridge] OSC error:', e);
             }

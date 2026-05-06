@@ -481,7 +481,7 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
           errorMessage = errorData.details 
             ? `${errorData.error}: ${errorData.details}`
             : (errorData.error || errorMessage);
-        } catch (e) {
+        } catch (_e) {
           console.error('Non-JSON error response:', errorText);
           errorMessage = `Server Error (${response.status}): ${errorText.substring(0, 100)}`;
         }

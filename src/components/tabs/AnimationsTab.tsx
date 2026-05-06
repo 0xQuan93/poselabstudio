@@ -32,7 +32,7 @@ export function AnimationsTab() {
   const loadMixamoFromBuffer = async (arrayBuffer: ArrayBuffer, fileName: string) => {
     const ext = fileName.toLowerCase().split('.').pop();
     let mixamoRoot: THREE.Object3D;
-    let loadedAnimations: THREE.AnimationClip[] = [];
+    let loadedAnimations: THREE.AnimationClip[];
 
     if (ext === 'fbx') {
       const loader = new FBXLoader();

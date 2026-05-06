@@ -502,8 +502,8 @@ class SceneManager {
     const targetRatio = this.getAspectRatioValue(this.currentAspectRatio);
     
     // Calculate canvas size to fit container while maintaining aspect ratio
-    let canvasWidth = containerWidth;
-    let canvasHeight = containerHeight;
+    let canvasWidth: number;
+    let canvasHeight: number;
     
     const containerRatio = containerWidth / containerHeight;
     
@@ -1159,7 +1159,7 @@ class SceneManager {
           .add(new THREE.Vector3(0, 0.05, 0));      // Slightly up
         break;
         
-      case 'quarter':
+      case 'quarter': {
         // 3/4 View: Target Chest (hips lerp head 0.4), Camera at 45 degrees
         destTarget.copy(hips).lerp(head, 0.4);
         
@@ -1167,6 +1167,7 @@ class SceneManager {
         const quarterOffset = forward.clone().add(right).normalize().multiplyScalar(1.8 * distanceModifier);
         destPos.copy(destTarget).add(quarterOffset).add(new THREE.Vector3(0, 0.1, 0));
         break;
+      }
         
       case 'side':
         // Side View: Target Chest (hips lerp head 0.4), Camera at 90 degrees
@@ -1178,7 +1179,7 @@ class SceneManager {
         
       case 'fullbody':
       case 'full-body':
-      default:
+      default: {
         // Smart Full Body Framing
         // Use bounding box to ensure avatar fits regardless of size or aspect ratio
         let vrmObj: THREE.Object3D | null = null;
@@ -1217,6 +1218,7 @@ class SceneManager {
             destPos.copy(hips).add(forward.clone().multiplyScalar(2.8 * distanceModifier));
         }
         break;
+      }
     }
     
     return { position: destPos, target: destTarget };

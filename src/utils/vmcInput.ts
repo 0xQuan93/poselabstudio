@@ -423,7 +423,7 @@ class VmcInputManager {
       return;
     }
 
-    let payload: VmcPayload | null = null;
+    let payload: VmcPayload;
     try {
       payload = JSON.parse(data) as VmcPayload;
     } catch {

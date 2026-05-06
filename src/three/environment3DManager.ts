@@ -5,9 +5,7 @@ import { sceneManager } from './sceneManager';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 // Add BVH support to THREE
-// @ts-ignore
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-// @ts-ignore
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
@@ -155,7 +153,6 @@ class Environment3DManager {
               
               // Generate BVH collider for each mesh if it's a collider node or environment
               if (child.geometry && (node.type === 'collider' || node.type === 'mesh')) {
-                // @ts-ignore
                 child.geometry.computeBoundsTree();
                 colliders.push(child);
               }

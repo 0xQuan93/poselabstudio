@@ -67,7 +67,7 @@ export function usePopOutViewport(activeCssOverlay: string | null) {
                     style.appendChild(doc.createTextNode(rule.cssText));
                 });
                 doc.head.appendChild(style);
-            } catch (e) {
+            } catch (_e) {
                 // Ignore CORS errors for cross-origin stylesheets
             }
         }

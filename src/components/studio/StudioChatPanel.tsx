@@ -51,7 +51,8 @@ export const StudioChatPanel = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [memberCount, setMemberCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastProcessedMsgTime = useRef<number>(Date.now());
+  const lastProcessedMsgTime = useRef<number>(0);
+  useEffect(() => { lastProcessedMsgTime.current = Date.now(); }, []);
   const seenLiveKitMessages = useRef<Set<string>>(new Set());
 
   const scrollToBottom = () => {
@@ -98,14 +99,7 @@ export const StudioChatPanel = () => {
       }
 
       const mappedMessages: Message[] = data.messages.map((msg: DiscordMessage) => {
-        let avatarUrl = undefined;
-        if (msg.author.avatar) {
-          avatarUrl = `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`;
-        } else {
-          const discriminator = parseInt(msg.author.discriminator) || 0;
-          avatarUrl = `https://cdn.discordapp.com/embed/avatars/${discriminator % 5}.png`;
-        }
-
+        const avatarUrl = msg.author.avatar ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${(parseInt(msg.author.discriminator) || 0) % 5}.png`;
         let displayUsername = msg.author.username;
         let displayContent = msg.content;
         let isBot = msg.author.bot;

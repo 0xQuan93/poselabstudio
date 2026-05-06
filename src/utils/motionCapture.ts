@@ -381,7 +381,6 @@ export class MotionCaptureManager {
           if (this.videoElement.srcObject) {
                // Use requestVideoFrameCallback if available for better performance/sync
                if ('requestVideoFrameCallback' in this.videoElement) {
-                   // @ts-ignore
                    this.videoElement.requestVideoFrameCallback(loop);
                } else {
                    this.cameraLoopId = requestAnimationFrame(loop);
@@ -582,7 +581,7 @@ export class MotionCaptureManager {
               if (!allowedBones.some(b => boneName.toLowerCase().includes(b))) return;
           }
 
-          // @ts-ignore
+          // @ts-expect-error - fix type error
           const node = this.vrm!.humanoid!.getNormalizedBoneNode(boneName);
           if (node) {
               let filter = this.boneFilters.get(boneName);
@@ -849,7 +848,6 @@ export class MotionCaptureManager {
     }
     const setTargetRotation = (key: string, rotation: { x: number, y: number, z: number, w?: number }) => {
         const boneName = getVRMBoneName(key);
-        // @ts-ignore
         if (rotation.w !== undefined) {
             const targetQ = new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
             if (this.calibrationOffsets[key]) {

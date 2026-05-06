@@ -383,12 +383,12 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
     link.click();
   };
 
-  const handlePrevCapture = () => {
+  function handlePrevCapture() {
     if (autoCaptures.length === 0) return;
     setFocusCaptureIndex((prev) => (prev - 1 + autoCaptures.length) % autoCaptures.length);
   };
 
-  const handleNextCapture = () => {
+  function handleNextCapture() {
     if (autoCaptures.length === 0) return;
     setFocusCaptureIndex((prev) => (prev + 1) % autoCaptures.length);
   };
@@ -432,7 +432,7 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
           errorMessage = errorData.details 
             ? `${errorData.error}: ${errorData.details}`
             : (errorData.error || errorMessage);
-        } catch (e) {
+        } catch (_e) {
           console.error('Non-JSON error response:', errorText);
           errorMessage = `Server Error (${response.status}): ${errorText.substring(0, 100)}`;
         }

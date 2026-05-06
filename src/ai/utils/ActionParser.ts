@@ -211,7 +211,7 @@ export class ActionParser {
 
                 categories.forEach(cat => {
                   if (config[cat] && typeof config[cat] === 'object') {
-                    // @ts-ignore
+                    // @ts-expect-error - description - fix type error
                     newSettings[cat] = { ...newSettings[cat], ...config[cat] };
                   }
                 });
@@ -301,10 +301,11 @@ export class ActionParser {
                 case 'mute': store.toggleMute(); break;
                 case 'shuffle': store.toggleShuffle(); break;
                 case 'volume': 
-                case 'vol':
+                case 'vol': {
                   const vol = parseFloat(args[1]);
                   if (!isNaN(vol)) store.setVolume(vol);
                   break;
+                }
               }
               actionTaken = true;
             } catch (e) {

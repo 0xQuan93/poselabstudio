@@ -134,7 +134,7 @@ export const batchConfigs: BatchPoseConfig[] = [
 export const loadMixamoFromBuffer = async (arrayBuffer: ArrayBuffer, fileName: string) => {
   const ext = fileName.toLowerCase().split('.').pop();
   let mixamoRoot: THREE.Object3D;
-  let animations: THREE.AnimationClip[] = [];
+  let animations: THREE.AnimationClip[];
 
   if (ext === 'fbx') {
     const loader = new FBXLoader();
@@ -177,7 +177,7 @@ export const applyMixamoBuffer = async (arrayBuffer: ArrayBuffer, fileName: stri
       const { mixamoRoot, animations } = await loadMixamoFromBuffer(arrayBuffer, fileName);
       const clip = getMixamoAnimation(animations, mixamoRoot, vrm);
       if (!clip) {
-        throw new Error('Failed to convert Mixamo data for this VRM on main thread.');
+        throw new Error('Failed to convert Mixamo data for this VRM on main thread.', { cause: error });
       }
       vrmClip = clip;
     }

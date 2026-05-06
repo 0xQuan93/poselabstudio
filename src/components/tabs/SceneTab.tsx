@@ -1292,7 +1292,7 @@ export function SceneTab() {
       </Section>
 
       {/* Online Library Section - Temporarily Disabled */}
-      {false && (
+      {(false as boolean) && (
       <Section title="Online Library" icon={<Globe size={18} weight="duotone" />} defaultOpen={false}>
         <p className="muted small" style={{ marginBottom: '0.75rem' }}>
           Browse and download free 3D environments from the community

@@ -82,7 +82,7 @@ export function AIAgentWidget() {
         // Pass API key only if not using proxy
         await agentManager.init(USE_SERVER_PROXY ? undefined : apiKey);
         setAIActive(true);
-      } catch (error) {
+      } catch (_error) {
         alert("Failed to connect to AI. Check your API key.");
         setIsOpen(true);
         setShowKeyInput(true);

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { create } from "zustand";
 
 export type Toast = { id: string; kind: "success" | "info" | "error" | "warning"; msg: string; };
