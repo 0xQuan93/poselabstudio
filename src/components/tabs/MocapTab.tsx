@@ -69,6 +69,13 @@ function formatMaskValue(key: keyof FaceMaskAdjustments, value: number) {
   return value.toFixed(2);
 }
 
+function normalizeFaceMaskAdjustments(adjustments?: Partial<FaceMaskAdjustments>): FaceMaskAdjustments {
+  return {
+    ...DEFAULT_FACE_MASK_ADJUSTMENTS,
+    ...adjustments,
+  };
+}
+
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
@@ -105,6 +112,8 @@ export function MocapTab() {
     setSelectedDeviceId,
     setIsVoiceLipSyncActive,
     setFaceMaskEnabled,
+    setFaceMaskProfile,
+    getFaceMaskProfile,
     setVoiceVolume,
     setVoiceSensitivity,
   } = useMocapStore();
@@ -133,9 +142,20 @@ export function MocapTab() {
   const [vmcError, setVmcError] = useState<string | null>(null);
   const [managerStatus, setManagerStatus] = useState<MotionCaptureStatus>(EMPTY_MOCAP_STATUS);
   const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
+  const [faceMaskDebug, setFaceMaskDebug] = useState(false);
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
+
+  const getFaceMaskProfileKey = useCallback(() => {
+    const vrm = avatarManager.getVRM() as any;
+    const avatarName = vrm?.meta?.name || vrm?.meta?.title || vrm?.scene?.name || vrm?.scene?.uuid || 'avatar';
+    const status = managerRef.current?.getStatus() ?? managerStatus;
+    const resolution = status.videoWidth && status.videoHeight
+      ? `${status.videoWidth}x${status.videoHeight}`
+      : 'pending';
+    return `${avatarName}::${selectedDeviceId || 'default-camera'}::${resolution}`;
+  }, [managerStatus.videoHeight, managerStatus.videoWidth, selectedDeviceId, avatarManager.getVRM()?.scene.uuid]);
 
   // Initialize Global Manager
   useEffect(() => {
@@ -144,12 +164,18 @@ export function MocapTab() {
     managerRef.current = initMocapManager();
     managerRef.current.setMode(mocapMode);
     managerRef.current.setFaceMaskAdjustments(faceMaskAdjustments);
-    setManagerStatus(managerRef.current.getStatus());
+    if (managerRef.current) {
+      setManagerStatus(managerRef.current.getStatus());
+    }
   }, [mocapMode]);
 
   useEffect(() => {
     managerRef.current?.setFaceMaskAdjustments(faceMaskAdjustments);
   }, [faceMaskAdjustments]);
+
+  useEffect(() => {
+    managerRef.current?.setFaceMaskDebug(faceMaskDebug);
+  }, [faceMaskDebug]);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -396,18 +422,41 @@ export function MocapTab() {
 
   const updateFaceMaskAdjustment = useCallback((key: keyof FaceMaskAdjustments, value: number) => {
     setFaceMaskAdjustments((current) => {
-      const next = { ...current, [key]: value };
+      const next = normalizeFaceMaskAdjustments({ ...current, [key]: value });
       managerRef.current?.setFaceMaskAdjustments(next);
+      setFaceMaskProfile(getFaceMaskProfileKey(), next);
       return next;
     });
-  }, []);
+  }, [getFaceMaskProfileKey, setFaceMaskProfile]);
+
+  const saveFaceMaskCalibration = useCallback(() => {
+    const manager = managerRef.current;
+    if (!manager) {
+      addToast("Start XR Face Mask before saving calibration.", "warning");
+      return;
+    }
+
+    const next = manager.calibrateFaceMaskNeutral();
+    if (!next) {
+      addToast("Keep your face visible, then try neutral calibration again.", "warning");
+      return;
+    }
+
+    const normalized = normalizeFaceMaskAdjustments(next);
+    manager.setFaceMaskAdjustments(normalized);
+    setFaceMaskAdjustments(normalized);
+    setFaceMaskProfile(getFaceMaskProfileKey(), normalized);
+    setManagerStatus(manager.getStatus());
+    addToast("XR Face Mask neutral calibration saved for this avatar and camera.", "success");
+  }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
 
   const resetFaceMaskAdjustments = useCallback(() => {
     managerRef.current?.resetFaceMaskAdjustments();
-    const next = managerRef.current?.getFaceMaskAdjustments() ?? DEFAULT_FACE_MASK_ADJUSTMENTS;
+    const next = normalizeFaceMaskAdjustments(managerRef.current?.getFaceMaskAdjustments());
+    setFaceMaskProfile(getFaceMaskProfileKey(), next);
     setFaceMaskAdjustments(next);
     addToast("XR Face Mask adjustments reset", "info");
-  }, [addToast]);
+  }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
 
   const stopMocap = useCallback(() => {
     if (!managerRef.current || !isActive) return;
@@ -416,6 +465,7 @@ export function MocapTab() {
     }
     managerRef.current.setFaceMaskMode(false);
     setFaceMaskEnabled(false);
+    setFaceMaskDebug(false);
     managerRef.current.stop();
     setIsActive(false);
     setIsStarting(false);
@@ -536,6 +586,7 @@ export function MocapTab() {
     if (faceMaskEnabled) {
       managerRef.current.setFaceMaskMode(false);
       setFaceMaskEnabled(false);
+      setFaceMaskDebug(false);
       addToast("XR Face Mask disabled", "info");
       return;
     }
@@ -565,7 +616,11 @@ export function MocapTab() {
     }
 
     managerRef.current.setVRM(vrm);
-    managerRef.current.setFaceMaskAdjustments(faceMaskAdjustments);
+    const savedAdjustments = getFaceMaskProfile(getFaceMaskProfileKey());
+    const adjustments = normalizeFaceMaskAdjustments(savedAdjustments);
+    setFaceMaskAdjustments(adjustments);
+    managerRef.current.setFaceMaskAdjustments(adjustments);
+    managerRef.current.setFaceMaskDebug(faceMaskDebug);
     managerRef.current.setFaceMaskMode(true);
     setFaceMaskEnabled(true);
     sceneManager.setFollowTarget(null, null);
@@ -574,7 +629,7 @@ export function MocapTab() {
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
     addToast("XR Face Mask enabled. The canvas now composites webcam body plus VRM head.", "success");
-  }, [addToast, faceMaskAdjustments, faceMaskEnabled, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
+  }, [addToast, faceMaskDebug, faceMaskEnabled, getFaceMaskProfile, getFaceMaskProfileKey, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
 
   const enterVR = async () => {
     const vrm = avatarManager.getVRM();
@@ -591,6 +646,7 @@ export function MocapTab() {
       if (faceMaskEnabled) {
         managerRef.current?.setFaceMaskMode(false);
         setFaceMaskEnabled(false);
+        setFaceMaskDebug(false);
       }
       if (isActive) {
         stopMocap();
@@ -929,14 +985,33 @@ export function MocapTab() {
                 <div className="mocap-mask-controls" aria-label="XR Face Mask manual adjustments">
                     <div className="mocap-mask-controls__header">
                         <span>Mask Adjust</span>
-                        <button
-                            type="button"
-                            className="secondary"
-                            onClick={resetFaceMaskAdjustments}
-                            title="Reset mask offset, lift, size, depth, backset, and crop"
-                        >
-                            Reset
-                        </button>
+                        <div className="mocap-mask-controls__actions">
+                            <button
+                                type="button"
+                                className="secondary"
+                                onClick={saveFaceMaskCalibration}
+                                title="Save the current straight-ahead face as neutral for this avatar and camera"
+                            >
+                                Calibrate
+                            </button>
+                            <button
+                                type="button"
+                                className={`secondary ${faceMaskDebug ? 'active' : ''}`}
+                                onClick={() => setFaceMaskDebug((current) => !current)}
+                                aria-pressed={faceMaskDebug}
+                                title="Show face bounds, target anchor, and neck crop markers in the canvas"
+                            >
+                                Debug
+                            </button>
+                            <button
+                                type="button"
+                                className="secondary"
+                                onClick={resetFaceMaskAdjustments}
+                                title="Reset mask offset, lift, size, depth, backset, and crop"
+                            >
+                                Reset
+                            </button>
+                        </div>
                     </div>
                     {([
                         { key: 'offsetX', label: 'Horizontal', min: -0.9, max: 0.9, step: 0.01 },

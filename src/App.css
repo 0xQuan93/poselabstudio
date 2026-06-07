@@ -868,7 +868,14 @@
   text-transform: uppercase;
 }
 
-.mocap-mask-controls__header button {
+.mocap-mask-controls__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.mocap-mask-controls__header button,
+.mocap-mask-controls__actions button {
   min-height: 28px;
   width: auto;
   padding: 4px 10px;
