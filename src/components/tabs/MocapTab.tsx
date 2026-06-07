@@ -53,6 +53,7 @@ const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
 const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
   offsetX: 0,
   offsetY: 0,
+  lift: 0,
   scale: 1,
   depth: 0,
   backset: 0,
@@ -932,18 +933,19 @@ export function MocapTab() {
                             type="button"
                             className="secondary"
                             onClick={resetFaceMaskAdjustments}
-                            title="Reset mask offset, size, depth, and crop"
+                            title="Reset mask offset, lift, size, depth, backset, and crop"
                         >
                             Reset
                         </button>
                     </div>
                     {([
-                        { key: 'offsetX', label: 'Horizontal', min: -0.5, max: 0.5, step: 0.01 },
-                        { key: 'offsetY', label: 'Vertical', min: -0.5, max: 0.5, step: 0.01 },
-                        { key: 'scale', label: 'Size', min: 0.4, max: 2.4, step: 0.01 },
-                        { key: 'depth', label: 'Depth', min: -1.2, max: 1.4, step: 0.01 },
-                        { key: 'backset', label: 'Backset', min: -0.8, max: 2.4, step: 0.01 },
-                        { key: 'crop', label: 'Neck Crop', min: -0.3, max: 0.3, step: 0.01 },
+                        { key: 'offsetX', label: 'Horizontal', min: -0.9, max: 0.9, step: 0.01 },
+                        { key: 'offsetY', label: 'Vertical', min: -0.9, max: 1.4, step: 0.01 },
+                        { key: 'lift', label: 'Head Lift', min: -0.6, max: 1.2, step: 0.01 },
+                        { key: 'scale', label: 'Size', min: 0.25, max: 3.4, step: 0.01 },
+                        { key: 'depth', label: 'Depth', min: -1.4, max: 2.2, step: 0.01 },
+                        { key: 'backset', label: 'Backset', min: -0.8, max: 4.0, step: 0.01 },
+                        { key: 'crop', label: 'Neck Crop', min: -0.4, max: 0.9, step: 0.01 },
                     ] as Array<{ key: keyof FaceMaskAdjustments; label: string; min: number; max: number; step: number }>).map((control) => (
                         <label className="mocap-mask-slider" key={control.key}>
                             <span>

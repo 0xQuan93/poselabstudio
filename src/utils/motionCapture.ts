@@ -174,6 +174,7 @@ export interface MotionCaptureStatus {
 export interface FaceMaskAdjustments {
   offsetX: number;
   offsetY: number;
+  lift: number;
   scale: number;
   depth: number;
   backset: number;
@@ -183,6 +184,7 @@ export interface FaceMaskAdjustments {
 const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
   offsetX: 0,
   offsetY: 0,
+  lift: 0,
   scale: 1,
   depth: 0,
   backset: 0,
@@ -410,12 +412,13 @@ export class MotionCaptureManager {
           ...this.faceMaskAdjustments,
           ...adjustments,
       };
-      this.faceMaskAdjustments.offsetX = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetX, -0.5, 0.5);
-      this.faceMaskAdjustments.offsetY = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetY, -0.5, 0.5);
-      this.faceMaskAdjustments.scale = THREE.MathUtils.clamp(this.faceMaskAdjustments.scale, 0.4, 2.4);
-      this.faceMaskAdjustments.depth = THREE.MathUtils.clamp(this.faceMaskAdjustments.depth, -1.2, 1.4);
-      this.faceMaskAdjustments.backset = THREE.MathUtils.clamp(this.faceMaskAdjustments.backset, -0.8, 2.4);
-      this.faceMaskAdjustments.crop = THREE.MathUtils.clamp(this.faceMaskAdjustments.crop, -0.3, 0.3);
+      this.faceMaskAdjustments.offsetX = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetX, -0.9, 0.9);
+      this.faceMaskAdjustments.offsetY = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetY, -0.9, 1.4);
+      this.faceMaskAdjustments.lift = THREE.MathUtils.clamp(this.faceMaskAdjustments.lift, -0.6, 1.2);
+      this.faceMaskAdjustments.scale = THREE.MathUtils.clamp(this.faceMaskAdjustments.scale, 0.25, 3.4);
+      this.faceMaskAdjustments.depth = THREE.MathUtils.clamp(this.faceMaskAdjustments.depth, -1.4, 2.2);
+      this.faceMaskAdjustments.backset = THREE.MathUtils.clamp(this.faceMaskAdjustments.backset, -0.8, 4.0);
+      this.faceMaskAdjustments.crop = THREE.MathUtils.clamp(this.faceMaskAdjustments.crop, -0.4, 0.9);
   }
 
   getFaceMaskAdjustments(): FaceMaskAdjustments {
@@ -1073,13 +1076,14 @@ export class MotionCaptureManager {
 
       if (neck) {
           neck.getWorldPosition(reference);
-          reference.y -= Math.max(0.025, this.faceMaskBaseAvatarHeight * 0.015) + this.faceMaskAdjustments.crop;
+          reference.y -= Math.max(0.025, this.faceMaskBaseAvatarHeight * 0.015);
       } else if (head) {
           head.getWorldPosition(reference);
-          reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * 0.11) + this.faceMaskAdjustments.crop;
+          reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * 0.11);
       } else {
           return;
       }
+      reference.y += this.faceMaskAdjustments.crop;
 
       this.faceMaskClipPlane.normal.set(0, 1, 0);
       this.faceMaskClipPlane.constant = -reference.y;
@@ -1108,7 +1112,7 @@ export class MotionCaptureManager {
       const ndcX = (videoX * 2) - 1;
       const ndcY = 1 - (centerY * 2);
 
-      const depth = THREE.MathUtils.clamp(this.faceMaskDepth + this.faceMaskAdjustments.depth, 0.45, 3.2);
+      const depth = THREE.MathUtils.clamp(this.faceMaskDepth + this.faceMaskAdjustments.depth, 0.45, 4.0);
       const fov = THREE.MathUtils.degToRad(camera.fov);
       const frustumHeight = 2 * Math.tan(fov / 2) * depth;
       const frustumWidth = frustumHeight * camera.aspect;
@@ -1126,7 +1130,7 @@ export class MotionCaptureManager {
       const faceWidth = Math.max(0.04, maxX - minX);
       const faceWorldWidth = faceWidth * frustumWidth;
       const approximateHeadWidth = Math.max(0.08, this.faceMaskBaseAvatarHeight * 0.16);
-      this.faceMaskTargetScale = THREE.MathUtils.clamp(((faceWorldWidth * 1.28) / approximateHeadWidth) * this.faceMaskAdjustments.scale, 0.25, 3.4);
+      this.faceMaskTargetScale = THREE.MathUtils.clamp(((faceWorldWidth * 1.28) / approximateHeadWidth) * this.faceMaskAdjustments.scale, 0.18, 4.2);
       this.hasFaceMaskTarget = true;
       this.lastFaceMaskAt = now;
 
@@ -1156,7 +1160,7 @@ export class MotionCaptureManager {
 
       const actualHeadWorld = new THREE.Vector3();
       head.getWorldPosition(actualHeadWorld);
-      actualHeadWorld.y += this.faceMaskHeadCenterOffset * this.currentFaceMaskScale;
+      actualHeadWorld.y += (this.faceMaskHeadCenterOffset + this.faceMaskAdjustments.lift) * this.currentFaceMaskScale;
       const offset = this.currentFaceMaskHeadWorld.clone().sub(actualHeadWorld);
       this.vrm.scene.position.add(offset.multiplyScalar(smoothing));
       this.vrm.scene.updateMatrixWorld(true);
