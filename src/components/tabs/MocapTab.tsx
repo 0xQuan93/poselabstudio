@@ -536,7 +536,7 @@ export function MocapTab() {
     sceneManager.setBackground('transparent');
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
-    addToast("XR Face Mask enabled. Layer this browser source over your webcam in OBS.", "success");
+    addToast("XR Face Mask enabled. The canvas now composites webcam body plus VRM head.", "success");
   }, [addToast, faceMaskEnabled, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
 
   const enterVR = async () => {
@@ -883,7 +883,7 @@ export function MocapTab() {
                 disabled={isStarting}
                 aria-pressed={faceMaskEnabled}
                 style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                title="Map the loaded VRM head to your webcam face for streaming overlays"
+                title="Replace your webcam head with the loaded VRM head in the canvas"
             >
                 <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'XR Face Mask: On' : 'XR Face Mask'}
             </button>
@@ -983,7 +983,7 @@ export function MocapTab() {
           <h3>Instructions</h3>
           <ul className="small muted" style={{ paddingLeft: '1.2rem' }}>
               <li><strong>Upper Body:</strong> Track face, hands, and arms without lower-body tracking.</li>
-              <li><strong>XR Face Mask:</strong> Maps the loaded VRM head to your webcam face for Snapchat-style stream filters.</li>
+              <li><strong>XR Face Mask:</strong> Shows the webcam feed in-canvas and replaces the tracked human head with the loaded VRM head.</li>
               <li><strong>Full Body:</strong> Stand back so your head, torso, legs, and hands are visible.</li>
               <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button to align your body and gaze.</li>
               <li>If the camera stops immediately, check browser camera permissions and close other apps using the camera.</li>

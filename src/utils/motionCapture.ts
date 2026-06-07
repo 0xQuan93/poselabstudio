@@ -144,6 +144,13 @@ interface FaceMaskVisibilityRecord {
     visible: boolean;
 }
 
+interface FaceMaskMaterialRecord {
+    material: THREE.Material;
+    clippingPlanes: THREE.Plane[] | null;
+    clipIntersection: boolean;
+    clipShadows: boolean;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HandLandmarks2D = any; 
 
@@ -208,6 +215,7 @@ export class MotionCaptureManager {
   private faceMaskMirrorX = true;
   private faceMaskDepth = 1.25;
   private faceMaskBaseAvatarHeight = 1.65;
+  private faceMaskHeadCenterOffset = 0.17;
   private hasFaceMaskOriginalTransform = false;
   private faceMaskOriginalScale = new THREE.Vector3(1, 1, 1);
   private faceMaskOriginalPosition = new THREE.Vector3();
@@ -218,6 +226,13 @@ export class MotionCaptureManager {
   private hasFaceMaskTarget = false;
   private lastFaceMaskAt: number | null = null;
   private faceMaskVisibilityRecords: FaceMaskVisibilityRecord[] = [];
+  private faceMaskMaterialRecords: FaceMaskMaterialRecord[] = [];
+  private faceMaskClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private originalRendererLocalClippingEnabled: boolean | null = null;
+  private faceMaskVideoPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
+  private faceMaskVideoTexture: THREE.VideoTexture | null = null;
+  private faceMaskVideoWidth = 0;
+  private faceMaskVideoHeight = 0;
 
   // Hand Tracking State
   private lastLeftHandLandmarks2D: HandLandmarks2D = null;
@@ -362,10 +377,12 @@ export class MotionCaptureManager {
 
       if (enabled) {
           this.captureFaceMaskBaseline();
+          this.ensureFaceMaskVideoBackdrop();
           this.applyFaceMaskVisibility();
       } else {
           this.restoreFaceMaskBaseline();
           this.restoreFaceMaskVisibility();
+          this.disposeFaceMaskVideoBackdrop();
       }
   }
 
@@ -847,6 +864,7 @@ export class MotionCaptureManager {
       const bounds = getObjectBounds(this.vrm.scene);
       const height = bounds.max.y - bounds.min.y;
       this.faceMaskBaseAvatarHeight = Number.isFinite(height) && height > 0.1 ? height : 1.65;
+      this.faceMaskHeadCenterOffset = this.faceMaskBaseAvatarHeight * 0.105;
 
       const camera = sceneManager.getCamera();
       const head = this.vrm.humanoid?.getNormalizedBoneNode('head');
@@ -869,6 +887,13 @@ export class MotionCaptureManager {
   private applyFaceMaskVisibility() {
       if (!this.vrm) return;
       this.restoreFaceMaskVisibility();
+      this.restoreFaceMaskClipping();
+
+      const renderer = sceneManager.getRenderer();
+      if (renderer) {
+          this.originalRendererLocalClippingEnabled = renderer.localClippingEnabled;
+          renderer.localClippingEnabled = true;
+      }
 
       const faceTokens = ['head', 'face', 'hair', 'eye', 'iris', 'lash', 'brow', 'mouth', 'teeth', 'tongue', 'ear', 'nose', 'cheek', 'neck'];
       const bodyTokens = ['body', 'torso', 'chest', 'spine', 'hips', 'pelvis', 'waist', 'arm', 'hand', 'finger', 'leg', 'foot', 'feet', 'shoe', 'boot', 'sock', 'skirt', 'dress', 'pants', 'short', 'shirt', 'jacket', 'coat', 'sleeve', 'glove'];
@@ -877,6 +902,21 @@ export class MotionCaptureManager {
 
       this.vrm.scene.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => {
+              if (!material || this.faceMaskMaterialRecords.some((record) => record.material === material)) return;
+              this.faceMaskMaterialRecords.push({
+                  material,
+                  clippingPlanes: material.clippingPlanes ? [...material.clippingPlanes] : null,
+                  clipIntersection: material.clipIntersection,
+                  clipShadows: material.clipShadows,
+              });
+              material.clippingPlanes = [this.faceMaskClipPlane];
+              material.clipIntersection = false;
+              material.clipShadows = true;
+              material.needsUpdate = true;
+          });
+
           const materialNames = Array.isArray(object.material)
               ? object.material.map((material) => material.name).join(' ')
               : object.material?.name ?? '';
@@ -900,6 +940,106 @@ export class MotionCaptureManager {
           record.object.visible = record.visible;
       });
       this.faceMaskVisibilityRecords = [];
+      this.restoreFaceMaskClipping();
+  }
+
+  private restoreFaceMaskClipping() {
+      this.faceMaskMaterialRecords.forEach((record) => {
+          record.material.clippingPlanes = record.clippingPlanes;
+          record.material.clipIntersection = record.clipIntersection;
+          record.material.clipShadows = record.clipShadows;
+          record.material.needsUpdate = true;
+      });
+      this.faceMaskMaterialRecords = [];
+
+      const renderer = sceneManager.getRenderer();
+      if (renderer && this.originalRendererLocalClippingEnabled !== null) {
+          renderer.localClippingEnabled = this.originalRendererLocalClippingEnabled;
+      }
+      this.originalRendererLocalClippingEnabled = null;
+  }
+
+  private ensureFaceMaskVideoBackdrop() {
+      if (this.faceMaskVideoPlane) return;
+      const scene = sceneManager.getScene();
+      if (!scene || !this.videoElement) return;
+
+      this.faceMaskVideoTexture = new THREE.VideoTexture(this.videoElement);
+      this.faceMaskVideoTexture.colorSpace = THREE.SRGBColorSpace;
+      this.faceMaskVideoTexture.minFilter = THREE.LinearFilter;
+      this.faceMaskVideoTexture.magFilter = THREE.LinearFilter;
+      this.faceMaskVideoTexture.generateMipmaps = false;
+
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      const material = new THREE.MeshBasicMaterial({
+          map: this.faceMaskVideoTexture,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+          side: THREE.DoubleSide,
+      });
+
+      this.faceMaskVideoPlane = new THREE.Mesh(geometry, material);
+      this.faceMaskVideoPlane.name = 'XR_Face_Mask_Webcam_Backdrop';
+      this.faceMaskVideoPlane.renderOrder = -10000;
+      scene.add(this.faceMaskVideoPlane);
+      this.updateFaceMaskVideoBackdrop();
+  }
+
+  private disposeFaceMaskVideoBackdrop() {
+      if (this.faceMaskVideoPlane) {
+          this.faceMaskVideoPlane.removeFromParent();
+          this.faceMaskVideoPlane.geometry.dispose();
+          this.faceMaskVideoPlane.material.dispose();
+          this.faceMaskVideoPlane = null;
+      }
+      this.faceMaskVideoTexture?.dispose();
+      this.faceMaskVideoTexture = null;
+      this.faceMaskVideoWidth = 0;
+      this.faceMaskVideoHeight = 0;
+  }
+
+  private updateFaceMaskVideoBackdrop() {
+      if (!this.faceMaskVideoPlane) return;
+      const camera = sceneManager.getCamera();
+      if (!camera) return;
+
+      const distance = Math.max(this.faceMaskDepth + 0.75, 2.5);
+      const fov = THREE.MathUtils.degToRad(camera.fov);
+      const height = 2 * Math.tan(fov / 2) * distance;
+      const width = height * camera.aspect;
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+
+      this.faceMaskVideoPlane.position.copy(camera.position).addScaledVector(forward, distance);
+      this.faceMaskVideoPlane.quaternion.copy(camera.quaternion);
+      this.faceMaskVideoPlane.scale.set(this.faceMaskMirrorX ? -width : width, height, 1);
+
+      const videoWidth = this.videoElement.videoWidth || 0;
+      const videoHeight = this.videoElement.videoHeight || 0;
+      if (videoWidth !== this.faceMaskVideoWidth || videoHeight !== this.faceMaskVideoHeight) {
+          this.faceMaskVideoWidth = videoWidth;
+          this.faceMaskVideoHeight = videoHeight;
+      }
+  }
+
+  private updateFaceMaskClipPlane() {
+      if (!this.faceMaskMode || !this.vrm?.humanoid) return;
+      const neck = this.vrm.humanoid.getNormalizedBoneNode('neck');
+      const head = this.vrm.humanoid.getNormalizedBoneNode('head');
+      const reference = new THREE.Vector3();
+
+      if (neck) {
+          neck.getWorldPosition(reference);
+          reference.y -= Math.max(0.025, this.faceMaskBaseAvatarHeight * 0.015);
+      } else if (head) {
+          head.getWorldPosition(reference);
+          reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * 0.11);
+      } else {
+          return;
+      }
+
+      this.faceMaskClipPlane.normal.set(0, 1, 0);
+      this.faceMaskClipPlane.constant = -reference.y;
   }
 
   private updateFaceMaskTarget(landmarks: any[], now: number) {
@@ -942,7 +1082,7 @@ export class MotionCaptureManager {
       const faceWidth = Math.max(0.04, maxX - minX);
       const faceWorldWidth = faceWidth * frustumWidth;
       const approximateHeadWidth = Math.max(0.08, this.faceMaskBaseAvatarHeight * 0.16);
-      this.faceMaskTargetScale = THREE.MathUtils.clamp(faceWorldWidth / approximateHeadWidth, 0.25, 2.8);
+      this.faceMaskTargetScale = THREE.MathUtils.clamp((faceWorldWidth * 1.28) / approximateHeadWidth, 0.25, 2.8);
       this.hasFaceMaskTarget = true;
       this.lastFaceMaskAt = now;
 
@@ -959,6 +1099,9 @@ export class MotionCaptureManager {
       const head = this.vrm.humanoid.getNormalizedBoneNode('head');
       if (!head) return;
 
+      this.updateFaceMaskVideoBackdrop();
+      this.updateFaceMaskClipPlane();
+
       const smoothing = 1 - Math.exp(-12 * Math.max(0.001, delta));
       this.currentFaceMaskScale = THREE.MathUtils.lerp(this.currentFaceMaskScale, this.faceMaskTargetScale, smoothing);
       this.currentFaceMaskHeadWorld.lerp(this.faceMaskTargetHeadWorld, smoothing);
@@ -969,6 +1112,7 @@ export class MotionCaptureManager {
 
       const actualHeadWorld = new THREE.Vector3();
       head.getWorldPosition(actualHeadWorld);
+      actualHeadWorld.y += this.faceMaskHeadCenterOffset * this.currentFaceMaskScale;
       const offset = this.currentFaceMaskHeadWorld.clone().sub(actualHeadWorld);
       this.vrm.scene.position.add(offset.multiplyScalar(smoothing));
       this.vrm.scene.updateMatrixWorld(true);
