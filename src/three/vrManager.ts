@@ -9,6 +9,12 @@ import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VRMPose } from '@pixiv/three-vrm';
 import { useUserStore } from '../state/useUserStore';
 import { useToastStore } from '../state/useToastStore';
+import { useMocapStore } from '../state/useMocapStore';
+import { useReactionStore } from '../state/useReactionStore';
+import { getMocapManager } from '../utils/mocapInstance';
+import { vmcInputManager } from '../utils/vmcInput';
+import { voiceLipSync } from '../utils/voiceLipSync';
+import { webXRManager } from '../utils/webXRManager';
 
 type XRControllerGroup = THREE.Group & {
   addEventListener(type: 'selectstart', listener: () => void): void;
@@ -17,6 +23,20 @@ type XRControllerGroup = THREE.Group & {
     vrSelectHandler?: () => void;
   };
 };
+
+type XrFacialMaskRecord = {
+  mesh: THREE.Mesh;
+  layersMask: number;
+  visible: boolean;
+};
+
+type PausedInputState = {
+  camera: boolean;
+  recording: boolean;
+  voice: boolean;
+  vmc: boolean;
+  liveMode: boolean;
+} | null;
 
 /**
  * VR Manager (VRIK Version)
@@ -38,11 +58,15 @@ class VRManager {
   private originalCameraQuaternion = new THREE.Quaternion();
   private originalControlsTarget = new THREE.Vector3();
   private originalControlsEnabled: boolean | null = null;
-  private headMeshes: THREE.Mesh[] = [];
+  private facialMaskRecords: XrFacialMaskRecord[] = [];
   private currentVrm: VRM | null = null;
   private originalRendererXrEnabled: boolean | null = null;
   private originalRendererPixelRatio: number | null = null;
   private originalRendererShadowMapEnabled: boolean | null = null;
+  private originalCameraLayerMask: number | null = null;
+  private calibrationTimeoutId: number | null = null;
+  private sessionEndHandler: (() => void) | null = null;
+  private pausedInputState: PausedInputState = null;
 
   // Calibration Data
   private userHeight = 1.65;
@@ -172,50 +196,122 @@ class VRManager {
     }
   }
 
+  public async refreshSupport() {
+    await this.checkSupport();
+    return this.isVRSupported;
+  }
+
+  private pauseCompetingInputs() {
+    const mocapStore = useMocapStore.getState();
+    const reactionStore = useReactionStore.getState();
+    const mocapManager = getMocapManager();
+    const cameraActive = mocapStore.isActive || mocapManager?.getStatus().isTracking === true;
+    const voiceActive = mocapStore.isVoiceLipSyncActive || voiceLipSync.getIsActive();
+    const vmcActive = reactionStore.vmcEnabled || vmcInputManager.getStatus() !== 'disconnected';
+
+    this.pausedInputState = {
+      camera: cameraActive,
+      recording: mocapStore.isRecording,
+      voice: voiceActive,
+      vmc: vmcActive,
+      liveMode: reactionStore.liveModeEnabled,
+    };
+
+    if (mocapStore.isRecording) {
+      mocapManager?.stopRecording();
+      mocapStore.setIsRecording(false);
+      mocapStore.setRecordingTime(0);
+      useToastStore.getState().addToast('Mocap recording stopped before entering VR.', 'warning');
+    }
+
+    if (cameraActive) {
+      mocapManager?.stop();
+      mocapStore.setIsActive(false);
+      mocapStore.setIsStarting(false);
+      mocapStore.setFaceMaskEnabled(false);
+    }
+
+    if (voiceActive) {
+      voiceLipSync.stop();
+      mocapStore.setIsVoiceLipSyncActive(false);
+      mocapStore.setVoiceVolume(0);
+    }
+
+    if (vmcActive) {
+      vmcInputManager.disconnect();
+      reactionStore.setVmcEnabled(false);
+    }
+
+    if (reactionStore.liveModeEnabled) {
+      reactionStore.setLiveModeEnabled(false);
+    }
+
+    if (cameraActive || voiceActive || vmcActive || reactionStore.liveModeEnabled) {
+      useToastStore.getState().addToast('Paused mocap, VMC, and voice inputs for VR tracking.', 'info');
+    }
+  }
+
+  private restorePausedInputFlags() {
+    if (!this.pausedInputState) return;
+    if (this.pausedInputState.vmc) {
+      const { vmcWebSocketUrl, setVmcEnabled } = useReactionStore.getState();
+      setVmcEnabled(true);
+      const manager = getMocapManager();
+      if (manager) {
+        manager.setVRM(avatarManager.getVRM() ?? null);
+        vmcInputManager.setMotionCaptureManager(manager);
+        vmcInputManager.connect(vmcWebSocketUrl);
+      }
+    }
+    this.pausedInputState = null;
+  }
+
   public async enterVR() {
+    await this.refreshSupport();
     if (!this.isVRSupported || !navigator.xr) {
       throw new Error('VR is not supported');
     }
+    if (this.session) return;
 
     this.renderer = (sceneManager.getRenderer() as THREE.WebGLRenderer) || null;
     const scene = sceneManager.getScene();
     const camera = sceneManager.getCamera();
     
     if (!this.renderer || !scene || !camera) throw new Error('Not initialized');
-
-    // 1. Force state
-    avatarManager.setManualPosing(true);
-    avatarManager.setInteraction(true); // Disable auto-grounding
-    animationManager.stopAnimation(true, true); 
-    
     const vrm = avatarManager.getVRM();
-    if (vrm) {
-        this.poseBeforeVR = vrm.humanoid?.getNormalizedPose() ?? null;
-        vrm.humanoid?.resetNormalizedPose();
-        this.initialAvatarPos.copy(vrm.scene.position);
-        this.initialAvatarRotation.copy(vrm.scene.rotation);
-        this.captureInitialHandRotations(vrm);
-        this.captureFloorAnchor(vrm);
-    } else {
-        this.poseBeforeVR = null;
+    if (!vrm) throw new Error('Load a VRM avatar before entering VR.');
+    if (webXRManager.isActive()) {
+      await webXRManager.stopAR();
     }
-    this.hasTrackingReference = false;
-    this.hasControllerHandOffsets = [false, false];
-    this.gamepadButtonStates.clear();
-
-    if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
-
-    this.originalRendererXrEnabled = this.renderer.xr.enabled;
-    this.originalRendererShadowMapEnabled = this.renderer.shadowMap.enabled;
-    this.originalRendererPixelRatio = this.renderer.getPixelRatio();
-    this.renderer.shadowMap.enabled = false;
-    this.renderer.setPixelRatio(1.0);
 
     try {
       const session = await navigator.xr.requestSession('immersive-vr', {
         requiredFeatures: ['local-floor'],
         optionalFeatures: ['bounded-floor', 'hand-tracking', 'layers']
       });
+
+      this.pauseCompetingInputs();
+      avatarManager.setManualPosing(true);
+      avatarManager.setInteraction(true);
+      animationManager.stopAnimation(true, true);
+
+      this.poseBeforeVR = vrm.humanoid?.getNormalizedPose() ?? null;
+      vrm.humanoid?.resetNormalizedPose();
+      this.initialAvatarPos.copy(vrm.scene.position);
+      this.initialAvatarRotation.copy(vrm.scene.rotation);
+      this.captureInitialHandRotations(vrm);
+      this.captureFloorAnchor(vrm);
+      this.hasTrackingReference = false;
+      this.hasControllerHandOffsets = [false, false];
+      this.gamepadButtonStates.clear();
+
+      if (this.reviewPlane && !this.reviewPlane.parent) scene.add(this.reviewPlane);
+
+      this.originalRendererXrEnabled = this.renderer.xr.enabled;
+      this.originalRendererShadowMapEnabled = this.renderer.shadowMap.enabled;
+      this.originalRendererPixelRatio = this.renderer.getPixelRatio();
+      this.renderer.shadowMap.enabled = false;
+      this.renderer.setPixelRatio(1.0);
 
       this.session = session;
       this.renderer.xr.enabled = true;
@@ -224,6 +320,7 @@ class VRManager {
       this.originalCameraParent = camera.parent;
       this.originalCameraPosition.copy(camera.position);
       this.originalCameraQuaternion.copy(camera.quaternion);
+      this.originalCameraLayerMask = camera.layers.mask;
       const controls = sceneManager.getControls();
       if (controls) {
         this.originalControlsTarget.copy(controls.target);
@@ -248,12 +345,16 @@ class VRManager {
       
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
-      session.addEventListener('end', () => this.onSessionEnded());
+      this.sessionEndHandler = () => this.onSessionEnded();
+      session.addEventListener('end', this.sessionEndHandler);
       this.tickDispose?.();
       this.tickDispose = sceneManager.registerTick(this.update, -90);
 
       // Trigger auto-calibration after 2 seconds
-      setTimeout(() => this.calibrate(), 2000);
+      this.calibrationTimeoutId = window.setTimeout(() => {
+        this.calibrationTimeoutId = null;
+        this.calibrate();
+      }, 2000);
       useToastStore.getState().addToast('VR controls: Right trigger snaps/saves, left trigger discards review, left stick press recalibrates, right stick press toggles FPV.', 'success');
 
       console.log('[VRManager] VRIK Session Started');
@@ -266,6 +367,7 @@ class VRManager {
       this.restoreRendererState();
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
+      this.restorePausedInputFlags();
       throw error;
     }
   }
@@ -526,6 +628,7 @@ class VRManager {
       tex.colorSpace = THREE.SRGBColorSpace;
       
       const mat = this.reviewPlane!.material as THREE.MeshBasicMaterial;
+      mat.map?.dispose();
       mat.map = tex;
       mat.opacity = 1.0;
       mat.needsUpdate = true;
@@ -662,9 +765,21 @@ class VRManager {
 
   private hideReview() {
     if (this.reviewPlane) {
+      const material = this.reviewPlane.material as THREE.MeshBasicMaterial;
       this.reviewPlane.visible = false;
-      (this.reviewPlane.material as THREE.MeshBasicMaterial).opacity = 0;
+      material.opacity = 0;
+      material.map?.dispose();
+      material.map = null;
+      material.needsUpdate = true;
     }
+  }
+
+  private disposeActiveFlash() {
+    if (!this.activeFlash) return;
+    sceneManager.getScene()?.remove(this.activeFlash.mesh);
+    this.activeFlash.mesh.geometry.dispose();
+    (this.activeFlash.mesh.material as THREE.Material).dispose();
+    this.activeFlash = null;
   }
 
   private saveLastSnapshot() {
@@ -673,6 +788,94 @@ class VRManager {
     a.href = this.lastSnapshotUrl;
     a.download = `poselab_vr_${Date.now()}.png`;
     a.click();
+  }
+
+  private isAncestorOf(parent: THREE.Object3D | null | undefined, child: THREE.Object3D) {
+    let cursor: THREE.Object3D | null = child;
+    while (cursor) {
+      if (cursor === parent) return true;
+      cursor = cursor.parent;
+    }
+    return false;
+  }
+
+  private isLikelyFacialMesh(mesh: THREE.Mesh, vrm: VRM) {
+    const name = mesh.name.toLowerCase();
+    const parentNames: string[] = [];
+    let cursor = mesh.parent;
+    while (cursor) {
+      parentNames.push(cursor.name.toLowerCase());
+      cursor = cursor.parent;
+    }
+    const fullName = `${name} ${parentNames.join(' ')}`;
+    const headNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Head);
+    const neckNode = vrm.humanoid?.getNormalizedBoneNode(VRMHumanBoneName.Neck);
+
+    if (this.isAncestorOf(headNode, mesh) || this.isAncestorOf(neckNode, mesh)) {
+      return true;
+    }
+
+    const faceTokens = ['head', 'face', 'hair', 'eye', 'eyelash', 'brow', 'mouth', 'lip', 'teeth', 'tongue', 'ear'];
+    const bodyTokens = ['body', 'torso', 'chest', 'shirt', 'cloth', 'jacket', 'skirt', 'pants', 'leg', 'arm', 'hand'];
+    return faceTokens.some((token) => fullName.includes(token))
+      && !bodyTokens.some((token) => name.includes(token));
+  }
+
+  private restoreFacialXRMasks() {
+    this.facialMaskRecords.forEach((record) => {
+      record.mesh.layers.mask = record.layersMask;
+      record.mesh.visible = record.visible;
+    });
+    this.facialMaskRecords = [];
+    this.currentVrm = null;
+  }
+
+  private prepareFacialXRMasks(vrm: VRM) {
+    if (this.currentVrm === vrm && this.facialMaskRecords.length > 0) return;
+    this.restoreFacialXRMasks();
+    this.currentVrm = vrm;
+
+    vrm.scene.traverse((object) => {
+      if (object instanceof THREE.Mesh && this.isLikelyFacialMesh(object, vrm)) {
+        this.facialMaskRecords.push({
+          mesh: object,
+          layersMask: object.layers.mask,
+          visible: object.visible,
+        });
+      }
+    });
+
+    if (vrm.firstPerson) {
+      vrm.firstPerson.setup({ firstPersonOnlyLayer: 9, thirdPersonOnlyLayer: 10 });
+    }
+
+    console.log(`[VRManager] Prepared ${this.facialMaskRecords.length} facial XR masks`);
+  }
+
+  private applyFacialXRMasks(vrm: VRM, camera: THREE.Camera) {
+    this.prepareFacialXRMasks(vrm);
+    const firstPersonOnlyLayer = vrm.firstPerson?.firstPersonOnlyLayer ?? 9;
+    const thirdPersonOnlyLayer = vrm.firstPerson?.thirdPersonOnlyLayer ?? 10;
+
+    this.snapshotCamera.layers.enable(0);
+    this.snapshotCamera.layers.enable(thirdPersonOnlyLayer);
+    this.snapshotCamera.layers.disable(firstPersonOnlyLayer);
+
+    if (this.firstPersonMode) {
+      camera.layers.enable(firstPersonOnlyLayer);
+      camera.layers.disable(thirdPersonOnlyLayer);
+      this.facialMaskRecords.forEach((record) => {
+        record.mesh.visible = true;
+        record.mesh.layers.set(thirdPersonOnlyLayer);
+      });
+    } else {
+      camera.layers.disable(firstPersonOnlyLayer);
+      camera.layers.enable(thirdPersonOnlyLayer);
+      this.facialMaskRecords.forEach((record) => {
+        record.mesh.layers.mask = record.layersMask;
+        record.mesh.visible = record.visible;
+      });
+    }
   }
 
   /**
@@ -930,41 +1133,9 @@ class VRManager {
 
     this.keepAvatarGrounded(vrm);
 
-    // 3. FPV MESH HIDING
-    if (this.currentVrm !== vrm) {
-      this.currentVrm = vrm;
-      this.headMeshes = [];
-
-      if (vrm.firstPerson) {
-        vrm.firstPerson.setup({ firstPersonOnlyLayer: 9, thirdPersonOnlyLayer: 10 });
-      } else {
-        vrm.scene.traverse(o => {
-          if (o instanceof THREE.Mesh) {
-            const n = o.name.toLowerCase();
-            if (n.includes('head') || n.includes('face') || n.includes('hair') || n.includes('eye') || n.includes('mouth') || n.includes('brow')) {
-              this.headMeshes.push(o);
-            }
-          }
-        });
-      }
-    }
-
-    const firstPersonOnlyLayer = vrm.firstPerson?.firstPersonOnlyLayer ?? 9;
-    const thirdPersonOnlyLayer = vrm.firstPerson?.thirdPersonOnlyLayer ?? 10;
-
-    this.snapshotCamera.layers.enable(0);
-    this.snapshotCamera.layers.enable(thirdPersonOnlyLayer);
-    this.snapshotCamera.layers.disable(firstPersonOnlyLayer);
-
-    if (this.firstPersonMode) {
-      camera.layers.enable(firstPersonOnlyLayer);
-      camera.layers.disable(thirdPersonOnlyLayer);
-      this.headMeshes.forEach((mesh) => mesh.layers.set(thirdPersonOnlyLayer));
-    } else {
-      camera.layers.disable(firstPersonOnlyLayer);
-      camera.layers.enable(thirdPersonOnlyLayer);
-      this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
-    }
+    // 3. Facial XR masks hide the avatar head/face from the headset camera
+    // while preserving those meshes for third-person snapshots and mirrors.
+    this.applyFacialXRMasks(vrm, camera);
   };
 
   private restoreRendererState() {
@@ -1004,6 +1175,14 @@ class VRManager {
 
   private onSessionEnded() {
     const vrm = avatarManager.getVRM();
+    if (this.calibrationTimeoutId !== null) {
+      window.clearTimeout(this.calibrationTimeoutId);
+      this.calibrationTimeoutId = null;
+    }
+    if (this.session && this.sessionEndHandler) {
+      this.session.removeEventListener('end', this.sessionEndHandler);
+      this.sessionEndHandler = null;
+    }
     this.tickDispose?.();
     this.tickDispose = undefined;
     this.hasTrackingReference = false;
@@ -1026,11 +1205,15 @@ class VRManager {
     const cam = sceneManager.getCamera();
     const scene = sceneManager.getScene();
     if (cam) this.restoreCameraHierarchy(cam);
+    if (cam && this.originalCameraLayerMask !== null) {
+      cam.layers.mask = this.originalCameraLayerMask;
+      this.originalCameraLayerMask = null;
+    }
     this.restoreRendererState();
-    cam?.layers.enable(10);
-    this.headMeshes.forEach((mesh) => mesh.layers.enable(0));
+    this.restoreFacialXRMasks();
     if (scene && this.cameraGroup) scene.remove(this.cameraGroup);
     this.hideReview();
+    this.disposeActiveFlash();
     this.session = null;
     this.controllers.forEach((ctrl) => {
       const xrCtrl = ctrl as XRControllerGroup;
@@ -1045,6 +1228,7 @@ class VRManager {
     this.originalCameraParent = null;
     this.originalControlsEnabled = null;
     this.poseBeforeVR = null;
+    this.restorePausedInputFlags();
     console.log('[VRManager] Session Ended');
   }
 

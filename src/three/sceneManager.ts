@@ -1423,6 +1423,7 @@ class SceneManager {
       this.animatedBackground.dispose();
       this.animatedBackground = undefined;
     }
+    this.renderer?.setAnimationLoop(null);
     if (this.animationFrameId) window.cancelAnimationFrame(this.animationFrameId);
     window.removeEventListener('resize', this.handleResize);
       this.tickHandlers.clear();

@@ -4,6 +4,7 @@ import { sceneManager } from '../three/sceneManager';
 export class WebXRManager {
   private currentSession: XRSession | null = null;
   private renderer: THREE.WebGLRenderer | null = null;
+  private originalRendererXrEnabled: boolean | null = null;
 
   constructor() {
     // We'll get the renderer lazily when starting
@@ -37,6 +38,7 @@ export class WebXRManager {
 
     try {
       // Enable XR on renderer
+      this.originalRendererXrEnabled = this.renderer.xr.enabled;
       this.renderer.xr.enabled = true;
 
       const session = await navigator.xr.requestSession('immersive-ar', {
@@ -62,8 +64,9 @@ export class WebXRManager {
     console.log("[WebXRManager] AR Session ended");
     this.currentSession = null;
     if (this.renderer) {
-      this.renderer.xr.enabled = false;
+      this.renderer.xr.enabled = this.originalRendererXrEnabled ?? false;
     }
+    this.originalRendererXrEnabled = null;
   };
 
   async stopAR() {

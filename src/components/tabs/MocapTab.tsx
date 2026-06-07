@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MotionCaptureManager } from '../../utils/motionCapture';
+import type { AnimationClip } from 'three';
+import { MotionCaptureManager, type MotionCaptureStatus } from '../../utils/motionCapture';
 import { voiceLipSync } from '../../utils/voiceLipSync';
 import { avatarManager } from '../../three/avatarManager';
 import { useAnimationStore } from '../../state/useAnimationStore';
@@ -11,6 +12,7 @@ import { useMocapStore } from '../../state/useMocapStore';
 import { convertAnimationToScenePaths } from '../../pose-lab/convertAnimationToScenePaths';
 import { CalibrationWizard } from '../CalibrationWizard';
 import { sceneManager } from '../../three/sceneManager';
+import { vrManager } from '../../three/vrManager';
 import { webXRManager } from '../../utils/webXRManager';
 import { vmcInputManager } from '../../utils/vmcInput';
 import { initMocapManager, getMocapVideo } from '../../utils/mocapInstance';
@@ -31,6 +33,27 @@ import {
   Camera
 } from '@phosphor-icons/react';
 
+const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
+  isTracking: false,
+  isFaceMaskMode: false,
+  mode: 'full',
+  isHolisticReady: false,
+  videoWidth: 0,
+  videoHeight: 0,
+  fps: 0,
+  lastFrameAt: null,
+  lastPoseAt: null,
+  lastFaceAt: null,
+  lastLeftHandAt: null,
+  lastRightHandAt: null,
+  lastFaceMaskAt: null,
+  activeSources: [],
+};
+
+function isFresh(timestamp: number | null, now: number, windowMs = 1600) {
+  return timestamp !== null && now - timestamp < windowMs;
+}
+
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
@@ -50,19 +73,23 @@ export function MocapTab() {
 
   const {
     isActive,
+    isStarting,
     isRecording,
     recordingTime,
     error,
     selectedDeviceId,
     isVoiceLipSyncActive,
+    faceMaskEnabled,
     voiceVolume,
     voiceSensitivity,
     setIsActive,
+    setIsStarting,
     setIsRecording,
     setRecordingTime,
     setError,
     setSelectedDeviceId,
     setIsVoiceLipSyncActive,
+    setFaceMaskEnabled,
     setVoiceVolume,
     setVoiceSensitivity,
   } = useMocapStore();
@@ -73,6 +100,7 @@ export function MocapTab() {
   
   const [isGreenScreen, setIsGreenScreen] = useState(false);
   const [isSelfieMode, setIsSelfieMode] = useState(false);
+  const [isVoiceStarting, setIsVoiceStarting] = useState(false);
   
   const previousMocapModeRef = useRef<'full' | 'face'>(mocapMode);
   const previousMocapActiveRef = useRef(isActive);
@@ -83,18 +111,36 @@ export function MocapTab() {
   const mocapStartingRef = useRef(false);
   const voiceStartingRef = useRef(false);
   const [arSupported, setArSupported] = useState(false);
+  const [vrSupported, setVrSupported] = useState(false);
+  const [isVRActive, setIsVRActive] = useState(false);
+  const [isVRStarting, setIsVRStarting] = useState(false);
   const [vmcStatus, setVmcStatus] = useState(vmcInputManager.getStatus());
   const [vmcError, setVmcError] = useState<string | null>(null);
+  const [managerStatus, setManagerStatus] = useState<MotionCaptureStatus>(EMPTY_MOCAP_STATUS);
 
   // Camera Selection
-  const { devices } = useMediaDevices();
+  const { devices, fetchDevices } = useMediaDevices();
 
   // Initialize Global Manager
   useEffect(() => {
     webXRManager.isSupported().then(setArSupported);
+    vrManager.refreshSupport().then(setVrSupported);
     managerRef.current = initMocapManager();
     managerRef.current.setMode(mocapMode);
+    setManagerStatus(managerRef.current.getStatus());
   }, [mocapMode]);
+
+  useEffect(() => {
+    const updateStatus = () => {
+      if (managerRef.current) {
+        setManagerStatus(managerRef.current.getStatus());
+      }
+      setIsVRActive(vrManager.isInVR());
+    };
+    updateStatus();
+    const interval = window.setInterval(updateStatus, 750);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Synchronize local preview video with global video source
   useEffect(() => {
@@ -200,33 +246,49 @@ export function MocapTab() {
     }
   }, [setMocapMode]);
 
+  const saveRecordingClip = useCallback((clip: AnimationClip | null) => {
+      if (!clip) {
+          addToast('No motion data recorded', 'warning');
+          return;
+      }
+
+      const vrm = avatarManager.getVRM();
+      if (!vrm) {
+          addToast('Load an avatar to save the recording', 'warning');
+          return;
+      }
+
+      try {
+          const sceneClip = convertAnimationToScenePaths(clip, vrm);
+          const name = `Mocap Take ${new Date().toLocaleTimeString()}`;
+          addAnimation(sceneClip, name);
+          addToast(`Recording saved: ${name}`, 'success');
+      } catch (e) {
+          console.error(e);
+          addToast('Failed to process recording', 'error');
+      }
+  }, [addAnimation, addToast]);
+
+  const finishRecording = useCallback((showStoppedToast = false) => {
+      if (!managerRef.current) return;
+      const clip = managerRef.current.stopRecording();
+      setIsRecording(false);
+      if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+      }
+      setRecordingTime(0);
+      saveRecordingClip(clip);
+      if (showStoppedToast) {
+          addToast('Camera stopped and recording was finalized.', 'info');
+      }
+  }, [addToast, saveRecordingClip, setIsRecording, setRecordingTime]);
+
   const toggleRecording = () => {
       if (!managerRef.current || !isActive) return;
 
       if (isRecording) {
-          // Stop Recording
-          const clip = managerRef.current.stopRecording();
-          setIsRecording(false);
-          if (timerRef.current) clearInterval(timerRef.current);
-          setRecordingTime(0);
-
-          if (clip) {
-              const vrm = avatarManager.getVRM();
-              if (vrm) {
-                  try {
-                      // Convert bone names to scene paths for playback
-                      const sceneClip = convertAnimationToScenePaths(clip, vrm);
-                      const name = `Mocap Take ${new Date().toLocaleTimeString()}`;
-                      addAnimation(sceneClip, name);
-                      addToast(`Recording saved: ${name}`, 'success');
-                  } catch (e) {
-                      console.error(e);
-                      addToast('Failed to process recording', 'error');
-                  }
-              }
-          } else {
-              addToast('No motion data recorded', 'warning');
-          }
+          finishRecording();
 
       } else {
           // Start Recording
@@ -270,6 +332,7 @@ export function MocapTab() {
       return;
     }
     voiceStartingRef.current = true;
+    setIsVoiceStarting(true);
     try {
       voiceLipSync.setVRM(vrm);
       voiceLipSync.setOnVolumeChange(setVoiceVolume);
@@ -293,6 +356,7 @@ export function MocapTab() {
       addToast(msg, "error");
     } finally {
       voiceStartingRef.current = false;
+      setIsVoiceStarting(false);
     }
   }, [addToast, isVoiceLipSyncActive, voiceSensitivity, setVoiceVolume, setIsVoiceLipSyncActive, liveModeEnabled]);
 
@@ -311,8 +375,14 @@ export function MocapTab() {
 
   const stopMocap = useCallback(() => {
     if (!managerRef.current || !isActive) return;
+    if (isRecording) {
+      finishRecording(true);
+    }
+    managerRef.current.setFaceMaskMode(false);
+    setFaceMaskEnabled(false);
     managerRef.current.stop();
     setIsActive(false);
+    setIsStarting(false);
     // Resume normal behavior when stopping camera
     avatarManager.setInteraction(false);
     if (isSelfieMode) {
@@ -320,7 +390,7 @@ export function MocapTab() {
       setIsSelfieMode(false);
     }
     mocapStartingRef.current = false;
-  }, [isActive, isSelfieMode, setIsActive]);
+  }, [finishRecording, isActive, isRecording, isSelfieMode, setFaceMaskEnabled, setIsActive, setIsStarting]);
 
   const startMocap = useCallback(async (modeOverride?: 'full' | 'face') => {
     if (!managerRef.current || isActive || mocapStartingRef.current) return;
@@ -330,6 +400,7 @@ export function MocapTab() {
       return;
     }
     mocapStartingRef.current = true;
+    setIsStarting(true);
     try {
       // Check for secure context first
       if (!window.isSecureContext && window.location.hostname !== 'localhost') {
@@ -345,6 +416,7 @@ export function MocapTab() {
       
       // Pass the selected device ID if available
       await managerRef.current.start(selectedDeviceId || undefined);
+      fetchDevices();
       
       // For both Full Body and Upper Body (Face) tracking, we pause animation so
       // mocap has full control over tracked bones without animation sway.
@@ -352,6 +424,7 @@ export function MocapTab() {
       avatarManager.setInteraction(true);
       setIsActive(true);
       setError(null);
+      setManagerStatus(managerRef.current.getStatus());
       
       useUserStore.getState().recordGamifiedAction('first_mocap').then(reward => {
         if (reward > 0) {
@@ -378,8 +451,9 @@ export function MocapTab() {
       setError(msg);
     } finally {
       mocapStartingRef.current = false;
+      setIsStarting(false);
     }
-  }, [isActive, mocapMode, setError, setIsActive, setMocapMode, selectedDeviceId, liveModeEnabled]);
+  }, [fetchDevices, isActive, mocapMode, setError, setIsActive, setIsStarting, setMocapMode, selectedDeviceId, liveModeEnabled]);
 
   const toggleMocap = async () => {
     if (!managerRef.current) return;
@@ -392,6 +466,10 @@ export function MocapTab() {
   };
 
   const toggleSelfieMode = () => {
+    if (faceMaskEnabled) {
+      addToast("Disable XR Face Mask before enabling Selfie Mode.", "warning");
+      return;
+    }
     const next = !isSelfieMode;
     if (next) {
       const vrm = avatarManager.getVRM();
@@ -413,6 +491,88 @@ export function MocapTab() {
         await webXRManager.startAR();
     } catch (e: any) {
         addToast(e.message || "Failed to start AR", 'error');
+    }
+  };
+
+  const toggleFaceMask = useCallback(async () => {
+    if (!managerRef.current) return;
+
+    if (faceMaskEnabled) {
+      managerRef.current.setFaceMaskMode(false);
+      setFaceMaskEnabled(false);
+      addToast("XR Face Mask disabled", "info");
+      return;
+    }
+
+    const vrm = avatarManager.getVRM();
+    if (!vrm) {
+      addToast("Load a VRM avatar before enabling XR Face Mask.", "warning");
+      return;
+    }
+
+    if (isSelfieMode) {
+      sceneManager.setFollowTarget(null, null);
+      setIsSelfieMode(false);
+    }
+
+    if (mocapMode !== 'face') {
+      setMocapMode('face');
+      managerRef.current.setMode('face');
+    }
+
+    if (!isActive) {
+      await startMocap('face');
+      if (!managerRef.current?.getStatus().isTracking) return;
+    } else {
+      avatarManager.freezeCurrentPose();
+      avatarManager.setInteraction(true);
+    }
+
+    managerRef.current.setVRM(vrm);
+    managerRef.current.setFaceMaskMode(true);
+    setFaceMaskEnabled(true);
+    sceneManager.setFollowTarget(null, null);
+    sceneManager.setCameraPreset('headshot', true, 0.2);
+    sceneManager.setBackground('transparent');
+    setIsGreenScreen(false);
+    setManagerStatus(managerRef.current.getStatus());
+    addToast("XR Face Mask enabled. Layer this browser source over your webcam in OBS.", "success");
+  }, [addToast, faceMaskEnabled, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
+
+  const enterVR = async () => {
+    const vrm = avatarManager.getVRM();
+    if (!vrm) {
+      addToast("Load a VRM avatar before entering VR.", "warning");
+      return;
+    }
+    setIsVRStarting(true);
+    try {
+      if (isSelfieMode) {
+        sceneManager.setFollowTarget(null, null);
+        setIsSelfieMode(false);
+      }
+      if (faceMaskEnabled) {
+        managerRef.current?.setFaceMaskMode(false);
+        setFaceMaskEnabled(false);
+      }
+      if (isActive) {
+        stopMocap();
+      }
+      await vrManager.enterVR();
+      setIsVRActive(true);
+    } catch (e: any) {
+      addToast(e.message || "Failed to enter VR", 'error');
+    } finally {
+      setIsVRStarting(false);
+    }
+  };
+
+  const exitVR = async () => {
+    try {
+      await vrManager.exitVR();
+      setIsVRActive(false);
+    } catch (e: any) {
+      addToast(e.message || "Failed to exit VR", 'error');
     }
   };
 
@@ -467,8 +627,42 @@ export function MocapTab() {
     stopVoiceLipSync,
   ]);
 
+  const now = performance.now();
+  const poseFresh = isFresh(managerStatus.lastPoseAt, now);
+  const faceFresh = isFresh(managerStatus.lastFaceAt, now);
+  const leftHandFresh = isFresh(managerStatus.lastLeftHandAt, now);
+  const rightHandFresh = isFresh(managerStatus.lastRightHandAt, now);
+  const faceMaskFresh = isFresh(managerStatus.lastFaceMaskAt, now);
+  const frameFresh = isFresh(managerStatus.lastFrameAt, now);
+  const activePartCount = [poseFresh, faceFresh, leftHandFresh, rightHandFresh].filter(Boolean).length;
+  const cameraStateLabel = isStarting ? 'Starting' : isActive ? 'Live' : 'Idle';
+  const trackingQualityLabel = !managerStatus.isHolisticReady
+    ? 'MediaPipe unavailable'
+    : !isActive
+      ? 'Standby'
+      : !frameFresh
+        ? 'Searching'
+        : activePartCount >= 3
+          ? 'Strong'
+          : activePartCount >= 1
+            ? 'Partial'
+            : 'Searching';
+  const trackingHint = !managerStatus.isHolisticReady
+    ? 'Reload if the CDN script failed.'
+    : !isActive
+      ? 'Ready when the camera starts.'
+      : !frameFresh
+        ? 'Waiting for camera frames.'
+        : activePartCount >= 3
+          ? 'Body signal looks usable.'
+          : 'Improve lighting or re-frame the subject.';
+  const videoResolution = managerStatus.videoWidth && managerStatus.videoHeight
+    ? `${managerStatus.videoWidth}x${managerStatus.videoHeight}`
+    : 'No video';
+  const vmcLabel = vmcEnabled ? vmcStatus : 'off';
+
   return (
-    <div className="tab-content">
+    <div className="tab-content mocap-tab">
       <div className="tab-section">
         <h3>LIVE Mode</h3>
         <p className="muted small">
@@ -478,6 +672,7 @@ export function MocapTab() {
           <button
             className={`primary full-width ${liveModeEnabled ? 'secondary' : ''}`}
             onClick={() => setLiveModeEnabled(!liveModeEnabled)}
+            aria-pressed={liveModeEnabled}
             style={{ flex: '1 1 100%' }}
           >
             {liveModeEnabled ? 'Disable LIVE Mode' : 'Enable LIVE Mode'}
@@ -485,10 +680,19 @@ export function MocapTab() {
           <button
             className={`secondary full-width ${liveControlsEnabled ? 'active' : ''}`}
             onClick={() => setLiveControlsEnabled(!liveControlsEnabled)}
+            aria-pressed={liveControlsEnabled}
             style={{ flex: '1 1 100%' }}
           >
             {liveControlsEnabled ? 'Arrow Key Controls: On' : 'Arrow Key Controls: Off'}
           </button>
+        </div>
+        <div className="mocap-checklist" aria-label="LIVE mode status">
+          <span className={avatarManager.getVRM() ? 'is-ready' : ''}>Avatar</span>
+          <span className={isActive ? 'is-ready' : ''}>Camera</span>
+          <span className={isVoiceLipSyncActive ? 'is-ready' : isVoiceStarting ? 'is-pending' : ''}>
+            {isVoiceStarting ? 'Voice starting' : 'Voice'}
+          </span>
+          <span className={liveControlsEnabled ? 'is-ready' : ''}>Controls</span>
         </div>
         <p className="small muted" style={{ marginTop: '0.75rem' }}>
           Arrow keys map to presets: ↑ Sunset Call, ↓ Signal Reverie, ← Wave, → Point.
@@ -499,6 +703,33 @@ export function MocapTab() {
         <p className="muted small">
             Control your avatar with your webcam. Full Body mode uses pose + hands + face, so keep your full body in frame and ensure good lighting.
         </p>
+
+        <div className="mocap-status-grid" aria-live="polite">
+          <div className={`mocap-status-card ${isActive ? 'is-live' : ''}`}>
+            <span>Camera</span>
+            <strong>{cameraStateLabel}</strong>
+            <small>{videoResolution}</small>
+          </div>
+          <div className={`mocap-status-card ${frameFresh ? 'is-live' : ''}`}>
+            <span>Tracking</span>
+            <strong>{trackingQualityLabel}</strong>
+            <small>{trackingHint}</small>
+          </div>
+          <div className={`mocap-status-card ${isRecording ? 'is-recording' : ''}`}>
+            <span>Take</span>
+            <strong>{isRecording ? `${recordingTime}s` : 'Ready'}</strong>
+            <small>{isRecording ? 'Recording motion' : 'Record after camera starts'}</small>
+          </div>
+        </div>
+
+        <div className="mocap-signal-row" aria-label="Detected mocap signals">
+          <span className={`mocap-signal ${poseFresh ? 'is-ready' : ''}`}>Body</span>
+          <span className={`mocap-signal ${faceFresh ? 'is-ready' : ''}`}>Face</span>
+          <span className={`mocap-signal ${leftHandFresh ? 'is-ready' : ''}`}>Left Hand</span>
+          <span className={`mocap-signal ${rightHandFresh ? 'is-ready' : ''}`}>Right Hand</span>
+          <span className={`mocap-signal ${faceMaskFresh ? 'is-ready' : ''}`}>XR Mask</span>
+          <span className={`mocap-signal ${managerStatus.fps > 12 ? 'is-ready' : ''}`}>{managerStatus.fps} FPS</span>
+        </div>
         
         {/* Camera Selector */}
         {!isActive && devices.length > 0 && (
@@ -510,6 +741,7 @@ export function MocapTab() {
                id="camera-select"
                value={selectedDeviceId}
                onChange={(e) => setSelectedDeviceId(e.target.value)}
+               disabled={isStarting}
                className="full-width"
              >
                <option value="">Default Camera</option>
@@ -522,15 +754,7 @@ export function MocapTab() {
           </div>
         )}
 
-        <div style={{ 
-            position: 'relative',  
-            width: '100%', 
-            aspectRatio: '4/3', 
-            background: '#000', 
-            borderRadius: '8px', 
-            overflow: 'hidden',
-            marginBottom: '1rem'
-        }}>
+        <div className={`mocap-preview ${isActive ? 'is-live' : ''}`}>
             <video 
                 ref={videoRef} 
                 style={{ 
@@ -542,6 +766,9 @@ export function MocapTab() {
                 playsInline 
                 muted 
             />
+            <div className={`mocap-preview__badge ${isActive ? 'is-live' : isStarting ? 'is-pending' : ''}`}>
+              {isStarting ? 'Starting Camera' : isActive ? `${trackingQualityLabel} Tracking` : 'Camera Off'}
+            </div>
             {!isActive && (
                 <div style={{
                     position: 'absolute',
@@ -551,7 +778,7 @@ export function MocapTab() {
                     justifyContent: 'center',
                     color: 'rgba(255,255,255,0.5)'
                 }}>
-                    Camera Off
+                    {isStarting ? 'Starting...' : 'Camera Off'}
                 </div>
             )}
         </div>
@@ -572,6 +799,7 @@ export function MocapTab() {
             <button
                 className={`secondary full-width ${mocapMode === 'full' ? 'active' : ''}`}
                 onClick={() => handleModeChange('full')}
+                aria-pressed={mocapMode === 'full'}
                 title="Track both body and face"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
@@ -580,6 +808,7 @@ export function MocapTab() {
             <button
                 className={`secondary full-width ${mocapMode === 'face' ? 'active' : ''}`}
                 onClick={() => handleModeChange('face')}
+                aria-pressed={mocapMode === 'face'}
                 title="Track face, hands, and upper body"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
@@ -591,15 +820,18 @@ export function MocapTab() {
             <button 
                 className={`primary full-width ${isActive ? 'secondary' : ''}`}
                 onClick={toggleMocap}
+                disabled={isStarting}
+                aria-pressed={isActive}
                 style={{ flex: isActive ? '1 1 45%' : '1 1 100%' }}
             >
-                {isActive ? <><StopCircle size={16} weight="fill" /> Stop Camera</> : <><VideoCamera size={16} weight="duotone" /> Start Camera</>}
+                {isActive ? <><StopCircle size={16} weight="fill" /> Stop Camera</> : isStarting ? <><VideoCamera size={16} weight="duotone" /> Starting...</> : <><VideoCamera size={16} weight="duotone" /> Start Camera</>}
             </button>
 
             {isActive && (
                 <button 
                     className={`primary full-width ${isRecording ? 'danger' : ''}`}
                     onClick={toggleRecording}
+                    aria-pressed={isRecording}
                     style={{ flex: '1 1 45%' }}
                 >
                     {isRecording ? <><Stop size={16} weight="fill" /> Stop ({recordingTime}s)</> : <><Record size={16} weight="fill" style={{ color: '#ff4444' }} /> Record</>}
@@ -625,6 +857,7 @@ export function MocapTab() {
                     <button
                         className={`secondary full-width ${isGreenScreen ? 'active' : ''}`}
                         onClick={toggleGreenScreen}
+                        aria-pressed={isGreenScreen}
                         style={{ flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                         title="Toggle Green Screen Background"
                     >
@@ -636,16 +869,30 @@ export function MocapTab() {
             <button
                 className={`secondary full-width ${isSelfieMode ? 'active' : ''}`}
                 onClick={toggleSelfieMode}
+                disabled={faceMaskEnabled}
+                aria-pressed={isSelfieMode}
                 style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                 title="Follow head motion with the camera"
             >
                 <UserFocus size={16} weight="duotone" /> Selfie Mode
             </button>
 
+            <button
+                className={`secondary full-width ${faceMaskEnabled ? 'active' : ''}`}
+                onClick={toggleFaceMask}
+                disabled={isStarting}
+                aria-pressed={faceMaskEnabled}
+                style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                title="Map the loaded VRM head to your webcam face for streaming overlays"
+            >
+                <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'XR Face Mask: On' : 'XR Face Mask'}
+            </button>
+
             {!isActive && (
                 <button
                     className={`secondary full-width ${isGreenScreen ? 'active' : ''}`}
                     onClick={toggleGreenScreen}
+                    aria-pressed={isGreenScreen}
                     style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     title="Toggle Green Screen Background"
                 >
@@ -653,14 +900,29 @@ export function MocapTab() {
                 </button>
             )}
 
-            {arSupported && !isActive && (
-                 <button
-                    className="secondary full-width"
-                    onClick={startAR}
-                    style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '10px' }}
-                >
-                    <MagicWand size={16} weight="fill" style={{ color: '#00ffff' }} /> Enter AR Mode
-                </button>
+            {(arSupported || vrSupported || isVRActive) && (
+                <div className="mocap-xr-actions">
+                    {vrSupported && (
+                        <button
+                            className={`secondary full-width ${isVRActive ? 'active' : ''}`}
+                            onClick={isVRActive ? exitVR : enterVR}
+                            disabled={isVRStarting}
+                            aria-pressed={isVRActive}
+                            title="Use your headset and controllers to pose the loaded VRM avatar"
+                        >
+                            <UserFocus size={16} weight="duotone" />
+                            {isVRActive ? 'Exit VR Tracking' : isVRStarting ? 'Starting VR...' : 'Enter VR Tracking'}
+                        </button>
+                    )}
+                    {arSupported && !isActive && !isVRActive && (
+                        <button
+                            className="secondary full-width"
+                            onClick={startAR}
+                        >
+                            <MagicWand size={16} weight="fill" style={{ color: '#00ffff' }} /> Enter AR Mode
+                        </button>
+                    )}
+                </div>
             )}
         </div>
 
@@ -689,8 +951,10 @@ export function MocapTab() {
           <button
             className={`primary full-width ${vmcEnabled ? 'secondary' : ''}`}
             onClick={() => setVmcEnabled(!vmcEnabled)}
+            aria-pressed={vmcEnabled}
+            disabled={vmcStatus === 'connecting'}
           >
-            {vmcEnabled ? 'Disconnect VMC' : 'Connect VMC'}
+            {vmcStatus === 'connecting' ? 'Connecting VMC...' : vmcEnabled ? 'Disconnect VMC' : 'Connect VMC'}
           </button>
           
           {vmcEnabled && vmcStatus === 'connected' && (
@@ -710,7 +974,7 @@ export function MocapTab() {
         </div>
 
         <div className="small muted">
-          Status: <strong>{vmcStatus}</strong>
+          Status: <strong className={`mocap-status-pill is-${vmcLabel}`}>{vmcLabel}</strong>
           {vmcError && <div className="error-message" style={{ marginTop: '6px' }}>{vmcError}</div>}
         </div>
       </div>
@@ -719,6 +983,7 @@ export function MocapTab() {
           <h3>Instructions</h3>
           <ul className="small muted" style={{ paddingLeft: '1.2rem' }}>
               <li><strong>Upper Body:</strong> Track face, hands, and arms without lower-body tracking.</li>
+              <li><strong>XR Face Mask:</strong> Maps the loaded VRM head to your webcam face for Snapchat-style stream filters.</li>
               <li><strong>Full Body:</strong> Stand back so your head, torso, legs, and hands are visible.</li>
               <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button to align your body and gaze.</li>
               <li>If the camera stops immediately, check browser camera permissions and close other apps using the camera.</li>
@@ -736,9 +1001,11 @@ export function MocapTab() {
         <button 
           className={`primary full-width ${isVoiceLipSyncActive ? 'secondary' : ''}`}
           onClick={toggleVoiceLipSync}
+          disabled={isVoiceStarting}
+          aria-pressed={isVoiceLipSyncActive}
           style={{ marginBottom: '12px' }}
         >
-          {isVoiceLipSyncActive ? <><StopCircle size={16} weight="fill" /> Stop Voice Sync</> : <><Microphone size={16} weight="duotone" /> Start Voice Sync</>}
+          {isVoiceLipSyncActive ? <><StopCircle size={16} weight="fill" /> Stop Voice Sync</> : isVoiceStarting ? <><Microphone size={16} weight="duotone" /> Starting Voice...</> : <><Microphone size={16} weight="duotone" /> Start Voice Sync</>}
         </button>
 
         {isVoiceLipSyncActive && (
@@ -759,7 +1026,7 @@ export function MocapTab() {
                 background: 'var(--bg-input)',
                 borderRadius: '4px',
                 overflow: 'hidden'
-              }}>
+              }} role="meter" aria-label="Voice volume" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(voiceVolume * 100)}>
                 <div style={{
                   height: '100%',
                   width: `${voiceVolume * 100}%`,

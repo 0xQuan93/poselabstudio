@@ -1,10 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export function useMediaDevices() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [permissionGranted, setPermissionGranted] = useState(false);
 
-  const fetchDevices = async () => {
+  const fetchDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setDevices([]);
+      setPermissionGranted(false);
+      return;
+    }
+
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = allDevices.filter(device => device.kind === 'videoinput');
@@ -18,13 +24,16 @@ export function useMediaDevices() {
     } catch (e) {
       console.warn('Error enumerating devices:', e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDevices();
+    if (!navigator.mediaDevices?.addEventListener) {
+      return;
+    }
     navigator.mediaDevices.addEventListener('devicechange', fetchDevices);
     return () => navigator.mediaDevices.removeEventListener('devicechange', fetchDevices);
-  }, []);
+  }, [fetchDevices]);
 
   return { devices, permissionGranted, fetchDevices };
 }
