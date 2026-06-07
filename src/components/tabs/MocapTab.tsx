@@ -55,6 +55,7 @@ const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
   offsetY: 0,
   scale: 1,
   depth: 0,
+  backset: 0,
   crop: 0,
 };
 
@@ -940,7 +941,8 @@ export function MocapTab() {
                         { key: 'offsetX', label: 'Horizontal', min: -0.5, max: 0.5, step: 0.01 },
                         { key: 'offsetY', label: 'Vertical', min: -0.5, max: 0.5, step: 0.01 },
                         { key: 'scale', label: 'Size', min: 0.4, max: 2.4, step: 0.01 },
-                        { key: 'depth', label: 'Depth', min: -0.8, max: 0.8, step: 0.01 },
+                        { key: 'depth', label: 'Depth', min: -1.2, max: 1.4, step: 0.01 },
+                        { key: 'backset', label: 'Backset', min: -0.8, max: 2.4, step: 0.01 },
                         { key: 'crop', label: 'Neck Crop', min: -0.3, max: 0.3, step: 0.01 },
                     ] as Array<{ key: keyof FaceMaskAdjustments; label: string; min: number; max: number; step: number }>).map((control) => (
                         <label className="mocap-mask-slider" key={control.key}>

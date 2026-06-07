@@ -176,6 +176,7 @@ export interface FaceMaskAdjustments {
   offsetY: number;
   scale: number;
   depth: number;
+  backset: number;
   crop: number;
 }
 
@@ -184,6 +185,7 @@ const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
   offsetY: 0,
   scale: 1,
   depth: 0,
+  backset: 0,
   crop: 0,
 };
 
@@ -411,7 +413,8 @@ export class MotionCaptureManager {
       this.faceMaskAdjustments.offsetX = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetX, -0.5, 0.5);
       this.faceMaskAdjustments.offsetY = THREE.MathUtils.clamp(this.faceMaskAdjustments.offsetY, -0.5, 0.5);
       this.faceMaskAdjustments.scale = THREE.MathUtils.clamp(this.faceMaskAdjustments.scale, 0.4, 2.4);
-      this.faceMaskAdjustments.depth = THREE.MathUtils.clamp(this.faceMaskAdjustments.depth, -0.8, 0.8);
+      this.faceMaskAdjustments.depth = THREE.MathUtils.clamp(this.faceMaskAdjustments.depth, -1.2, 1.4);
+      this.faceMaskAdjustments.backset = THREE.MathUtils.clamp(this.faceMaskAdjustments.backset, -0.8, 2.4);
       this.faceMaskAdjustments.crop = THREE.MathUtils.clamp(this.faceMaskAdjustments.crop, -0.3, 0.3);
   }
 
@@ -1041,7 +1044,10 @@ export class MotionCaptureManager {
       const camera = sceneManager.getCamera();
       if (!camera) return;
 
-      const distance = Math.max(this.faceMaskDepth + this.faceMaskAdjustments.depth + 0.75, 2.5);
+      const distance = Math.max(
+          this.faceMaskDepth + this.faceMaskAdjustments.depth + Math.max(0, this.faceMaskAdjustments.backset) + 0.75,
+          2.5
+      );
       const fov = THREE.MathUtils.degToRad(camera.fov);
       const height = 2 * Math.tan(fov / 2) * distance;
       const width = height * camera.aspect;
@@ -1114,7 +1120,8 @@ export class MotionCaptureManager {
           .copy(camera.position)
           .addScaledVector(forward, depth)
           .addScaledVector(right, (ndcX * frustumWidth * 0.5) + this.faceMaskAdjustments.offsetX)
-          .addScaledVector(up, (ndcY * frustumHeight * 0.5) + this.faceMaskAdjustments.offsetY);
+          .addScaledVector(up, (ndcY * frustumHeight * 0.5) + this.faceMaskAdjustments.offsetY)
+          .addScaledVector(forward, this.faceMaskAdjustments.backset);
 
       const faceWidth = Math.max(0.04, maxX - minX);
       const faceWorldWidth = faceWidth * frustumWidth;
