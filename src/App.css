@@ -843,6 +843,56 @@
   gap: 6px;
 }
 
+.mocap-mask-controls {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.mocap-mask-controls__header,
+.mocap-mask-slider span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mocap-mask-controls__header span {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+}
+
+.mocap-mask-controls__header button {
+  min-height: 28px;
+  width: auto;
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+}
+
+.mocap-mask-slider {
+  display: grid;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.mocap-mask-slider strong {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.mocap-mask-slider input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
 .mocap-tab button:disabled {
   opacity: 0.55;
   cursor: wait;

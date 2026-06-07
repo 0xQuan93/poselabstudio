@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnimationClip } from 'three';
-import { MotionCaptureManager, type MotionCaptureStatus } from '../../utils/motionCapture';
+import { MotionCaptureManager, type FaceMaskAdjustments, type MotionCaptureStatus } from '../../utils/motionCapture';
 import { voiceLipSync } from '../../utils/voiceLipSync';
 import { avatarManager } from '../../three/avatarManager';
 import { useAnimationStore } from '../../state/useAnimationStore';
@@ -50,8 +50,21 @@ const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
   activeSources: [],
 };
 
+const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
+  offsetX: 0,
+  offsetY: 0,
+  scale: 1,
+  depth: 0,
+  crop: 0,
+};
+
 function isFresh(timestamp: number | null, now: number, windowMs = 1600) {
   return timestamp !== null && now - timestamp < windowMs;
+}
+
+function formatMaskValue(key: keyof FaceMaskAdjustments, value: number) {
+  if (key === 'scale') return `${Math.round(value * 100)}%`;
+  return value.toFixed(2);
 }
 
 export function MocapTab() {
@@ -117,6 +130,7 @@ export function MocapTab() {
   const [vmcStatus, setVmcStatus] = useState(vmcInputManager.getStatus());
   const [vmcError, setVmcError] = useState<string | null>(null);
   const [managerStatus, setManagerStatus] = useState<MotionCaptureStatus>(EMPTY_MOCAP_STATUS);
+  const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
@@ -127,8 +141,13 @@ export function MocapTab() {
     vrManager.refreshSupport().then(setVrSupported);
     managerRef.current = initMocapManager();
     managerRef.current.setMode(mocapMode);
+    managerRef.current.setFaceMaskAdjustments(faceMaskAdjustments);
     setManagerStatus(managerRef.current.getStatus());
   }, [mocapMode]);
+
+  useEffect(() => {
+    managerRef.current?.setFaceMaskAdjustments(faceMaskAdjustments);
+  }, [faceMaskAdjustments]);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -373,6 +392,21 @@ export function MocapTab() {
     voiceLipSync.setSensitivity(value);
   };
 
+  const updateFaceMaskAdjustment = useCallback((key: keyof FaceMaskAdjustments, value: number) => {
+    setFaceMaskAdjustments((current) => {
+      const next = { ...current, [key]: value };
+      managerRef.current?.setFaceMaskAdjustments(next);
+      return next;
+    });
+  }, []);
+
+  const resetFaceMaskAdjustments = useCallback(() => {
+    managerRef.current?.resetFaceMaskAdjustments();
+    const next = managerRef.current?.getFaceMaskAdjustments() ?? DEFAULT_FACE_MASK_ADJUSTMENTS;
+    setFaceMaskAdjustments(next);
+    addToast("XR Face Mask adjustments reset", "info");
+  }, [addToast]);
+
   const stopMocap = useCallback(() => {
     if (!managerRef.current || !isActive) return;
     if (isRecording) {
@@ -529,6 +563,7 @@ export function MocapTab() {
     }
 
     managerRef.current.setVRM(vrm);
+    managerRef.current.setFaceMaskAdjustments(faceMaskAdjustments);
     managerRef.current.setFaceMaskMode(true);
     setFaceMaskEnabled(true);
     sceneManager.setFollowTarget(null, null);
@@ -537,7 +572,7 @@ export function MocapTab() {
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
     addToast("XR Face Mask enabled. The canvas now composites webcam body plus VRM head.", "success");
-  }, [addToast, faceMaskEnabled, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
+  }, [addToast, faceMaskAdjustments, faceMaskEnabled, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
 
   const enterVR = async () => {
     const vrm = avatarManager.getVRM();
@@ -887,6 +922,44 @@ export function MocapTab() {
             >
                 <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'XR Face Mask: On' : 'XR Face Mask'}
             </button>
+
+            {faceMaskEnabled && (
+                <div className="mocap-mask-controls" aria-label="XR Face Mask manual adjustments">
+                    <div className="mocap-mask-controls__header">
+                        <span>Mask Adjust</span>
+                        <button
+                            type="button"
+                            className="secondary"
+                            onClick={resetFaceMaskAdjustments}
+                            title="Reset mask offset, size, depth, and crop"
+                        >
+                            Reset
+                        </button>
+                    </div>
+                    {([
+                        { key: 'offsetX', label: 'Horizontal', min: -0.5, max: 0.5, step: 0.01 },
+                        { key: 'offsetY', label: 'Vertical', min: -0.5, max: 0.5, step: 0.01 },
+                        { key: 'scale', label: 'Size', min: 0.4, max: 2.4, step: 0.01 },
+                        { key: 'depth', label: 'Depth', min: -0.8, max: 0.8, step: 0.01 },
+                        { key: 'crop', label: 'Neck Crop', min: -0.3, max: 0.3, step: 0.01 },
+                    ] as Array<{ key: keyof FaceMaskAdjustments; label: string; min: number; max: number; step: number }>).map((control) => (
+                        <label className="mocap-mask-slider" key={control.key}>
+                            <span>
+                                {control.label}
+                                <strong>{formatMaskValue(control.key, faceMaskAdjustments[control.key])}</strong>
+                            </span>
+                            <input
+                                type="range"
+                                min={control.min}
+                                max={control.max}
+                                step={control.step}
+                                value={faceMaskAdjustments[control.key]}
+                                onChange={(event) => updateFaceMaskAdjustment(control.key, Number(event.target.value))}
+                            />
+                        </label>
+                    ))}
+                </div>
+            )}
 
             {!isActive && (
                 <button
