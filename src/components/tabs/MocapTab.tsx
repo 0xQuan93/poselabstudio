@@ -76,6 +76,10 @@ function normalizeFaceMaskAdjustments(adjustments?: Partial<FaceMaskAdjustments>
   };
 }
 
+type StartMocapOptions = {
+  isolateFaceMask?: boolean;
+};
+
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
@@ -487,7 +491,7 @@ export function MocapTab() {
     mocapStartingRef.current = false;
   }, [finishRecording, isActive, isRecording, isSelfieMode, setFaceMaskEnabled, setIsActive, setIsStarting]);
 
-  const startMocap = useCallback(async (modeOverride?: 'full' | 'face') => {
+  const startMocap = useCallback(async (modeOverride?: 'full' | 'face', options?: StartMocapOptions) => {
     if (!managerRef.current || isActive || mocapStartingRef.current) return;
     const vrm = avatarManager.getVRM();
     if (!vrm) {
@@ -508,14 +512,19 @@ export function MocapTab() {
       }
 
       managerRef.current.setVRM(vrm);
+      if (options?.isolateFaceMask) {
+        managerRef.current.setFaceMaskMode(true);
+      }
       
       // Pass the selected device ID if available
       await managerRef.current.start(selectedDeviceId || undefined);
       fetchDevices();
       
-      // For both Full Body and Upper Body (Face) tracking, we pause animation so
-      // mocap has full control over tracked bones without animation sway.
-      avatarManager.freezeCurrentPose();
+      // Regular mocap freezes the current pose. XR Face Mask instead resets into
+      // an isolated neutral head base so inherited body pose cannot skew the mask.
+      if (!options?.isolateFaceMask) {
+        avatarManager.freezeCurrentPose();
+      }
       avatarManager.setInteraction(true);
       setIsActive(true);
       setError(null);
@@ -532,6 +541,9 @@ export function MocapTab() {
         setIsActive(false);
       }
     } catch (e: any) {
+      if (options?.isolateFaceMask) {
+        managerRef.current?.setFaceMaskMode(false);
+      }
       console.error(e);
       let msg = "Failed to access webcam.";
       if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
@@ -617,8 +629,11 @@ export function MocapTab() {
     }
 
     if (!isActive) {
-      await startMocap('face');
-      if (!managerRef.current?.getStatus().isTracking) return;
+      await startMocap('face', { isolateFaceMask: true });
+      if (!managerRef.current?.getStatus().isTracking) {
+        managerRef.current?.setFaceMaskMode(false);
+        return;
+      }
     } else {
       avatarManager.setInteraction(true);
     }

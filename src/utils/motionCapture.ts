@@ -255,6 +255,13 @@ export class MotionCaptureManager {
   private hasFaceMaskOriginalTransform = false;
   private faceMaskOriginalScale = new THREE.Vector3(1, 1, 1);
   private faceMaskOriginalPosition = new THREE.Vector3();
+  private faceMaskOriginalQuaternion = new THREE.Quaternion();
+  private faceMaskNeutralHeadLocal = new THREE.Vector3();
+  private faceMaskNeutralNeckLocal = new THREE.Vector3();
+  private hasFaceMaskNeutralHead = false;
+  private hasFaceMaskNeutralNeck = false;
+  private faceMaskHeadRotation = new THREE.Quaternion();
+  private faceMaskHasHeadRotation = false;
   private faceMaskTargetHeadWorld = new THREE.Vector3();
   private currentFaceMaskHeadWorld = new THREE.Vector3();
   private faceMaskTargetScale = 1;
@@ -424,6 +431,14 @@ export class MotionCaptureManager {
       console.log('[MotionCaptureManager] Set mode:', mode);
   }
 
+  private captureFaceMaskOriginalTransform() {
+      if (!this.vrm || this.hasFaceMaskOriginalTransform) return;
+      this.faceMaskOriginalScale.copy(this.vrm.scene.scale);
+      this.faceMaskOriginalPosition.copy(this.vrm.scene.position);
+      this.faceMaskOriginalQuaternion.copy(this.vrm.scene.quaternion);
+      this.hasFaceMaskOriginalTransform = true;
+  }
+
   private enterFaceMaskPoseIsolation() {
       if (!this.vrm?.humanoid || this.faceMaskPoseSnapshot) return;
 
@@ -435,11 +450,19 @@ export class MotionCaptureManager {
       this.hasFaceMaskRootSnapshot = true;
       this.mode = 'face';
 
+      this.captureFaceMaskOriginalTransform();
+
       this.targetBoneRotations.clear();
       this.boneFilters.clear();
       this.targetRootPosition = null;
       this.rootPositionFilter = new OneEuroFilterVec3(SMOOTHING.MIN_CUTOFF, SMOOTHING.BETA);
+      this.faceMaskHeadRotation.identity();
+      this.faceMaskHasHeadRotation = false;
 
+      const neutralRootEuler = new THREE.Euler().setFromQuaternion(this.vrm.scene.quaternion, 'YXZ');
+      neutralRootEuler.x = 0;
+      neutralRootEuler.z = 0;
+      this.vrm.scene.quaternion.setFromEuler(neutralRootEuler);
       this.vrm.humanoid.resetNormalizedPose();
       const hips = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Hips);
       if (hips) {
@@ -453,6 +476,7 @@ export class MotionCaptureManager {
       this.vrm.humanoid.update();
       this.vrm.update(0);
       this.vrm.scene.updateMatrixWorld(true);
+      this.captureFaceMaskNeutralAnchors();
   }
 
   private exitFaceMaskPoseIsolation() {
@@ -477,6 +501,10 @@ export class MotionCaptureManager {
       this.vrm.humanoid.update();
       this.vrm.update(0);
       this.vrm.scene.updateMatrixWorld(true);
+      this.hasFaceMaskNeutralHead = false;
+      this.hasFaceMaskNeutralNeck = false;
+      this.faceMaskHeadRotation.identity();
+      this.faceMaskHasHeadRotation = false;
       if (this.faceMaskModeBeforeIsolation) {
           this.mode = this.faceMaskModeBeforeIsolation;
       }
@@ -493,6 +521,7 @@ export class MotionCaptureManager {
       this.hasFaceMaskTarget = false;
       this.lastFaceMaskAt = null;
       this.faceMaskDebugFrame = null;
+      this.currentFaceMaskHeadWorld.set(0, 0, 0);
 
       if (!enabled) {
           this.restoreFaceMaskBaseline();
@@ -709,7 +738,13 @@ export class MotionCaptureManager {
   }
 
   applyExternalBoneRotation(boneName: VRMHumanBoneName, rotation: THREE.Quaternion) {
-      if (this.faceMaskMode && boneName !== VRMHumanBoneName.Head) return;
+      if (this.faceMaskMode) {
+          if (boneName === VRMHumanBoneName.Head) {
+              this.faceMaskHeadRotation.copy(rotation);
+              this.faceMaskHasHeadRotation = true;
+          }
+          return;
+      }
       this.targetBoneRotations.set(boneName, rotation);
   }
 
@@ -881,84 +916,84 @@ export class MotionCaptureManager {
       }
 
       // 2. Smooth Bone Rotations
-      this.targetBoneRotations.forEach((targetQ, boneName) => {
-          if (this.faceMaskMode && boneName.toLowerCase() !== 'head') {
-              return;
-          }
+      if (this.faceMaskMode) {
+          this.targetBoneRotations.clear();
+      } else {
+          this.targetBoneRotations.forEach((targetQ, boneName) => {
+              if (this.mode === 'face' && !isVMC) {
+                  const allowedBones = [
+                      'head', 'neck',
+                      'chest', 'upperchest', 'spine', // Hips removed to prevent full body rotation
+                      'shoulder', 'arm', // Covers upperArm, lowerArm
+                      'hand', 'thumb', 'index', 'middle', 'ring', 'little'
+                  ];
+                  if (!allowedBones.some(b => boneName.toLowerCase().includes(b))) return;
+              }
 
-          if (this.mode === 'face' && !isVMC) {
-              const allowedBones = [
-                  'head', 'neck',
-                  'chest', 'upperchest', 'spine', // Hips removed to prevent full body rotation
-                  'shoulder', 'arm', // Covers upperArm, lowerArm
-                  'hand', 'thumb', 'index', 'middle', 'ring', 'little'
-              ];
-              if (!allowedBones.some(b => boneName.toLowerCase().includes(b))) return;
-          }
+              // @ts-expect-error - fix type error
+              const node = this.vrm!.humanoid!.getNormalizedBoneNode(boneName);
+              if (node) {
+                  let filter = this.boneFilters.get(boneName);
+                  if (!filter) {
+                      const lowerBoneName = boneName.toLowerCase();
 
-          // @ts-expect-error - fix type error
-          const node = this.vrm!.humanoid!.getNormalizedBoneNode(boneName);
-          if (node) {
-              let filter = this.boneFilters.get(boneName);
-              if (!filter) {
-                  const lowerBoneName = boneName.toLowerCase();
-                  
-                  let minCutoff: number;
-                  let beta: number;
-                  
-                  if (isVMC) {
-                      // VMC-specific tuned parameters based on bone type
-                      if (lowerBoneName.includes('head')) {
-                          minCutoff = VMC_SMOOTHING.HEAD_MIN_CUTOFF;
-                          beta = VMC_SMOOTHING.HEAD_BETA;
-                      } else if (lowerBoneName.includes('hand') || lowerBoneName.includes('thumb') || 
-                                 lowerBoneName.includes('index') || lowerBoneName.includes('middle') ||
-                                 lowerBoneName.includes('ring') || lowerBoneName.includes('little')) {
-                          minCutoff = VMC_SMOOTHING.HAND_MIN_CUTOFF;
-                          beta = VMC_SMOOTHING.HAND_BETA;
+                      let minCutoff: number;
+                      let beta: number;
+
+                      if (isVMC) {
+                          // VMC-specific tuned parameters based on bone type
+                          if (lowerBoneName.includes('head')) {
+                              minCutoff = VMC_SMOOTHING.HEAD_MIN_CUTOFF;
+                              beta = VMC_SMOOTHING.HEAD_BETA;
+                          } else if (lowerBoneName.includes('hand') || lowerBoneName.includes('thumb') ||
+                              lowerBoneName.includes('index') || lowerBoneName.includes('middle') ||
+                              lowerBoneName.includes('ring') || lowerBoneName.includes('little')) {
+                              minCutoff = VMC_SMOOTHING.HAND_MIN_CUTOFF;
+                              beta = VMC_SMOOTHING.HAND_BETA;
+                          } else {
+                              minCutoff = VMC_SMOOTHING.MIN_CUTOFF;
+                              beta = VMC_SMOOTHING.BETA;
+                          }
                       } else {
-                          minCutoff = VMC_SMOOTHING.MIN_CUTOFF;
-                          beta = VMC_SMOOTHING.BETA;
+                          // Webcam mocap parameters
+                          minCutoff = lowerBoneName.includes('head') ? SMOOTHING.HEAD_MIN_CUTOFF : SMOOTHING.MIN_CUTOFF;
+                          beta = SMOOTHING.BETA;
                       }
+
+                      filter = new OneEuroFilterQuat(minCutoff, beta);
+                      this.boneFilters.set(boneName, filter);
+                  }
+
+                  // For VMC: Use SLERP-interpolated quaternion from buffer for timing jitter reduction
+                  let quatToFilter = targetQ;
+                  if (isVMC) {
+                      const interpolatedQuat = vmcFrameBuffer.getInterpolatedBoneRotation(boneName, renderTimeMs);
+                      if (interpolatedQuat) {
+                          quatToFilter = interpolatedQuat;
+                      }
+                  }
+
+                  const smoothed = filter.filter(quatToFilter.x, quatToFilter.y, quatToFilter.z, quatToFilter.w, timestamp);
+
+                  // For VMC: Apply velocity deadzone to ignore micro-movements
+                  if (isVMC) {
+                      // Calculate angular difference from current pose
+                      const currentQ = node.quaternion;
+                      const dot = Math.abs(currentQ.x * smoothed.x + currentQ.y * smoothed.y +
+                          currentQ.z * smoothed.z + currentQ.w * smoothed.w);
+                      const angularDiff = 2 * Math.acos(Math.min(1, dot));
+
+                      // Only apply if change is above deadzone threshold
+                      if (angularDiff > VMC_SMOOTHING.ROTATION_DEADZONE) {
+                          node.quaternion.set(smoothed.x, smoothed.y, smoothed.z, smoothed.w);
+                      }
+                      // If below threshold, keep current quaternion (no update = no jitter)
                   } else {
-                      // Webcam mocap parameters
-                      minCutoff = lowerBoneName.includes('head') ? SMOOTHING.HEAD_MIN_CUTOFF : SMOOTHING.MIN_CUTOFF;
-                      beta = SMOOTHING.BETA;
-                  }
-                  
-                  filter = new OneEuroFilterQuat(minCutoff, beta);
-                  this.boneFilters.set(boneName, filter);
-              }
-
-              // For VMC: Use SLERP-interpolated quaternion from buffer for timing jitter reduction
-              let quatToFilter = targetQ;
-              if (isVMC) {
-                  const interpolatedQuat = vmcFrameBuffer.getInterpolatedBoneRotation(boneName, renderTimeMs);
-                  if (interpolatedQuat) {
-                      quatToFilter = interpolatedQuat;
-                  }
-              }
-
-              const smoothed = filter.filter(quatToFilter.x, quatToFilter.y, quatToFilter.z, quatToFilter.w, timestamp);
-              
-              // For VMC: Apply velocity deadzone to ignore micro-movements
-              if (isVMC) {
-                  // Calculate angular difference from current pose
-                  const currentQ = node.quaternion;
-                  const dot = Math.abs(currentQ.x * smoothed.x + currentQ.y * smoothed.y + 
-                                       currentQ.z * smoothed.z + currentQ.w * smoothed.w);
-                  const angularDiff = 2 * Math.acos(Math.min(1, dot));
-                  
-                  // Only apply if change is above deadzone threshold
-                  if (angularDiff > VMC_SMOOTHING.ROTATION_DEADZONE) {
                       node.quaternion.set(smoothed.x, smoothed.y, smoothed.z, smoothed.w);
                   }
-                  // If below threshold, keep current quaternion (no update = no jitter)
-              } else {
-                  node.quaternion.set(smoothed.x, smoothed.y, smoothed.z, smoothed.w);
               }
-          }
-      });
+          });
+      }
 
       // 3. Smooth Root Position
       if (!this.faceMaskMode && ((this.mode === 'full' && this.targetRootPosition) || (isVMC && this.targetRootPosition))) {
@@ -1001,8 +1036,11 @@ export class MotionCaptureManager {
           }
       }
       
-      this.vrm.humanoid.update();
-      this.applyFaceMaskFrame(_delta);
+      if (this.faceMaskMode) {
+          this.applyFaceMaskFrame(_delta);
+      } else {
+          this.vrm.humanoid.update();
+      }
   }
 
   private captureFrame() {
@@ -1028,15 +1066,55 @@ export class MotionCaptureManager {
       this.recordedFrames.push({ time, bones });
   }
 
+  private captureFaceMaskNeutralAnchors() {
+      if (!this.vrm?.humanoid) return;
+      const head = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head);
+      const neck = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Neck);
+      const world = new THREE.Vector3();
+
+      this.vrm.scene.updateWorldMatrix(true, true);
+      this.hasFaceMaskNeutralHead = false;
+      this.hasFaceMaskNeutralNeck = false;
+
+      if (head) {
+          head.getWorldPosition(world);
+          this.faceMaskNeutralHeadLocal.copy(this.vrm.scene.worldToLocal(world.clone()));
+          this.hasFaceMaskNeutralHead = true;
+      }
+
+      if (neck) {
+          neck.getWorldPosition(world);
+          this.faceMaskNeutralNeckLocal.copy(this.vrm.scene.worldToLocal(world.clone()));
+          this.hasFaceMaskNeutralNeck = true;
+      }
+  }
+
+  private applyFaceMaskNeutralPose() {
+      if (!this.vrm?.humanoid) return;
+      this.vrm.humanoid.resetNormalizedPose();
+      const head = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head);
+      if (head && this.faceMaskHasHeadRotation) {
+          head.quaternion.copy(this.faceMaskHeadRotation);
+      }
+      this.vrm.humanoid.update();
+  }
+
+  private getFaceMaskNeutralWorld(localPoint: THREE.Vector3, target: THREE.Vector3) {
+      if (!this.vrm) return target.set(0, 0, 0);
+      target.copy(localPoint);
+      this.vrm.scene.localToWorld(target);
+      return target;
+  }
+
   private captureFaceMaskBaseline() {
       if (!this.vrm) return;
-      this.faceMaskOriginalScale.copy(this.vrm.scene.scale);
-      this.faceMaskOriginalPosition.copy(this.vrm.scene.position);
-      this.hasFaceMaskOriginalTransform = true;
+      this.captureFaceMaskOriginalTransform();
       this.hasFaceMaskTarget = false;
       this.currentFaceMaskScale = 1;
       this.faceMaskTargetScale = 1;
 
+      this.applyFaceMaskNeutralPose();
+      this.captureFaceMaskNeutralAnchors();
       this.vrm.scene.updateWorldMatrix(true, true);
       const bounds = getObjectBounds(this.vrm.scene);
       const height = bounds.max.y - bounds.min.y;
@@ -1044,10 +1122,8 @@ export class MotionCaptureManager {
       this.faceMaskHeadCenterOffset = this.faceMaskBaseAvatarHeight * 0.105;
 
       const camera = sceneManager.getCamera();
-      const head = this.vrm.humanoid?.getNormalizedBoneNode('head');
-      if (camera && head) {
-          const headWorld = new THREE.Vector3();
-          head.getWorldPosition(headWorld);
+      if (camera && this.hasFaceMaskNeutralHead) {
+          const headWorld = this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, new THREE.Vector3());
           this.faceMaskDepth = THREE.MathUtils.clamp(camera.position.distanceTo(headWorld), 0.65, 2.4);
       }
   }
@@ -1056,9 +1132,12 @@ export class MotionCaptureManager {
       if (!this.vrm || !this.hasFaceMaskOriginalTransform) return;
       this.vrm.scene.scale.copy(this.faceMaskOriginalScale);
       this.vrm.scene.position.copy(this.faceMaskOriginalPosition);
+      this.vrm.scene.quaternion.copy(this.faceMaskOriginalQuaternion);
       this.vrm.scene.updateMatrixWorld(true);
       this.hasFaceMaskOriginalTransform = false;
       this.hasFaceMaskTarget = false;
+      this.hasFaceMaskNeutralHead = false;
+      this.hasFaceMaskNeutralNeck = false;
   }
 
   private applyFaceMaskVisibility() {
@@ -1369,15 +1448,13 @@ export class MotionCaptureManager {
 
   private updateFaceMaskClipPlane() {
       if (!this.faceMaskMode || !this.vrm?.humanoid) return;
-      const neck = this.vrm.humanoid.getNormalizedBoneNode('neck');
-      const head = this.vrm.humanoid.getNormalizedBoneNode('head');
       const reference = new THREE.Vector3();
 
-      if (neck) {
-          neck.getWorldPosition(reference);
+      if (this.hasFaceMaskNeutralNeck) {
+          this.getFaceMaskNeutralWorld(this.faceMaskNeutralNeckLocal, reference);
           reference.y -= Math.max(0.025, this.faceMaskBaseAvatarHeight * 0.015);
-      } else if (head) {
-          head.getWorldPosition(reference);
+      } else if (this.hasFaceMaskNeutralHead) {
+          this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, reference);
           reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * 0.11);
       } else {
           return;
@@ -1461,11 +1538,13 @@ export class MotionCaptureManager {
 
   private applyFaceMaskFrame(delta: number) {
       if (!this.faceMaskMode || !this.vrm?.humanoid || !this.hasFaceMaskTarget) return;
-      const head = this.vrm.humanoid.getNormalizedBoneNode('head');
-      if (!head) return;
+      if (!this.hasFaceMaskNeutralHead) {
+          this.applyFaceMaskNeutralPose();
+          this.captureFaceMaskNeutralAnchors();
+      }
+      if (!this.hasFaceMaskNeutralHead) return;
 
       this.updateFaceMaskVideoBackdrop();
-      this.updateFaceMaskClipPlane();
 
       const smoothing = 1 - Math.exp(-12 * Math.max(0.001, delta));
       this.currentFaceMaskScale = THREE.MathUtils.lerp(this.currentFaceMaskScale, this.faceMaskTargetScale, smoothing);
@@ -1473,14 +1552,16 @@ export class MotionCaptureManager {
 
       const targetScale = this.faceMaskOriginalScale.clone().multiplyScalar(this.currentFaceMaskScale);
       this.vrm.scene.scale.lerp(targetScale, smoothing);
+      this.applyFaceMaskNeutralPose();
       this.vrm.scene.updateWorldMatrix(true, true);
 
-      const actualHeadWorld = new THREE.Vector3();
-      head.getWorldPosition(actualHeadWorld);
-      actualHeadWorld.y += (this.faceMaskHeadCenterOffset + this.faceMaskAdjustments.lift) * this.currentFaceMaskScale;
-      const offset = this.currentFaceMaskHeadWorld.clone().sub(actualHeadWorld);
+      const neutralHeadWorld = this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, new THREE.Vector3());
+      neutralHeadWorld.y += (this.faceMaskHeadCenterOffset + this.faceMaskAdjustments.lift) * this.currentFaceMaskScale;
+      const offset = this.currentFaceMaskHeadWorld.clone().sub(neutralHeadWorld);
       this.vrm.scene.position.add(offset.multiplyScalar(smoothing));
+      this.applyFaceMaskNeutralPose();
       this.vrm.scene.updateMatrixWorld(true);
+      this.updateFaceMaskClipPlane();
       this.updateFaceMaskDebugOverlay();
   }
 
@@ -1684,7 +1765,12 @@ export class MotionCaptureManager {
                 const headQ = new THREE.Quaternion(q.x, q.y, q.z, q.w);
                 const identityQ = new THREE.Quaternion();
                 headQ.slerp(identityQ, HEAD_DAMPENING);
-                this.targetBoneRotations.set('head', headQ);
+                if (this.faceMaskMode) {
+                    this.faceMaskHeadRotation.copy(headQ);
+                    this.faceMaskHasHeadRotation = true;
+                } else {
+                    this.targetBoneRotations.set('head', headQ);
+                }
                 const euler = new THREE.Euler().setFromQuaternion(headQ, 'YXZ');
                 live2dData.head = { x: THREE.MathUtils.radToDeg(euler.x), y: THREE.MathUtils.radToDeg(euler.y), z: THREE.MathUtils.radToDeg(euler.z) };
                 
