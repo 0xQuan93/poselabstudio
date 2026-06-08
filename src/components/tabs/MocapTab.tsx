@@ -244,6 +244,10 @@ export function MocapTab() {
 
   useEffect(() => {
     if (vmcStatus === 'connected') {
+      if (faceMaskEnabled) {
+        avatarManager.setInteraction(true);
+        return;
+      }
       avatarManager.freezeCurrentPose();
       avatarManager.setInteraction(true);
       return;
@@ -251,7 +255,7 @@ export function MocapTab() {
     if (!isActive) {
       avatarManager.setInteraction(false);
     }
-  }, [vmcStatus, isActive]);
+  }, [vmcStatus, isActive, faceMaskEnabled]);
 
   const toggleGreenScreen = () => {
       if (isGreenScreen) {
@@ -267,6 +271,11 @@ export function MocapTab() {
   };
 
   const handleModeChange = useCallback((mode: 'full' | 'face') => {
+      if (faceMaskEnabled) {
+          addToast("Disable XR Face Mask before changing mocap modes.", "warning");
+          return;
+      }
+
       setMocapMode(mode);
       if (managerRef.current) {
           managerRef.current.setMode(mode);
@@ -284,7 +293,7 @@ export function MocapTab() {
               addToast("Full Body Mode: Animation Frozen for Tracking", "info");
           }
       }
-  }, [addToast, isActive, setMocapMode]);
+  }, [addToast, faceMaskEnabled, isActive, setMocapMode]);
 
   const setMocapModeOnly = useCallback((mode: 'full' | 'face') => {
     setMocapMode(mode);
@@ -611,7 +620,6 @@ export function MocapTab() {
       await startMocap('face');
       if (!managerRef.current?.getStatus().isTracking) return;
     } else {
-      avatarManager.freezeCurrentPose();
       avatarManager.setInteraction(true);
     }
 

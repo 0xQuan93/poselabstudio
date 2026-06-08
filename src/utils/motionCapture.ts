@@ -2,7 +2,7 @@
 type Results = any;
 
 import * as Kalidokit from 'kalidokit';
-import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
+import { VRM, VRMHumanBoneName, type VRMPose } from '@pixiv/three-vrm';
 import * as THREE from 'three';
 import { motionEngine } from '../poses/motionEngine';
 import { sceneManager } from '../three/sceneManager';
@@ -213,6 +213,7 @@ export class MotionCaptureManager {
   
   // Tracking Mode
   private mode: 'full' | 'face' = 'full';
+  private faceMaskModeBeforeIsolation: 'full' | 'face' | null = null;
 
   // Smoothing State
   private targetFaceValues: Map<string, number> = new Map();
@@ -242,6 +243,11 @@ export class MotionCaptureManager {
 
   // Webcam XR face mask state
   private faceMaskMode = false;
+  private faceMaskPoseSnapshot: VRMPose | null = null;
+  private faceMaskSavedBaseHipsPosition = new THREE.Vector3(0, 1.0, 0);
+  private faceMaskSavedCurrentRootPosition = new THREE.Vector3(0, 1.0, 0);
+  private faceMaskSavedTargetRootPosition: THREE.Vector3 | null = null;
+  private hasFaceMaskRootSnapshot = false;
   private faceMaskMirrorX = true;
   private faceMaskDepth = 1.25;
   private faceMaskBaseAvatarHeight = 1.65;
@@ -367,14 +373,22 @@ export class MotionCaptureManager {
           this.lastRightHandLandmarks2D = results.rightHandLandmarks;
       }
       
-      // Apply Rigs
-      if (rigs.pose) this.applyPoseRig(rigs.pose);
+      // XR Face Mask is a head-only compositor. Keep expressions/head pose, but
+      // do not let body, hand, or root tracking bend the mask's neutral base.
+      if (!this.faceMaskMode && rigs.pose) this.applyPoseRig(rigs.pose);
       if (rigs.face) this.applyFaceRig(rigs.face);
-      if (rigs.rightHand) this.applyHandRig(rigs.rightHand, 'Right');
-      if (rigs.leftHand) this.applyHandRig(rigs.leftHand, 'Left');
+      if (!this.faceMaskMode && rigs.rightHand) this.applyHandRig(rigs.rightHand, 'Right');
+      if (!this.faceMaskMode && rigs.leftHand) this.applyHandRig(rigs.leftHand, 'Left');
   }
 
   setVRM(vrm: VRM | null) {
+    const nextVrm = vrm ?? undefined;
+    if (this.faceMaskMode && this.vrm && this.vrm !== nextVrm) {
+      this.restoreFaceMaskBaseline();
+      this.restoreFaceMaskVisibility();
+      this.exitFaceMaskPoseIsolation();
+    }
+
     this.vrm = vrm ?? undefined;
     this.targetRootPosition = null;
     this.calibrationOffset.set(0, 0, 0);
@@ -383,6 +397,10 @@ export class MotionCaptureManager {
     if (!vrm) {
       this.baseHipsPosition.set(0, 1.0, 0);
       this.currentRootPosition.copy(this.baseHipsPosition);
+      this.faceMaskPoseSnapshot = null;
+      this.faceMaskModeBeforeIsolation = null;
+      this.hasFaceMaskRootSnapshot = false;
+      this.faceMaskSavedTargetRootPosition = null;
       this.updateAvailableBlendshapes();
       return;
     }
@@ -396,6 +414,7 @@ export class MotionCaptureManager {
     this.currentRootPosition.copy(this.baseHipsPosition);
     this.updateAvailableBlendshapes();
     if (this.faceMaskMode) {
+      this.enterFaceMaskPoseIsolation();
       this.captureFaceMaskBaseline();
     }
   }
@@ -405,7 +424,71 @@ export class MotionCaptureManager {
       console.log('[MotionCaptureManager] Set mode:', mode);
   }
 
+  private enterFaceMaskPoseIsolation() {
+      if (!this.vrm?.humanoid || this.faceMaskPoseSnapshot) return;
+
+      this.faceMaskPoseSnapshot = this.vrm.humanoid.getNormalizedPose();
+      this.faceMaskModeBeforeIsolation = this.mode;
+      this.faceMaskSavedBaseHipsPosition.copy(this.baseHipsPosition);
+      this.faceMaskSavedCurrentRootPosition.copy(this.currentRootPosition);
+      this.faceMaskSavedTargetRootPosition = this.targetRootPosition?.clone() ?? null;
+      this.hasFaceMaskRootSnapshot = true;
+      this.mode = 'face';
+
+      this.targetBoneRotations.clear();
+      this.boneFilters.clear();
+      this.targetRootPosition = null;
+      this.rootPositionFilter = new OneEuroFilterVec3(SMOOTHING.MIN_CUTOFF, SMOOTHING.BETA);
+
+      this.vrm.humanoid.resetNormalizedPose();
+      const hips = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Hips);
+      if (hips) {
+          this.baseHipsPosition.copy(hips.position);
+          this.currentRootPosition.copy(hips.position);
+      } else {
+          this.baseHipsPosition.set(0, 1.0, 0);
+          this.currentRootPosition.copy(this.baseHipsPosition);
+      }
+
+      this.vrm.humanoid.update();
+      this.vrm.update(0);
+      this.vrm.scene.updateMatrixWorld(true);
+  }
+
+  private exitFaceMaskPoseIsolation() {
+      if (this.hasFaceMaskRootSnapshot) {
+          this.baseHipsPosition.copy(this.faceMaskSavedBaseHipsPosition);
+          this.currentRootPosition.copy(this.faceMaskSavedCurrentRootPosition);
+          this.targetRootPosition = this.faceMaskSavedTargetRootPosition?.clone() ?? null;
+          this.faceMaskSavedTargetRootPosition = null;
+          this.hasFaceMaskRootSnapshot = false;
+      }
+
+      if (!this.vrm?.humanoid || !this.faceMaskPoseSnapshot) {
+          this.faceMaskPoseSnapshot = null;
+          this.faceMaskModeBeforeIsolation = null;
+          return;
+      }
+
+      this.targetBoneRotations.clear();
+      this.boneFilters.clear();
+      this.vrm.humanoid.resetNormalizedPose();
+      this.vrm.humanoid.setNormalizedPose(this.faceMaskPoseSnapshot);
+      this.vrm.humanoid.update();
+      this.vrm.update(0);
+      this.vrm.scene.updateMatrixWorld(true);
+      if (this.faceMaskModeBeforeIsolation) {
+          this.mode = this.faceMaskModeBeforeIsolation;
+      }
+      this.faceMaskPoseSnapshot = null;
+      this.faceMaskModeBeforeIsolation = null;
+  }
+
   setFaceMaskMode(enabled: boolean) {
+      if (enabled === this.faceMaskMode && enabled) {
+          return;
+      }
+
       this.faceMaskMode = enabled;
       this.hasFaceMaskTarget = false;
       this.lastFaceMaskAt = null;
@@ -416,11 +499,13 @@ export class MotionCaptureManager {
           this.restoreFaceMaskVisibility();
           this.disposeFaceMaskVideoBackdrop();
           this.disposeFaceMaskDebugOverlay();
+          this.exitFaceMaskPoseIsolation();
           return;
       }
 
       if (!this.vrm) return;
 
+      this.enterFaceMaskPoseIsolation();
       this.captureFaceMaskBaseline();
       this.ensureFaceMaskVideoBackdrop();
       this.applyFaceMaskVisibility();
@@ -624,10 +709,12 @@ export class MotionCaptureManager {
   }
 
   applyExternalBoneRotation(boneName: VRMHumanBoneName, rotation: THREE.Quaternion) {
+      if (this.faceMaskMode && boneName !== VRMHumanBoneName.Head) return;
       this.targetBoneRotations.set(boneName, rotation);
   }
 
   applyExternalRootPosition(position: THREE.Vector3) {
+      if (this.faceMaskMode) return;
       if (this.shouldCalibrateVMC) {
           this.calibrationOffset.copy(position).negate(); 
           console.log('[MotionCaptureManager] VMC Calibrated. Offset:', this.calibrationOffset);
@@ -795,6 +882,10 @@ export class MotionCaptureManager {
 
       // 2. Smooth Bone Rotations
       this.targetBoneRotations.forEach((targetQ, boneName) => {
+          if (this.faceMaskMode && boneName.toLowerCase() !== 'head') {
+              return;
+          }
+
           if (this.mode === 'face' && !isVMC) {
               const allowedBones = [
                   'head', 'neck',
@@ -870,7 +961,7 @@ export class MotionCaptureManager {
       });
 
       // 3. Smooth Root Position
-      if ((this.mode === 'full' && this.targetRootPosition) || (isVMC && this.targetRootPosition)) {
+      if (!this.faceMaskMode && ((this.mode === 'full' && this.targetRootPosition) || (isVMC && this.targetRootPosition))) {
           const hips = this.vrm.humanoid.getNormalizedBoneNode('hips');
           if (hips) {
              // For VMC: Use interpolated position from buffer for timing jitter reduction
@@ -1508,6 +1599,7 @@ export class MotionCaptureManager {
   }
 
   private applyPoseRig(rig: any) {
+    if (this.faceMaskMode) return;
     if (!this.vrm?.humanoid) return;
     const getVRMBoneName = (key: string): string => {
         if (key === 'Hips') return 'hips';
@@ -1600,7 +1692,7 @@ export class MotionCaptureManager {
                 // Only apply in face/upper body mode (not full body where pose rig handles torso)
                 // We only apply this if these bones weren't already set by the pose rig, 
                 // or if we want to prioritize head-driven torso motion (smoother for seated mocap)
-                if (this.mode === 'face') {
+                if (this.mode === 'face' && !this.faceMaskMode) {
                     const identity = new THREE.Quaternion();
                     
                     // Neck follows head most closely
@@ -1679,6 +1771,7 @@ export class MotionCaptureManager {
   }
 
   private applyHandRig(rig: Record<string, { x: number, y: number, z: number }>, side: 'Left' | 'Right') {
+      if (this.faceMaskMode) return;
       if (!this.vrm?.humanoid) return;
       const isLeft = side === 'Left';
       const boneMap: Record<string, VRMHumanBoneName> = {
