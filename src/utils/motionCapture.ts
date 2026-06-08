@@ -12,6 +12,7 @@ import { vmcFrameBuffer } from './vmcInput';
 import { voiceLipSync } from './voiceLipSync';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
 import { getObjectBounds } from '../three/utils/boundsUtils';
+import { FaceMaskCompositor, type FaceMaskDebugFrame } from './faceMaskCompositor';
 
 // ======================
 // Configuration Constants
@@ -151,16 +152,6 @@ interface FaceMaskMaterialRecord {
     clipShadows: boolean;
 }
 
-interface FaceMaskDebugFrame {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-    depth: number;
-    frustumWidth: number;
-    frustumHeight: number;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HandLandmarks2D = any; 
 
@@ -248,7 +239,6 @@ export class MotionCaptureManager {
   private faceMaskSavedCurrentRootPosition = new THREE.Vector3(0, 1.0, 0);
   private faceMaskSavedTargetRootPosition: THREE.Vector3 | null = null;
   private hasFaceMaskRootSnapshot = false;
-  private faceMaskMirrorX = true;
   private faceMaskDepth = 1.25;
   private faceMaskBaseAvatarHeight = 1.65;
   private faceMaskHeadCenterOffset = 0.17;
@@ -261,9 +251,15 @@ export class MotionCaptureManager {
   private hasFaceMaskNeutralHead = false;
   private hasFaceMaskNeutralNeck = false;
   private faceMaskHeadRotation = new THREE.Quaternion();
+  private currentFaceMaskHeadRotation = new THREE.Quaternion();
   private faceMaskHasHeadRotation = false;
+  private faceMaskHasCurrentHeadRotation = false;
   private faceMaskTargetHeadWorld = new THREE.Vector3();
   private currentFaceMaskHeadWorld = new THREE.Vector3();
+  private faceMaskTargetDepth = 1.25;
+  private currentFaceMaskDepth = 1.25;
+  private faceMaskReferenceFaceWidth = 0;
+  private faceMaskLastFaceWidth = 0;
   private faceMaskTargetScale = 1;
   private currentFaceMaskScale = 1;
   private hasFaceMaskTarget = false;
@@ -272,17 +268,10 @@ export class MotionCaptureManager {
   private faceMaskMaterialRecords: FaceMaskMaterialRecord[] = [];
   private faceMaskClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private originalRendererLocalClippingEnabled: boolean | null = null;
-  private faceMaskVideoPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
-  private faceMaskVideoTexture: THREE.VideoTexture | null = null;
-  private faceMaskVideoWidth = 0;
-  private faceMaskVideoHeight = 0;
   private faceMaskAdjustments: FaceMaskAdjustments = { ...DEFAULT_FACE_MASK_ADJUSTMENTS };
   private faceMaskDebugEnabled = false;
-  private faceMaskDebugGroup: THREE.Group | null = null;
-  private faceMaskDebugAnchor: THREE.Mesh | null = null;
-  private faceMaskDebugBox: THREE.LineLoop | null = null;
-  private faceMaskDebugCropLine: THREE.Line | null = null;
   private faceMaskDebugFrame: FaceMaskDebugFrame | null = null;
+  private faceMaskCompositor: FaceMaskCompositor;
 
   // Hand Tracking State
   private lastLeftHandLandmarks2D: HandLandmarks2D = null;
@@ -305,6 +294,7 @@ export class MotionCaptureManager {
 
   constructor(videoElement: HTMLVideoElement) {
     this.videoElement = videoElement;
+    this.faceMaskCompositor = new FaceMaskCompositor(videoElement);
     this.initHolistic();
   }
 
@@ -423,6 +413,11 @@ export class MotionCaptureManager {
     if (this.faceMaskMode) {
       this.enterFaceMaskPoseIsolation();
       this.captureFaceMaskBaseline();
+      this.ensureFaceMaskVideoBackdrop();
+      this.applyFaceMaskVisibility();
+      if (this.faceMaskDebugEnabled) {
+          this.ensureFaceMaskDebugOverlay();
+      }
     }
   }
 
@@ -457,7 +452,13 @@ export class MotionCaptureManager {
       this.targetRootPosition = null;
       this.rootPositionFilter = new OneEuroFilterVec3(SMOOTHING.MIN_CUTOFF, SMOOTHING.BETA);
       this.faceMaskHeadRotation.identity();
+      this.currentFaceMaskHeadRotation.identity();
       this.faceMaskHasHeadRotation = false;
+      this.faceMaskHasCurrentHeadRotation = false;
+      this.faceMaskReferenceFaceWidth = 0;
+      this.faceMaskLastFaceWidth = 0;
+      this.faceMaskTargetDepth = this.faceMaskDepth;
+      this.currentFaceMaskDepth = this.faceMaskDepth;
 
       const neutralRootEuler = new THREE.Euler().setFromQuaternion(this.vrm.scene.quaternion, 'YXZ');
       neutralRootEuler.x = 0;
@@ -504,7 +505,11 @@ export class MotionCaptureManager {
       this.hasFaceMaskNeutralHead = false;
       this.hasFaceMaskNeutralNeck = false;
       this.faceMaskHeadRotation.identity();
+      this.currentFaceMaskHeadRotation.identity();
       this.faceMaskHasHeadRotation = false;
+      this.faceMaskHasCurrentHeadRotation = false;
+      this.faceMaskReferenceFaceWidth = 0;
+      this.faceMaskLastFaceWidth = 0;
       if (this.faceMaskModeBeforeIsolation) {
           this.mode = this.faceMaskModeBeforeIsolation;
       }
@@ -522,6 +527,8 @@ export class MotionCaptureManager {
       this.lastFaceMaskAt = null;
       this.faceMaskDebugFrame = null;
       this.currentFaceMaskHeadWorld.set(0, 0, 0);
+      this.faceMaskTargetDepth = this.faceMaskDepth;
+      this.currentFaceMaskDepth = this.faceMaskDepth;
 
       if (!enabled) {
           this.restoreFaceMaskBaseline();
@@ -576,8 +583,12 @@ export class MotionCaptureManager {
       if (!this.faceMaskMode || !this.hasFaceMaskTarget) return null;
 
       this.calibrateFace();
+      if (this.faceMaskLastFaceWidth > 0) {
+          this.faceMaskReferenceFaceWidth = this.faceMaskLastFaceWidth;
+      }
       this.currentFaceMaskHeadWorld.copy(this.faceMaskTargetHeadWorld);
       this.currentFaceMaskScale = this.faceMaskTargetScale;
+      this.currentFaceMaskDepth = this.faceMaskTargetDepth;
 
       return this.getFaceMaskAdjustments();
   }
@@ -1089,12 +1100,12 @@ export class MotionCaptureManager {
       }
   }
 
-  private applyFaceMaskNeutralPose() {
+  private applyFaceMaskNeutralPose(applyHeadRotation = true) {
       if (!this.vrm?.humanoid) return;
       this.vrm.humanoid.resetNormalizedPose();
       const head = this.vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head);
-      if (head && this.faceMaskHasHeadRotation) {
-          head.quaternion.copy(this.faceMaskHeadRotation);
+      if (applyHeadRotation && head && this.faceMaskHasCurrentHeadRotation) {
+          head.quaternion.copy(this.currentFaceMaskHeadRotation);
       }
       this.vrm.humanoid.update();
   }
@@ -1113,7 +1124,7 @@ export class MotionCaptureManager {
       this.currentFaceMaskScale = 1;
       this.faceMaskTargetScale = 1;
 
-      this.applyFaceMaskNeutralPose();
+      this.applyFaceMaskNeutralPose(false);
       this.captureFaceMaskNeutralAnchors();
       this.vrm.scene.updateWorldMatrix(true, true);
       const bounds = getObjectBounds(this.vrm.scene);
@@ -1126,6 +1137,10 @@ export class MotionCaptureManager {
           const headWorld = this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, new THREE.Vector3());
           this.faceMaskDepth = THREE.MathUtils.clamp(camera.position.distanceTo(headWorld), 0.65, 2.4);
       }
+      this.faceMaskTargetDepth = this.faceMaskDepth;
+      this.currentFaceMaskDepth = this.faceMaskDepth;
+      this.faceMaskReferenceFaceWidth = 0;
+      this.faceMaskLastFaceWidth = 0;
   }
 
   private restoreFaceMaskBaseline() {
@@ -1216,234 +1231,39 @@ export class MotionCaptureManager {
   }
 
   private ensureFaceMaskVideoBackdrop() {
-      if (this.faceMaskVideoPlane) return;
-      const scene = sceneManager.getScene();
-      if (!scene || !this.videoElement) return;
-
-      this.faceMaskVideoTexture = new THREE.VideoTexture(this.videoElement);
-      this.faceMaskVideoTexture.colorSpace = THREE.SRGBColorSpace;
-      this.faceMaskVideoTexture.minFilter = THREE.LinearFilter;
-      this.faceMaskVideoTexture.magFilter = THREE.LinearFilter;
-      this.faceMaskVideoTexture.generateMipmaps = false;
-
-      const geometry = new THREE.PlaneGeometry(1, 1);
-      const material = new THREE.MeshBasicMaterial({
-          map: this.faceMaskVideoTexture,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-          side: THREE.DoubleSide,
-      });
-
-      this.faceMaskVideoPlane = new THREE.Mesh(geometry, material);
-      this.faceMaskVideoPlane.name = 'XR_Face_Mask_Webcam_Backdrop';
-      this.faceMaskVideoPlane.renderOrder = -10000;
-      scene.add(this.faceMaskVideoPlane);
+      this.faceMaskCompositor.ensureBackdrop();
       this.updateFaceMaskVideoBackdrop();
   }
 
   private disposeFaceMaskVideoBackdrop() {
-      if (this.faceMaskVideoPlane) {
-          this.faceMaskVideoPlane.removeFromParent();
-          this.faceMaskVideoPlane.geometry.dispose();
-          this.faceMaskVideoPlane.material.dispose();
-          this.faceMaskVideoPlane = null;
-      }
-      this.faceMaskVideoTexture?.dispose();
-      this.faceMaskVideoTexture = null;
-      this.faceMaskVideoWidth = 0;
-      this.faceMaskVideoHeight = 0;
-  }
-
-  private getFaceMaskVideoCoverTransform(planeAspect: number) {
-      const videoWidth = this.videoElement.videoWidth || 0;
-      const videoHeight = this.videoElement.videoHeight || 0;
-      if (videoWidth <= 0 || videoHeight <= 0 || planeAspect <= 0) {
-          return { repeatX: 1, repeatY: 1, offsetX: 0, offsetY: 0 };
-      }
-
-      const videoAspect = videoWidth / videoHeight;
-      let repeatX = 1;
-      let repeatY = 1;
-      let offsetX = 0;
-      let offsetY = 0;
-
-      if (videoAspect > planeAspect) {
-          repeatX = planeAspect / videoAspect;
-          offsetX = (1 - repeatX) * 0.5;
-      } else {
-          repeatY = videoAspect / planeAspect;
-          offsetY = (1 - repeatY) * 0.5;
-      }
-
-      return { repeatX, repeatY, offsetX, offsetY };
+      this.faceMaskCompositor.disposeBackdrop();
   }
 
   private mapFaceMaskVideoPoint(x: number, y: number, planeAspect: number) {
-      const { repeatX, repeatY, offsetX, offsetY } = this.getFaceMaskVideoCoverTransform(planeAspect);
-      const coveredX = THREE.MathUtils.clamp((x - offsetX) / repeatX, 0, 1);
-      const coveredY = THREE.MathUtils.clamp((y - offsetY) / repeatY, 0, 1);
-      return {
-          x: this.faceMaskMirrorX ? 1 - coveredX : coveredX,
-          y: coveredY,
-      };
-  }
-
-  private updateFaceMaskVideoCover(planeWidth: number, planeHeight: number) {
-      if (!this.faceMaskVideoTexture || planeWidth <= 0 || planeHeight <= 0) return;
-
-      const videoWidth = this.videoElement.videoWidth || 0;
-      const videoHeight = this.videoElement.videoHeight || 0;
-      if (videoWidth <= 0 || videoHeight <= 0) return;
-
-      const { repeatX, repeatY, offsetX, offsetY } = this.getFaceMaskVideoCoverTransform(planeWidth / planeHeight);
-
-      this.faceMaskVideoTexture.repeat.set(repeatX, repeatY);
-      this.faceMaskVideoTexture.offset.set(offsetX, offsetY);
-
-      if (videoWidth !== this.faceMaskVideoWidth || videoHeight !== this.faceMaskVideoHeight) {
-          this.faceMaskVideoWidth = videoWidth;
-          this.faceMaskVideoHeight = videoHeight;
-          this.faceMaskVideoTexture.needsUpdate = true;
-      }
+      return this.faceMaskCompositor.mapVideoPoint(x, y, planeAspect);
   }
 
   private updateFaceMaskVideoBackdrop() {
-      if (!this.faceMaskVideoPlane) return;
-      const camera = sceneManager.getCamera();
-      if (!camera) return;
-
-      const distance = Math.max(
-          this.faceMaskDepth + this.faceMaskAdjustments.depth + Math.max(0, this.faceMaskAdjustments.backset) + 0.75,
-          2.5
-      );
-      const fov = THREE.MathUtils.degToRad(camera.fov);
-      const height = 2 * Math.tan(fov / 2) * distance;
-      const width = height * camera.aspect;
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-
-      this.faceMaskVideoPlane.position.copy(camera.position).addScaledVector(forward, distance);
-      this.faceMaskVideoPlane.quaternion.copy(camera.quaternion);
-      this.faceMaskVideoPlane.scale.set(this.faceMaskMirrorX ? -width : width, height, 1);
-      this.updateFaceMaskVideoCover(width, height);
+      const maskDepth = this.hasFaceMaskTarget ? this.currentFaceMaskDepth : this.faceMaskDepth + this.faceMaskAdjustments.depth;
+      this.faceMaskCompositor.updateBackdrop(maskDepth, this.faceMaskAdjustments.backset);
   }
 
   private ensureFaceMaskDebugOverlay() {
-      if (this.faceMaskDebugGroup) return;
-      const scene = sceneManager.getScene();
-      if (!scene) return;
-
-      const group = new THREE.Group();
-      group.name = 'XR_Face_Mask_Debug_Overlay';
-      group.renderOrder = 20000;
-
-      const anchorMaterial = new THREE.MeshBasicMaterial({
-          color: 0x00ffd6,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-      });
-      this.faceMaskDebugAnchor = new THREE.Mesh(new THREE.SphereGeometry(0.025, 16, 8), anchorMaterial);
-      this.faceMaskDebugAnchor.name = 'XR_Face_Mask_Debug_Anchor';
-      this.faceMaskDebugAnchor.renderOrder = 20001;
-      group.add(this.faceMaskDebugAnchor);
-
-      const boxMaterial = new THREE.LineBasicMaterial({
-          color: 0x00ffd6,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-      });
-      this.faceMaskDebugBox = new THREE.LineLoop(new THREE.BufferGeometry(), boxMaterial);
-      this.faceMaskDebugBox.name = 'XR_Face_Mask_Debug_Face_Bounds';
-      this.faceMaskDebugBox.renderOrder = 20001;
-      group.add(this.faceMaskDebugBox);
-
-      const cropMaterial = new THREE.LineBasicMaterial({
-          color: 0xffd166,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-      });
-      this.faceMaskDebugCropLine = new THREE.Line(new THREE.BufferGeometry(), cropMaterial);
-      this.faceMaskDebugCropLine.name = 'XR_Face_Mask_Debug_Neck_Crop';
-      this.faceMaskDebugCropLine.renderOrder = 20002;
-      group.add(this.faceMaskDebugCropLine);
-
-      this.faceMaskDebugGroup = group;
-      scene.add(group);
+      this.faceMaskCompositor.ensureDebugOverlay();
   }
 
   private disposeFaceMaskDebugOverlay() {
-      if (!this.faceMaskDebugGroup) return;
-      this.faceMaskDebugGroup.traverse((object) => {
-          const mesh = object as THREE.Mesh | THREE.Line;
-          const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
-          const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-          geometry?.dispose();
-          if (Array.isArray(material)) {
-              material.forEach((item) => item.dispose());
-          } else {
-              material?.dispose();
-          }
-      });
-      this.faceMaskDebugGroup.removeFromParent();
-      this.faceMaskDebugGroup = null;
-      this.faceMaskDebugAnchor = null;
-      this.faceMaskDebugBox = null;
-      this.faceMaskDebugCropLine = null;
-  }
-
-  private projectFaceMaskDebugPoint(
-      camera: THREE.PerspectiveCamera,
-      x: number,
-      y: number,
-      depth: number,
-      frustumWidth: number,
-      frustumHeight: number
-  ) {
-      const ndcX = (x * 2) - 1;
-      const ndcY = 1 - (y * 2);
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-
-      return new THREE.Vector3()
-          .copy(camera.position)
-          .addScaledVector(forward, depth)
-          .addScaledVector(right, ndcX * frustumWidth * 0.5)
-          .addScaledVector(up, ndcY * frustumHeight * 0.5);
+      this.faceMaskCompositor.disposeDebugOverlay();
   }
 
   private updateFaceMaskDebugOverlay() {
       if (!this.faceMaskDebugEnabled || !this.faceMaskDebugFrame) return;
-      this.ensureFaceMaskDebugOverlay();
-      if (!this.faceMaskDebugGroup || !this.faceMaskDebugAnchor || !this.faceMaskDebugBox || !this.faceMaskDebugCropLine) return;
-
-      const camera = sceneManager.getCamera();
-      if (!camera) return;
-
-      const frame = this.faceMaskDebugFrame;
-      this.faceMaskDebugAnchor.position.copy(this.faceMaskTargetHeadWorld);
-
-      const corners = [
-          this.projectFaceMaskDebugPoint(camera, frame.minX, frame.minY, frame.depth, frame.frustumWidth, frame.frustumHeight),
-          this.projectFaceMaskDebugPoint(camera, frame.maxX, frame.minY, frame.depth, frame.frustumWidth, frame.frustumHeight),
-          this.projectFaceMaskDebugPoint(camera, frame.maxX, frame.maxY, frame.depth, frame.frustumWidth, frame.frustumHeight),
-          this.projectFaceMaskDebugPoint(camera, frame.minX, frame.maxY, frame.depth, frame.frustumWidth, frame.frustumHeight),
-      ];
-      this.faceMaskDebugBox.geometry.dispose();
-      this.faceMaskDebugBox.geometry = new THREE.BufferGeometry().setFromPoints(corners);
-
-      const lineWidth = Math.max(0.35, frame.frustumWidth * 0.18);
-      const cropY = -this.faceMaskClipPlane.constant;
-      const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-      const cropLeft = this.currentFaceMaskHeadWorld.clone().addScaledVector(cameraRight, -lineWidth);
-      const cropRight = this.currentFaceMaskHeadWorld.clone().addScaledVector(cameraRight, lineWidth);
-      cropLeft.y = cropY;
-      cropRight.y = cropY;
-      this.faceMaskDebugCropLine.geometry.dispose();
-      this.faceMaskDebugCropLine.geometry = new THREE.BufferGeometry().setFromPoints([cropLeft, cropRight]);
+      this.faceMaskCompositor.updateDebugOverlay(
+          this.faceMaskDebugFrame,
+          this.faceMaskTargetHeadWorld,
+          this.currentFaceMaskHeadWorld,
+          this.faceMaskClipPlane,
+      );
   }
 
   private updateFaceMaskClipPlane() {
@@ -1470,38 +1290,33 @@ export class MotionCaptureManager {
       const camera = sceneManager.getCamera();
       if (!camera) return;
 
-      let minX = 1;
-      let maxX = 0;
-      let minY = 1;
-      let maxY = 0;
+      const xs: number[] = [];
+      const ys: number[] = [];
       landmarks.forEach((landmark) => {
-          minX = Math.min(minX, landmark.x);
-          maxX = Math.max(maxX, landmark.x);
-          minY = Math.min(minY, landmark.y);
-          maxY = Math.max(maxY, landmark.y);
+          if (
+              landmark &&
+              Number.isFinite(landmark.x) &&
+              Number.isFinite(landmark.y) &&
+              landmark.x >= -0.25 &&
+              landmark.x <= 1.25 &&
+              landmark.y >= -0.25 &&
+              landmark.y <= 1.25
+          ) {
+              xs.push(landmark.x);
+              ys.push(landmark.y);
+          }
       });
+      if (xs.length < 8 || ys.length < 8) return;
 
-      const depth = THREE.MathUtils.clamp(this.faceMaskDepth + this.faceMaskAdjustments.depth, 0.45, 4.0);
+      xs.sort((a, b) => a - b);
+      ys.sort((a, b) => a - b);
+      const pickQuantile = (values: number[], q: number) => values[Math.min(values.length - 1, Math.max(0, Math.round((values.length - 1) * q)))] ?? 0;
+      const minX = pickQuantile(xs, 0.02);
+      const maxX = pickQuantile(xs, 0.98);
+      const minY = pickQuantile(ys, 0.02);
+      const maxY = pickQuantile(ys, 0.98);
+
       const fov = THREE.MathUtils.degToRad(camera.fov);
-      const frustumHeight = 2 * Math.tan(fov / 2) * depth;
-      const frustumWidth = frustumHeight * camera.aspect;
-      const nose = landmarks[1] ?? landmarks[4] ?? landmarks[Math.floor(landmarks.length / 2)];
-      const centerX = nose?.x ?? ((minX + maxX) * 0.5);
-      const centerY = ((minY + maxY) * 0.5) - ((maxY - minY) * 0.04);
-      const anchor = this.mapFaceMaskVideoPoint(centerX, centerY, camera.aspect);
-      const ndcX = (anchor.x * 2) - 1;
-      const ndcY = 1 - (anchor.y * 2);
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-
-      this.faceMaskTargetHeadWorld
-          .copy(camera.position)
-          .addScaledVector(forward, depth)
-          .addScaledVector(right, (ndcX * frustumWidth * 0.5) + this.faceMaskAdjustments.offsetX)
-          .addScaledVector(up, (ndcY * frustumHeight * 0.5) + this.faceMaskAdjustments.offsetY)
-          .addScaledVector(forward, this.faceMaskAdjustments.backset);
-
       const debugCorners = [
           this.mapFaceMaskVideoPoint(minX, minY, camera.aspect),
           this.mapFaceMaskVideoPoint(maxX, minY, camera.aspect),
@@ -1513,6 +1328,40 @@ export class MotionCaptureManager {
       const debugMinY = Math.min(...debugCorners.map((point) => point.y));
       const debugMaxY = Math.max(...debugCorners.map((point) => point.y));
       const faceWidth = Math.max(0.04, debugMaxX - debugMinX);
+      this.faceMaskLastFaceWidth = faceWidth;
+      if (this.faceMaskReferenceFaceWidth <= 0) {
+          this.faceMaskReferenceFaceWidth = faceWidth;
+      }
+
+      const relativeDepth = THREE.MathUtils.clamp(this.faceMaskReferenceFaceWidth / faceWidth, 0.58, 1.85);
+      const trackedDepth = THREE.MathUtils.clamp((this.faceMaskDepth * relativeDepth) + this.faceMaskAdjustments.depth, 0.45, 4.2);
+      this.faceMaskTargetDepth = trackedDepth;
+
+      const frustumHeight = 2 * Math.tan(fov / 2) * trackedDepth;
+      const frustumWidth = frustumHeight * camera.aspect;
+      const nose = landmarks[1] ?? landmarks[4] ?? landmarks[Math.floor(landmarks.length / 2)];
+      const leftEyeOuter = landmarks[33] ?? landmarks[130];
+      const rightEyeOuter = landmarks[263] ?? landmarks[359];
+      const eyeCenterX = leftEyeOuter && rightEyeOuter ? (leftEyeOuter.x + rightEyeOuter.x) * 0.5 : (minX + maxX) * 0.5;
+      const eyeCenterY = leftEyeOuter && rightEyeOuter ? (leftEyeOuter.y + rightEyeOuter.y) * 0.5 : minY + ((maxY - minY) * 0.38);
+      const bboxCenterX = (minX + maxX) * 0.5;
+      const bboxCenterY = ((minY + maxY) * 0.5) - ((maxY - minY) * 0.04);
+      const centerX = (bboxCenterX * 0.3) + (eyeCenterX * 0.35) + ((nose?.x ?? bboxCenterX) * 0.35);
+      const centerY = (bboxCenterY * 0.58) + (eyeCenterY * 0.22) + ((nose?.y ?? bboxCenterY) * 0.2);
+      const anchor = this.mapFaceMaskVideoPoint(centerX, centerY, camera.aspect);
+      const ndcX = (anchor.x * 2) - 1;
+      const ndcY = 1 - (anchor.y * 2);
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+
+      this.faceMaskTargetHeadWorld
+          .copy(camera.position)
+          .addScaledVector(forward, trackedDepth)
+          .addScaledVector(right, (ndcX * frustumWidth * 0.5) + this.faceMaskAdjustments.offsetX)
+          .addScaledVector(up, (ndcY * frustumHeight * 0.5) + this.faceMaskAdjustments.offsetY)
+          .addScaledVector(forward, this.faceMaskAdjustments.backset);
+
       const faceWorldWidth = faceWidth * frustumWidth;
       const approximateHeadWidth = Math.max(0.08, this.faceMaskBaseAvatarHeight * 0.16);
       this.faceMaskTargetScale = THREE.MathUtils.clamp(((faceWorldWidth * 1.28) / approximateHeadWidth) * this.faceMaskAdjustments.scale, 0.18, 4.2);
@@ -1521,7 +1370,7 @@ export class MotionCaptureManager {
           maxX: debugMaxX,
           minY: debugMinY,
           maxY: debugMaxY,
-          depth,
+          depth: trackedDepth,
           frustumWidth,
           frustumHeight,
       };
@@ -1539,26 +1388,46 @@ export class MotionCaptureManager {
   private applyFaceMaskFrame(delta: number) {
       if (!this.faceMaskMode || !this.vrm?.humanoid || !this.hasFaceMaskTarget) return;
       if (!this.hasFaceMaskNeutralHead) {
-          this.applyFaceMaskNeutralPose();
+          this.applyFaceMaskNeutralPose(false);
           this.captureFaceMaskNeutralAnchors();
       }
       if (!this.hasFaceMaskNeutralHead) return;
 
+      const clampedDelta = Math.min(0.05, Math.max(0.001, delta));
+      const targetDistance = this.currentFaceMaskHeadWorld.distanceTo(this.faceMaskTargetHeadWorld);
+      const positionRate = targetDistance > 0.18 ? 24 : targetDistance > 0.045 ? 16 : 7;
+      const scaleDelta = Math.abs(this.faceMaskTargetScale - this.currentFaceMaskScale);
+      const scaleRate = scaleDelta > 0.18 ? 12 : 5;
+      const depthRate = Math.abs(this.faceMaskTargetDepth - this.currentFaceMaskDepth) > 0.18 ? 12 : 5;
+      const rotationRate = 14;
+      const positionSmoothing = 1 - Math.exp(-positionRate * clampedDelta);
+      const scaleSmoothing = 1 - Math.exp(-scaleRate * clampedDelta);
+      const depthSmoothing = 1 - Math.exp(-depthRate * clampedDelta);
+      const rotationSmoothing = 1 - Math.exp(-rotationRate * clampedDelta);
+
+      if (this.faceMaskHasHeadRotation) {
+          if (!this.faceMaskHasCurrentHeadRotation) {
+              this.currentFaceMaskHeadRotation.copy(this.faceMaskHeadRotation);
+              this.faceMaskHasCurrentHeadRotation = true;
+          } else {
+              this.currentFaceMaskHeadRotation.slerp(this.faceMaskHeadRotation, rotationSmoothing);
+          }
+      }
+
+      this.currentFaceMaskDepth = THREE.MathUtils.lerp(this.currentFaceMaskDepth, this.faceMaskTargetDepth, depthSmoothing);
+      this.currentFaceMaskScale = THREE.MathUtils.lerp(this.currentFaceMaskScale, this.faceMaskTargetScale, scaleSmoothing);
+      this.currentFaceMaskHeadWorld.lerp(this.faceMaskTargetHeadWorld, positionSmoothing);
       this.updateFaceMaskVideoBackdrop();
 
-      const smoothing = 1 - Math.exp(-12 * Math.max(0.001, delta));
-      this.currentFaceMaskScale = THREE.MathUtils.lerp(this.currentFaceMaskScale, this.faceMaskTargetScale, smoothing);
-      this.currentFaceMaskHeadWorld.lerp(this.faceMaskTargetHeadWorld, smoothing);
-
       const targetScale = this.faceMaskOriginalScale.clone().multiplyScalar(this.currentFaceMaskScale);
-      this.vrm.scene.scale.lerp(targetScale, smoothing);
+      this.vrm.scene.scale.lerp(targetScale, scaleSmoothing);
       this.applyFaceMaskNeutralPose();
       this.vrm.scene.updateWorldMatrix(true, true);
 
       const neutralHeadWorld = this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, new THREE.Vector3());
       neutralHeadWorld.y += (this.faceMaskHeadCenterOffset + this.faceMaskAdjustments.lift) * this.currentFaceMaskScale;
       const offset = this.currentFaceMaskHeadWorld.clone().sub(neutralHeadWorld);
-      this.vrm.scene.position.add(offset.multiplyScalar(smoothing));
+      this.vrm.scene.position.add(offset.multiplyScalar(positionSmoothing));
       this.applyFaceMaskNeutralPose();
       this.vrm.scene.updateMatrixWorld(true);
       this.updateFaceMaskClipPlane();
