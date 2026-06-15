@@ -1,4 +1,8 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
+
+interface DiscordCreateMessageResponse {
+  id: string;
+}
 
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
@@ -118,7 +122,7 @@ export const handler: Handler = async (event) => {
       return { statusCode: response.status, body: JSON.stringify({ error: 'Failed to post to Discord' }) };
     }
 
-    const discordMessage = await response.json();
+    const discordMessage = await response.json() as DiscordCreateMessageResponse;
 
     // Automatically add the initial fire reaction for upvoting
     const messageId = discordMessage.id;

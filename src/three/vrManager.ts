@@ -18,11 +18,21 @@ import { webXRManager } from '../utils/webXRManager';
 
 type XRControllerGroup = THREE.Group & {
   addEventListener(type: 'selectstart', listener: () => void): void;
+  addEventListener(type: 'connected', listener: (event: XRControllerConnectedEvent) => void): void;
+  addEventListener(type: 'disconnected', listener: () => void): void;
   removeEventListener(type: 'selectstart', listener: () => void): void;
+  removeEventListener(type: 'connected', listener: (event: XRControllerConnectedEvent) => void): void;
+  removeEventListener(type: 'disconnected', listener: () => void): void;
   userData: THREE.Object3D['userData'] & {
     vrSelectHandler?: () => void;
+    vrConnectedHandler?: (event: XRControllerConnectedEvent) => void;
+    vrDisconnectedHandler?: () => void;
+    vrHandedness?: VRControllerHandedness;
   };
 };
+
+type XRControllerConnectedEvent = { data?: XRInputSource };
+type VRControllerHandedness = 'left' | 'right';
 
 type XrFacialMaskRecord = {
   mesh: THREE.Mesh;
@@ -36,6 +46,9 @@ type PausedInputState = {
   voice: boolean;
   vmc: boolean;
   liveMode: boolean;
+  faceMask: boolean;
+  mocapMode: 'full' | 'face';
+  selectedDeviceId: string;
 } | null;
 
 /**
@@ -215,6 +228,9 @@ class VRManager {
       voice: voiceActive,
       vmc: vmcActive,
       liveMode: reactionStore.liveModeEnabled,
+      faceMask: mocapStore.faceMaskEnabled,
+      mocapMode: reactionStore.mocapMode,
+      selectedDeviceId: mocapStore.selectedDeviceId,
     };
 
     if (mocapStore.isRecording) {
@@ -251,9 +267,61 @@ class VRManager {
     }
   }
 
-  private restorePausedInputFlags() {
+  private async restorePausedInputFlags() {
     if (!this.pausedInputState) return;
-    if (this.pausedInputState.vmc) {
+    const pausedState = this.pausedInputState;
+    this.pausedInputState = null;
+    const mocapStore = useMocapStore.getState();
+    const reactionStore = useReactionStore.getState();
+
+    if (pausedState.liveMode) {
+      reactionStore.setLiveModeEnabled(true);
+    } else if (pausedState.camera) {
+      const manager = getMocapManager();
+      const vrm = avatarManager.getVRM();
+      if (manager && vrm) {
+        try {
+          reactionStore.setMocapMode(pausedState.mocapMode);
+          manager.setMode(pausedState.mocapMode);
+          manager.setVRM(vrm);
+          if (pausedState.faceMask) {
+            manager.setFaceMaskMode(true);
+          }
+          await manager.start(pausedState.selectedDeviceId || undefined);
+          mocapStore.setIsActive(true);
+          mocapStore.setIsStarting(false);
+          mocapStore.setFaceMaskEnabled(pausedState.faceMask);
+        } catch (error) {
+          console.error('[VRManager] Failed to restore camera mocap after VR:', error);
+          mocapStore.setIsActive(false);
+          mocapStore.setIsStarting(false);
+          mocapStore.setFaceMaskEnabled(false);
+          useToastStore.getState().addToast('VR ended, but camera mocap could not be restarted.', 'warning');
+        }
+      } else {
+        useToastStore.getState().addToast('VR ended, but camera mocap could not be restored without an avatar.', 'warning');
+      }
+    }
+
+    if (!pausedState.liveMode && pausedState.voice) {
+      const vrm = avatarManager.getVRM();
+      if (vrm) {
+        try {
+          voiceLipSync.setVRM(vrm);
+          voiceLipSync.setOnVolumeChange(mocapStore.setVoiceVolume);
+          voiceLipSync.setSensitivity(mocapStore.voiceSensitivity);
+          await voiceLipSync.start();
+          mocapStore.setIsVoiceLipSyncActive(true);
+        } catch (error) {
+          console.error('[VRManager] Failed to restore voice lip sync after VR:', error);
+          mocapStore.setIsVoiceLipSyncActive(false);
+          mocapStore.setVoiceVolume(0);
+          useToastStore.getState().addToast('VR ended, but voice lip sync could not be restarted.', 'warning');
+        }
+      }
+    }
+
+    if (pausedState.vmc) {
       const { vmcWebSocketUrl, setVmcEnabled } = useReactionStore.getState();
       setVmcEnabled(true);
       const manager = getMocapManager();
@@ -263,7 +331,6 @@ class VRManager {
         vmcInputManager.connect(vmcWebSocketUrl);
       }
     }
-    this.pausedInputState = null;
   }
 
   public async enterVR() {
@@ -345,7 +412,11 @@ class VRManager {
       
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
-      this.sessionEndHandler = () => this.onSessionEnded();
+      this.sessionEndHandler = () => {
+        void this.onSessionEnded().catch((error) => {
+          console.error('[VRManager] Session cleanup failed:', error);
+        });
+      };
       session.addEventListener('end', this.sessionEndHandler);
       this.tickDispose?.();
       this.tickDispose = sceneManager.registerTick(this.update, -90);
@@ -367,7 +438,7 @@ class VRManager {
       this.restoreRendererState();
       avatarManager.setManualPosing(false);
       avatarManager.setInteraction(false);
-      this.restorePausedInputFlags();
+      await this.restorePausedInputFlags();
       throw error;
     }
   }
@@ -379,6 +450,10 @@ class VRManager {
       const xrCtrl = ctrl as XRControllerGroup;
       const existingHandler = xrCtrl.userData.vrSelectHandler;
       if (existingHandler) xrCtrl.removeEventListener('selectstart', existingHandler);
+      const connectedHandler = xrCtrl.userData.vrConnectedHandler;
+      if (connectedHandler) xrCtrl.removeEventListener('connected', connectedHandler);
+      const disconnectedHandler = xrCtrl.userData.vrDisconnectedHandler;
+      if (disconnectedHandler) xrCtrl.removeEventListener('disconnected', disconnectedHandler);
     });
 
     this.controllers = [];
@@ -388,11 +463,32 @@ class VRManager {
     for (let i = 0; i < 2; i++) {
       const ctrl = this.renderer.xr.getController(i) as XRControllerGroup;
       const selectHandler = () => {
-        if (this.reviewPlane?.visible) this.handleReviewInteraction(i);
-        else if (i === 1) this.captureSnapshot();
+        const handedness = this.resolveControllerHandedness(i);
+        if (this.reviewPlane?.visible) this.handleReviewInteraction(handedness);
+        else if (handedness === 'right') this.captureSnapshot();
+      };
+      const connectedHandler = (event: XRControllerConnectedEvent) => {
+        const handedness = this.normalizeHandedness(event.data?.handedness);
+        if (!handedness) return;
+        ctrl.userData.vrHandedness = handedness;
+        if (this.controllerGrips[i]) {
+          this.controllerGrips[i].userData.vrHandedness = handedness;
+        }
+        this.attachViewfinderToRightGrip();
+      };
+      const disconnectedHandler = () => {
+        delete ctrl.userData.vrHandedness;
+        if (this.controllerGrips[i]) {
+          delete this.controllerGrips[i].userData.vrHandedness;
+        }
+        this.attachViewfinderToRightGrip();
       };
       ctrl.userData.vrSelectHandler = selectHandler;
+      ctrl.userData.vrConnectedHandler = connectedHandler;
+      ctrl.userData.vrDisconnectedHandler = disconnectedHandler;
       ctrl.addEventListener('selectstart', selectHandler);
+      ctrl.addEventListener('connected', connectedHandler);
+      ctrl.addEventListener('disconnected', disconnectedHandler);
       this.cameraGroup.add(ctrl);
       this.controllers.push(ctrl);
 
@@ -400,15 +496,58 @@ class VRManager {
       grip.clear();
       grip.add(modelFactory.createControllerModel(grip));
       
-      if (i === 1 && this.viewfinderPlane) {
-        grip.add(this.viewfinderPlane);
-        this.viewfinderPlane.position.set(0, 0.1, -0.1);
-        this.viewfinderPlane.rotation.x = -Math.PI / 6;
-      }
-      
       this.cameraGroup.add(grip);
       this.controllerGrips.push(grip);
     }
+    this.attachViewfinderToRightGrip();
+  }
+
+  private normalizeHandedness(handedness: XRHandedness | undefined): VRControllerHandedness | null {
+    return handedness === 'left' || handedness === 'right' ? handedness : null;
+  }
+
+  private getSideIndex(handedness: VRControllerHandedness) {
+    return handedness === 'left' ? 0 : 1;
+  }
+
+  private hasKnownControllerHandedness() {
+    return this.controllers.some((controller) => this.normalizeHandedness(controller.userData.vrHandedness))
+      || this.controllerGrips.some((grip) => this.normalizeHandedness(grip.userData.vrHandedness));
+  }
+
+  private resolveControllerHandedness(controllerIndex: number): VRControllerHandedness | null {
+    const controllerHandedness = this.normalizeHandedness(this.controllers[controllerIndex]?.userData.vrHandedness);
+    if (controllerHandedness) return controllerHandedness;
+
+    const gripHandedness = this.normalizeHandedness(this.controllerGrips[controllerIndex]?.userData.vrHandedness);
+    if (gripHandedness) return gripHandedness;
+
+    return this.hasKnownControllerHandedness()
+      ? null
+      : (controllerIndex === 0 ? 'left' : 'right');
+  }
+
+  private getControllerGripByHandedness(handedness: VRControllerHandedness) {
+    const explicitGrip = this.controllerGrips.find((grip) => this.normalizeHandedness(grip.userData.vrHandedness) === handedness);
+    if (explicitGrip) return explicitGrip;
+    const controllerIndex = this.controllers.findIndex((controller) => this.normalizeHandedness(controller.userData.vrHandedness) === handedness);
+    if (controllerIndex >= 0) return this.controllerGrips[controllerIndex] ?? null;
+    if (this.hasKnownControllerHandedness()) return null;
+    return this.controllerGrips[this.getSideIndex(handedness)] ?? null;
+  }
+
+  private attachViewfinderToRightGrip() {
+    if (!this.viewfinderPlane) return;
+    const rightGrip = this.getControllerGripByHandedness('right');
+    if (!rightGrip) {
+      this.viewfinderPlane.removeFromParent();
+      return;
+    }
+    if (this.viewfinderPlane.parent !== rightGrip) {
+      rightGrip.add(this.viewfinderPlane);
+    }
+    this.viewfinderPlane.position.set(0, 0.1, -0.1);
+    this.viewfinderPlane.rotation.x = -Math.PI / 6;
   }
 
   /**
@@ -476,9 +615,12 @@ class VRManager {
   private captureControllerHandOffsets() {
     this.controllerGrips.forEach((grip, idx) => {
       if (!grip.visible) return;
+      const handedness = this.resolveControllerHandedness(idx);
+      if (!handedness) return;
+      const sideIndex = this.getSideIndex(handedness);
       grip.getWorldQuaternion(this.q1);
-      this.controllerHandOffsets[idx].copy(this.q1.clone().invert().multiply(this.initialHandWorldRotations[idx]));
-      this.hasControllerHandOffsets[idx] = true;
+      this.controllerHandOffsets[sideIndex].copy(this.q1.clone().invert().multiply(this.initialHandWorldRotations[sideIndex]));
+      this.hasControllerHandOffsets[sideIndex] = true;
     });
 
     if (this.hasControllerHandOffsets.some(Boolean)) {
@@ -543,18 +685,15 @@ class VRManager {
     if (headNode) headNode.getWorldPosition(headPos);
     else headPos.copy(vrm.scene.position).add(new THREE.Vector3(0, 1.5 * this.scaleFactor, 0));
 
-    const rightGrip = this.controllerGrips[1]; // Right trigger triggers snapshot
+    const rightGrip = this.getControllerGripByHandedness('right');
     
     if (rightGrip && rightGrip.visible) {
         // HANDHELD SELFIE MODE (Free aim already set in update loop)
         
         // Haptics
-        const session = this.renderer?.xr.getSession();
-        if (session) {
-            const rightInput = session.inputSources[1];
-            if (rightInput?.gamepad?.hapticActuators?.[0]) {
-                rightInput.gamepad.hapticActuators[0].pulse(1.0, 100);
-            }
+        const rightInput = this.getInputSourceByHandedness('right');
+        if (rightInput?.gamepad?.hapticActuators?.[0]) {
+            rightInput.gamepad.hapticActuators[0].pulse(1.0, 100);
         }
         
         // Visual Flash & Audio
@@ -641,9 +780,9 @@ class VRManager {
     img.src = url;
   }
 
-  private handleReviewInteraction(i: number) {
-    if (i === 0) this.hideReview(); // Left = discard
-    else { this.saveLastSnapshot(); this.publishToFeed(); this.hideReview(); } // Right = save
+  private handleReviewInteraction(handedness: VRControllerHandedness | null) {
+    if (handedness === 'left') this.hideReview();
+    if (handedness === 'right') { this.saveLastSnapshot(); this.publishToFeed(); this.hideReview(); }
   }
 
   private applyFingerCurl(
@@ -900,7 +1039,7 @@ class VRManager {
       }
     }
 
-    const rightGrip = this.controllerGrips[1];
+    const rightGrip = this.getControllerGripByHandedness('right');
     if (rightGrip && rightGrip.visible && this.viewfinderPlane && this.viewfinderRenderTarget) {
         this.viewfinderPlane.visible = true;
 
@@ -1046,7 +1185,10 @@ class VRManager {
     // 2. ARM IK SOLVER (2-Bone Analytical)
     this.controllerGrips.forEach((grip, idx) => {
       if (!grip.visible) return;
-      const side = idx === 0 ? 'Left' : 'Right';
+      const handedness = this.resolveControllerHandedness(idx);
+      if (!handedness) return;
+      const sideIndex = this.getSideIndex(handedness);
+      const side = handedness === 'left' ? 'Left' : 'Right';
       const upperName = side === 'Left' ? VRMHumanBoneName.LeftUpperArm : VRMHumanBoneName.RightUpperArm;
       const lowerName = side === 'Left' ? VRMHumanBoneName.LeftLowerArm : VRMHumanBoneName.RightLowerArm;
       const handName = side === 'Left' ? VRMHumanBoneName.LeftHand : VRMHumanBoneName.RightHand;
@@ -1056,7 +1198,7 @@ class VRManager {
       const handNode = vrm.humanoid?.getNormalizedBoneNode(handName);
 
       if (upperNode && lowerNode && handNode) {
-        this.v1.copy(this.controllerHandTargetOffsets[idx]);
+        this.v1.copy(this.controllerHandTargetOffsets[sideIndex]);
         grip.localToWorld(this.v1);
         grip.getWorldQuaternion(this.q1);
 
@@ -1079,7 +1221,7 @@ class VRManager {
         // Build the bend plane from the avatar's side/back vectors instead of
         // assuming the normalized VRM arm always rests on +/-X. That assumption
         // was causing the user's lowered hands to solve upward on some rigs.
-        const sidePole = new THREE.Vector3(idx === 0 ? -1 : 1, 0, 0).applyQuaternion(vrm.scene.quaternion);
+        const sidePole = new THREE.Vector3(handedness === 'left' ? -1 : 1, 0, 0).applyQuaternion(vrm.scene.quaternion);
         const backPole = new THREE.Vector3(0, 0, -1).applyQuaternion(vrm.scene.quaternion);
         const poleHint = sidePole.addScaledVector(backPole, 0.35).normalize();
 
@@ -1117,16 +1259,16 @@ class VRManager {
           .applyQuaternion(this.q2.clone().invert());
         lowerNode.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(lowerRestDirLocal, handDirLocal));
 
-        if (!this.hasControllerHandOffsets[idx]) {
+        if (!this.hasControllerHandOffsets[sideIndex]) {
           this.captureControllerHandOffsets();
         }
 
         // Hand Rotation
-        this.q3.copy(this.q1).multiply(this.controllerHandOffsets[idx]);
+        this.q3.copy(this.q1).multiply(this.controllerHandOffsets[sideIndex]);
         handNode.getWorldQuaternion(this.q2);
         this.q2.slerp(this.q3, 0.45);
         this.setBoneWorldQuaternion(handNode, this.q2);
-        const inputSource = this.getInputSourceByHandedness(idx === 0 ? 'left' : 'right');
+        const inputSource = this.getInputSourceByHandedness(handedness);
         this.applyControllerFingerPose(vrm, inputSource, side);
       }
     });
@@ -1173,7 +1315,7 @@ class VRManager {
     }
   }
 
-  private onSessionEnded() {
+  private async onSessionEnded() {
     const vrm = avatarManager.getVRM();
     if (this.calibrationTimeoutId !== null) {
       window.clearTimeout(this.calibrationTimeoutId);
@@ -1222,13 +1364,27 @@ class VRManager {
         xrCtrl.removeEventListener('selectstart', existingHandler);
         delete xrCtrl.userData.vrSelectHandler;
       }
+      const connectedHandler = xrCtrl.userData.vrConnectedHandler;
+      if (connectedHandler) {
+        xrCtrl.removeEventListener('connected', connectedHandler);
+        delete xrCtrl.userData.vrConnectedHandler;
+      }
+      const disconnectedHandler = xrCtrl.userData.vrDisconnectedHandler;
+      if (disconnectedHandler) {
+        xrCtrl.removeEventListener('disconnected', disconnectedHandler);
+        delete xrCtrl.userData.vrDisconnectedHandler;
+      }
+      delete xrCtrl.userData.vrHandedness;
     });
     this.controllers = [];
+    this.controllerGrips.forEach((grip) => {
+      delete grip.userData.vrHandedness;
+    });
     this.controllerGrips = [];
     this.originalCameraParent = null;
     this.originalControlsEnabled = null;
     this.poseBeforeVR = null;
-    this.restorePausedInputFlags();
+    await this.restorePausedInputFlags();
     console.log('[VRManager] Session Ended');
   }
 

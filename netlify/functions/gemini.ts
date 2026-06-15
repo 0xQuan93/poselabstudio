@@ -19,6 +19,11 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-1.5-flash';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  usageMetadata?: unknown;
+}
+
 // Rate limiting (simple in-memory, resets on cold start)
 const rateLimits = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT = 30; // requests per minute
@@ -180,7 +185,7 @@ async function handleChat(
     throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as GeminiResponse;
 
   // Extract text from response
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';

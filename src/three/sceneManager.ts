@@ -90,6 +90,7 @@ class SceneManager {
   private animatedBackground?: AnimatedBackground;
   private lastBackgroundId?: string;
   private isMobile = false;
+  private settingsUnsubscribe?: () => void;
 
   init(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -176,7 +177,8 @@ class SceneManager {
     }, TIMING.INITIAL_RESIZE_DELAY);
 
     // Subscribe to settings changes
-    useSettingsStore.subscribe((state) => {
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = useSettingsStore.subscribe((state) => {
       this.updateSettings(state);
     });
     
@@ -1425,8 +1427,12 @@ class SceneManager {
     }
     this.renderer?.setAnimationLoop(null);
     if (this.animationFrameId) window.cancelAnimationFrame(this.animationFrameId);
+    this.animationFrameId = undefined;
     window.removeEventListener('resize', this.handleResize);
-      this.tickHandlers.clear();
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = undefined;
+    this.stopCameraAnimation();
+    this.tickHandlers.clear();
     
     // Dispose visual managers
     lightingManager.dispose();
@@ -1436,6 +1442,22 @@ class SceneManager {
     
     this.controls?.dispose();
     this.renderer?.dispose();
+    if (this.overlayMesh) {
+      const material = this.overlayMesh.material as THREE.MeshBasicMaterial;
+      material.map?.dispose();
+      material.dispose();
+      this.overlayMesh.geometry.dispose();
+    }
+    this.lastBackgroundId = undefined;
+    this.isRunning = true;
+    this.followTarget = undefined;
+    this.followMode = null;
+    this.followOffset.set(0, 0, 0);
+    this.selfieFollowInitialized = false;
+    this.currentAspectRatio = '16:9';
+    this.currentOverlayUrl = null;
+    this.currentOverlayOpacity = 1.0;
+    this.overlayMesh = undefined;
     this.scene = undefined;
     this.camera = undefined;
     this.renderer = undefined;

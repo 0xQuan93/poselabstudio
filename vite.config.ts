@@ -12,6 +12,24 @@ import { AccessToken } from 'livekit-server-sdk'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const poseOutputDir = path.resolve(__dirname, 'src/poses')
+const privatePublicAssetDirs = [
+  path.resolve(__dirname, 'dist/poses/fbx'),
+]
+
+function stripPrivatePublicAssets(): PluginOption {
+  return {
+    name: 'strip-private-public-assets',
+    apply: 'build',
+    closeBundle() {
+      privatePublicAssetDirs.forEach((dir) => {
+        if (fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true })
+          console.log(`[production-assets] Removed private source assets from ${path.relative(__dirname, dir)}`)
+        }
+      })
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -23,6 +41,7 @@ export default defineConfig(({ mode }) => {
   const plugins: PluginOption[] = [
     react(),
     nodePolyfills(),
+    stripPrivatePublicAssets(),
     {
       name: 'livekit-token-endpoint',
       configureServer(server: ViteDevServer) {

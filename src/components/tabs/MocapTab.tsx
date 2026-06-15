@@ -76,6 +76,21 @@ function normalizeFaceMaskAdjustments(adjustments?: Partial<FaceMaskAdjustments>
   };
 }
 
+type FaceMaskAvatarMetadata = {
+  name?: string;
+  title?: string;
+};
+
+function getCurrentFaceMaskAvatarProfileId() {
+  const vrm = avatarManager.getVRM();
+  const meta = vrm?.meta as FaceMaskAvatarMetadata | undefined;
+  return meta?.name || meta?.title || vrm?.scene?.name || vrm?.scene?.uuid || 'avatar';
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 type StartMocapOptions = {
   isolateFaceMask?: boolean;
 };
@@ -139,27 +154,33 @@ export function MocapTab() {
   const mocapStartingRef = useRef(false);
   const voiceStartingRef = useRef(false);
   const [arSupported, setArSupported] = useState(false);
+  const [isARActive, setIsARActive] = useState(webXRManager.isActive());
+  const [isARStarting, setIsARStarting] = useState(webXRManager.isStarting());
   const [vrSupported, setVrSupported] = useState(false);
   const [isVRActive, setIsVRActive] = useState(false);
   const [isVRStarting, setIsVRStarting] = useState(false);
   const [vmcStatus, setVmcStatus] = useState(vmcInputManager.getStatus());
   const [vmcError, setVmcError] = useState<string | null>(null);
   const [managerStatus, setManagerStatus] = useState<MotionCaptureStatus>(EMPTY_MOCAP_STATUS);
+  const [statusNow, setStatusNow] = useState(0);
+  const [faceMaskAvatarProfileId, setFaceMaskAvatarProfileId] = useState('avatar');
   const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
   const [faceMaskDebug, setFaceMaskDebug] = useState(false);
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
 
+  const fallbackVideoWidth = managerStatus.videoWidth;
+  const fallbackVideoHeight = managerStatus.videoHeight;
   const getFaceMaskProfileKey = useCallback(() => {
-    const vrm = avatarManager.getVRM() as any;
-    const avatarName = vrm?.meta?.name || vrm?.meta?.title || vrm?.scene?.name || vrm?.scene?.uuid || 'avatar';
-    const status = managerRef.current?.getStatus() ?? managerStatus;
-    const resolution = status.videoWidth && status.videoHeight
-      ? `${status.videoWidth}x${status.videoHeight}`
+    const status = managerRef.current?.getStatus();
+    const videoWidth = status?.videoWidth ?? fallbackVideoWidth;
+    const videoHeight = status?.videoHeight ?? fallbackVideoHeight;
+    const resolution = videoWidth && videoHeight
+      ? `${videoWidth}x${videoHeight}`
       : 'pending';
-    return `${avatarName}::${selectedDeviceId || 'default-camera'}::${resolution}`;
-  }, [managerStatus.videoHeight, managerStatus.videoWidth, selectedDeviceId, avatarManager.getVRM()?.scene.uuid]);
+    return `${faceMaskAvatarProfileId}::${selectedDeviceId || 'default-camera'}::${resolution}`;
+  }, [faceMaskAvatarProfileId, fallbackVideoHeight, fallbackVideoWidth, selectedDeviceId]);
 
   // Initialize Global Manager
   useEffect(() => {
@@ -167,11 +188,25 @@ export function MocapTab() {
     vrManager.refreshSupport().then(setVrSupported);
     managerRef.current = initMocapManager();
     managerRef.current.setMode(mocapMode);
-    managerRef.current.setFaceMaskAdjustments(faceMaskAdjustments);
     if (managerRef.current) {
       setManagerStatus(managerRef.current.getStatus());
     }
   }, [mocapMode]);
+
+  useEffect(() => {
+    const unsubscribeState = webXRManager.subscribe(({ isActive: nextIsActive, isStarting }) => {
+      setIsARActive(nextIsActive);
+      setIsARStarting(isStarting);
+    });
+    const unsubscribeSessionEnd = webXRManager.subscribeSessionEnd(() => {
+      addToast("AR mode ended", "info");
+    });
+
+    return () => {
+      unsubscribeState();
+      unsubscribeSessionEnd();
+    };
+  }, [addToast]);
 
   useEffect(() => {
     managerRef.current?.setFaceMaskAdjustments(faceMaskAdjustments);
@@ -186,6 +221,11 @@ export function MocapTab() {
       if (managerRef.current) {
         setManagerStatus(managerRef.current.getStatus());
       }
+      setStatusNow(performance.now());
+      setFaceMaskAvatarProfileId((current) => {
+        const next = getCurrentFaceMaskAvatarProfileId();
+        return next === current ? current : next;
+      });
       setIsVRActive(vrManager.isInVR());
     };
     updateStatus();
@@ -593,13 +633,23 @@ export function MocapTab() {
     }
   };
 
-  const startAR = async () => {
+  const startAR = useCallback(async () => {
+    if (isARActive || isARStarting) return;
     try {
-        await webXRManager.startAR();
-    } catch (e: any) {
-        addToast(e.message || "Failed to start AR", 'error');
+      await webXRManager.startAR();
+    } catch (e: unknown) {
+      addToast(getErrorMessage(e, "Failed to start AR"), 'error');
     }
-  };
+  }, [addToast, isARActive, isARStarting]);
+
+  const exitAR = useCallback(async () => {
+    if (!isARActive) return;
+    try {
+      await webXRManager.stopAR();
+    } catch (e: unknown) {
+      addToast(getErrorMessage(e, "Failed to exit AR"), 'error');
+    }
+  }, [addToast, isARActive]);
 
   const toggleFaceMask = useCallback(async () => {
     if (!managerRef.current) return;
@@ -743,7 +793,7 @@ export function MocapTab() {
     stopVoiceLipSync,
   ]);
 
-  const now = performance.now();
+  const now = statusNow;
   const poseFresh = isFresh(managerStatus.lastPoseAt, now);
   const faceFresh = isFresh(managerStatus.lastFaceAt, now);
   const leftHandFresh = isFresh(managerStatus.lastLeftHandAt, now);
@@ -1075,13 +1125,13 @@ export function MocapTab() {
                 </button>
             )}
 
-            {(arSupported || vrSupported || isVRActive) && (
+            {(arSupported || isARActive || isARStarting || vrSupported || isVRActive) && (
                 <div className="mocap-xr-actions">
                     {vrSupported && (
                         <button
                             className={`secondary full-width ${isVRActive ? 'active' : ''}`}
                             onClick={isVRActive ? exitVR : enterVR}
-                            disabled={isVRStarting}
+                            disabled={isVRStarting || isARActive || isARStarting}
                             aria-pressed={isVRActive}
                             title="Use your headset and controllers to pose the loaded VRM avatar"
                         >
@@ -1089,12 +1139,16 @@ export function MocapTab() {
                             {isVRActive ? 'Exit VR Tracking' : isVRStarting ? 'Starting VR...' : 'Enter VR Tracking'}
                         </button>
                     )}
-                    {arSupported && !isActive && !isVRActive && (
+                    {(arSupported || isARActive || isARStarting) && !isActive && !isVRActive && (
                         <button
-                            className="secondary full-width"
-                            onClick={startAR}
+                            className={`secondary full-width ${isARActive ? 'active' : ''}`}
+                            onClick={isARActive ? exitAR : startAR}
+                            disabled={isARStarting}
+                            aria-pressed={isARActive}
+                            title={isARActive ? "End the active AR session" : "Start an immersive AR session if this browser and device allow it"}
                         >
-                            <MagicWand size={16} weight="fill" style={{ color: '#00ffff' }} /> Enter AR Mode
+                            <MagicWand size={16} weight="fill" style={{ color: '#00ffff' }} />
+                            {isARActive ? 'Exit AR Mode' : isARStarting ? 'Starting AR...' : 'Enter AR Mode'}
                         </button>
                     )}
                 </div>

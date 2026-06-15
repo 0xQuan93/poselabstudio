@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import PoseLab from './pose-lab/PoseLab'
 import { setupAvatarBridge } from './bridge/avatarBridge'
+import { initAvatarBridge } from './multiplayer/avatarBridge'
 import { CommandPalette } from './ui/CommandPalette'
 
 console.log('[main] Starting PoseLab');
@@ -31,4 +32,5 @@ const render = () => {
 };
 
 setupAvatarBridge();
+initAvatarBridge();
 render();

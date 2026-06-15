@@ -1,4 +1,4 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
 
 export const handler: Handler = async (_event) => {
   // Support both standard and Vite-prefixed env vars

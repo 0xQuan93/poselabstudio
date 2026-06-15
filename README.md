@@ -129,15 +129,19 @@ PoseLab has two primary routes:
 - **Pose Lab mode**: `http://localhost:5173/?mode=pose-lab`
 
 ### Environment Variables
-Create a `.env` file in the root for AI features:
+Create a `.env` file in the root. Production AI and multiplayer features use server-only Netlify environment variables:
 ```env
-VITE_GEMINI_API_KEY=[REQUIRED]
-VITE_ENABLE_VMC_BRIDGE=true
-VITE_ENABLE_POSE_EXPORT=true
+GEMINI_API_KEY=[REQUIRED_FOR_AI_PROXY]
+LIVEKIT_API_KEY=[REQUIRED_FOR_MULTIPLAYER]
+LIVEKIT_API_SECRET=[REQUIRED_FOR_MULTIPLAYER]
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LP_SESSION_SECRET=[REQUIRED_FOR_SIGNED_LP_SESSIONS]
+VITE_ENABLE_VMC_BRIDGE=false
+VITE_ENABLE_POSE_EXPORT=false
 ```
 
 > [!NOTE]
-> `VITE_ENABLE_VMC_BRIDGE` and `VITE_ENABLE_POSE_EXPORT` are **off by default**. Enable them only for trusted local development.
+> `VITE_ENABLE_VMC_BRIDGE` and `VITE_ENABLE_POSE_EXPORT` are **off by default**. Enable them only for trusted local development. Avoid shipping `VITE_GEMINI_API_KEY`; use the Netlify Gemini proxy with server-side `GEMINI_API_KEY`.
 
 ---
 

@@ -1,4 +1,4 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
 import { AccessToken } from 'livekit-server-sdk';
 
 const handler: Handler = async (event) => {
@@ -22,11 +22,12 @@ const handler: Handler = async (event) => {
     // Get credentials from environment variables
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const livekitUrl = process.env.LIVEKIT_URL;
 
-    if (!apiKey || !apiSecret) {
+    if (!apiKey || !apiSecret || !livekitUrl) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: 'Server misconfigured: Missing LiveKit credentials' }),
+        body: JSON.stringify({ error: 'Server misconfigured: Missing LiveKit credentials or URL' }),
       };
     }
 
@@ -50,7 +51,7 @@ const handler: Handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ token, url: process.env.LIVEKIT_URL }),
+      body: JSON.stringify({ token, url: livekitUrl }),
     };
   } catch (error) {
     console.error('Error generating token:', error);

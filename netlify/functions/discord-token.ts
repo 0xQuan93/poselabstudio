@@ -1,4 +1,8 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
+
+interface DiscordTokenResponse {
+  access_token: string;
+}
 
 export const handler: Handler = async (event) => {
   // Only allow POST requests
@@ -52,7 +56,7 @@ export const handler: Handler = async (event) => {
       };
     }
 
-    const { access_token } = await response.json();
+    const { access_token } = await response.json() as DiscordTokenResponse;
 
     // Return only the access_token to the client.
     // Ensure we do not leak the refresh_token or client_secret!

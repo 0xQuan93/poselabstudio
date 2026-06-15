@@ -1,4 +1,4 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
 
 // Use the specific channel ID provided by the user
 const STUDIO_CHAT_CHANNEL_ID = '1475638321685336290';
@@ -15,7 +15,12 @@ export const handler: Handler = async (event) => {
   }
 
 
-  const fetchDiscordAPI = async (endpoint: string, method: string = 'GET', body?: any) => {
+  interface DiscordGuildInfo {
+    approximate_member_count?: number;
+    approximate_presence_count?: number;
+  }
+
+  const fetchDiscordAPI = async <T = unknown>(endpoint: string, method: string = 'GET', body?: any): Promise<T | null> => {
     const url = `https://discord.com/api/v10${endpoint}`;
     const options: RequestInit = {
       method,
@@ -33,7 +38,7 @@ export const handler: Handler = async (event) => {
       console.error(`Discord API Error: ${text}`);
       throw new Error(text);
     }
-    return response.status === 204 ? null : await response.json();
+    return response.status === 204 ? null : await response.json() as T;
   };
 
   try {
@@ -44,7 +49,7 @@ export const handler: Handler = async (event) => {
         // Get guild info with approximate member counts (requires privileged intent? usually works for bot in guild)
         // If fails, we can try without with_counts=true
         DISCORD_GUILD_ID 
-          ? fetchDiscordAPI(`/guilds/${DISCORD_GUILD_ID}?with_counts=true`).catch(() => null)
+          ? fetchDiscordAPI<DiscordGuildInfo>(`/guilds/${DISCORD_GUILD_ID}?with_counts=true`).catch(() => null)
           : Promise.resolve(null)
       ]);
 

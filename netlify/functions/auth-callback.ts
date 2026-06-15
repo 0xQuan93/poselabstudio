@@ -1,4 +1,19 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
+import { createSessionCookie } from './session';
+
+interface DiscordTokenResponse {
+  access_token: string;
+}
+
+interface DiscordUserResponse {
+  id: string;
+  username: string;
+  avatar?: string | null;
+}
+
+interface DiscordMemberResponse {
+  roles?: string[];
+}
 
 export const handler: Handler = async (event) => {
   const code = event.queryStringParameters?.code;
@@ -46,7 +61,7 @@ export const handler: Handler = async (event) => {
        console.error('Failed to exchange token:', await tokenResponse.text());
        throw new Error('Failed to exchange token');
     }
-    const tokenData = await tokenResponse.json();
+    const tokenData = await tokenResponse.json() as DiscordTokenResponse;
 
     // 2. Fetch the user's profile
     const userResponse = await fetch('https://discord.com/api/users/@me', {
@@ -54,7 +69,7 @@ export const handler: Handler = async (event) => {
     });
     
     if (!userResponse.ok) throw new Error('Failed to fetch user data');
-    const userData = await userResponse.json();
+    const userData = await userResponse.json() as DiscordUserResponse;
     
     // 3. Fetch the user's roles in our specific Guild (Phase 3: Deep Discord LP Engine)
     let roles: string[] = [];
@@ -63,7 +78,7 @@ export const handler: Handler = async (event) => {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
       if (memberResponse.ok) {
-        const memberData = await memberResponse.json();
+        const memberData = await memberResponse.json() as DiscordMemberResponse;
         roles = memberData.roles || [];
       } else {
         console.warn(`Could not fetch guild member data for ${userData.id} in guild ${DISCORD_GUILD_ID}`);
@@ -78,7 +93,7 @@ export const handler: Handler = async (event) => {
       roles
     };
     
-    // 4. Store session in a cookie (not HttpOnly so the React app can decode it on load)
+    // 4. Store display profile separately from the signed HttpOnly auth session.
     const sessionBase64 = Buffer.from(JSON.stringify(sessionData)).toString('base64');
     
     // Only apply Secure and SameSite=None in HTTPS environments (Production)
@@ -86,14 +101,24 @@ export const handler: Handler = async (event) => {
     const cookieAttributes = isSecure 
       ? 'Secure; SameSite=None' 
       : 'SameSite=Lax'; 
+    const signedSessionCookie = createSessionCookie({
+      discordId: userData.id,
+      username: userData.username ?? null,
+      roles,
+    }, isSecure);
 
     return {
       statusCode: 302,
       headers: {
         Location: '/?login=success',
-        // Max-Age 30 days. Secure is required for iframe/embedded contexts. SameSite=None allows cross-site usage.
-        'Set-Cookie': `poselab_user=${sessionBase64}; Path=/; ${cookieAttributes}; Max-Age=2592000`
-      }
+      },
+      multiValueHeaders: {
+        'Set-Cookie': [
+          // Readable display-only profile for the React shell.
+          `poselab_user=${sessionBase64}; Path=/; ${cookieAttributes}; Max-Age=2592000`,
+          signedSessionCookie,
+        ],
+      },
     };
   } catch (err) {
     console.error('Auth Callback Error:', err);

@@ -1,4 +1,11 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
+import { readSignedSession } from './session';
+
+interface DiscordMessage {
+  id: string;
+  content: string;
+  author: { id: string };
+}
 
 export const handler: Handler = async (event) => {
   console.log('Bot LP Handler Started');
@@ -28,7 +35,7 @@ export const handler: Handler = async (event) => {
     }
 
     // 2. Define Helper Functions (capturing env vars)
-    const fetchDiscordAPI = async (endpoint: string, method: string = 'GET', body?: any) => {
+    const fetchDiscordAPI = async <T = unknown>(endpoint: string, method: string = 'GET', body?: any): Promise<T | null> => {
       const url = `https://discord.com/api/v10${endpoint}`;
       const options: RequestInit = {
         method,
@@ -47,14 +54,14 @@ export const handler: Handler = async (event) => {
         console.error(`Discord API Error on ${method} ${endpoint}:`, text);
         throw new Error(`Discord API Error: ${response.statusText} - ${text}`);
       }
-      return response.status === 204 ? null : await response.json();
+      return response.status === 204 ? null : await response.json() as T;
     };
 
     const getUserLedgerData = async (discordUserId: string) => {
       let lp = 0;
       let actionTimestamps: Record<string, number> = {};
       let foundLp = false;
-      let lastMessageId = undefined;
+      let lastMessageId: string | undefined;
       const startTime = Date.now();
 
       while (true) {
@@ -64,8 +71,8 @@ export const handler: Handler = async (event) => {
           break;
         }
 
-        const query = lastMessageId ? `?limit=100&before=${lastMessageId}` : '?limit=100';
-        const messages = await fetchDiscordAPI(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages${query}`);
+        const query: string = lastMessageId ? `?limit=100&before=${lastMessageId}` : '?limit=100';
+        const messages: DiscordMessage[] | null = await fetchDiscordAPI<DiscordMessage[]>(`/channels/${DISCORD_STUDIO_CHANNEL_ID}/messages${query}`);
         if (!messages || messages.length === 0) break;
 
         for (const msg of messages) {
@@ -154,11 +161,13 @@ export const handler: Handler = async (event) => {
     }
 
     const body = JSON.parse(event.body || '{}');
-    const { action, discordUserId, actionName } = body;
+    const { action, actionName } = body;
+    const session = readSignedSession(event);
 
-    if (!discordUserId) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing discordUserId' }) };
+    if (!session) {
+      return { statusCode: 401, body: JSON.stringify({ error: 'Authentication required' }) };
     }
+    const discordUserId = session.discordId;
 
     if (action === 'read') {
       const { lp: currentLp, actionTimestamps } = await getUserLedgerData(discordUserId);

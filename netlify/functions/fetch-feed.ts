@@ -1,4 +1,24 @@
-import { Handler } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
+
+interface DiscordEmbedField {
+  name: string;
+  value: string;
+}
+
+interface DiscordFeedMessage {
+  id: string;
+  content?: string;
+  timestamp: string;
+  embeds?: Array<{
+    title?: string;
+    description?: string;
+    image?: { proxy_url?: string; url?: string };
+    thumbnail?: { proxy_url?: string };
+    author?: { name?: string; icon_url?: string };
+    fields?: DiscordEmbedField[];
+  }>;
+  reactions?: Array<{ emoji: { name: string }; count: number }>;
+}
 
 export const handler: Handler = async (event) => {
   // Move env vars inside handler for better reliability
@@ -40,22 +60,22 @@ export const handler: Handler = async (event) => {
       return { statusCode: response.status, body: JSON.stringify({ error: 'Failed to fetch feed from Discord' }) };
     }
 
-    const messages = await response.json();
+    const messages = await response.json() as DiscordFeedMessage[];
 
     // Map Discord messages into a cleaner format for the frontend
     const feed = messages
-      .filter((msg: any) => msg.embeds && msg.embeds.length > 0) // Only get messages with embeds (our posts)
-      .map((msg: any) => {
-        const embed = msg.embeds[0];
+      .filter((msg) => msg.embeds && msg.embeds.length > 0) // Only get messages with embeds (our posts)
+      .map((msg) => {
+        const embed = msg.embeds?.[0] ?? {};
         
         // Extract upvotes (fire emoji count)
-        const fireReaction = msg.reactions?.find((r: any) => r.emoji.name === '🔥');
+        const fireReaction = msg.reactions?.find((r) => r.emoji.name === '🔥');
         const upvotes = fireReaction ? fireReaction.count : 0;
 
         // Parse fields
-        const creatorField = embed.fields?.find((f: any) => f.name === 'Creator');
-        const creatorIdField = embed.fields?.find((f: any) => f.name === 'Creator ID');
-        const addressField = embed.fields?.find((f: any) => f.name === 'Solana Address');
+        const creatorField = embed.fields?.find((f) => f.name === 'Creator');
+        const creatorIdField = embed.fields?.find((f) => f.name === 'Creator ID');
+        const addressField = embed.fields?.find((f) => f.name === 'Solana Address');
 
         // Clean the backticks out of the address if present
         let address = addressField?.value || null;

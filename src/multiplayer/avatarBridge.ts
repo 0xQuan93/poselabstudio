@@ -14,6 +14,10 @@ import { syncManager } from './syncManager';
 import { useMultiplayerStore } from '../state/useMultiplayerStore';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
 
+type MultiplayerState = ReturnType<typeof useMultiplayerStore.getState>;
+
+let unsubscribeMultiplayerStore: (() => void) | undefined;
+
 /**
  * Check if we're in a multiplayer session
  */
@@ -22,53 +26,70 @@ function isInMultiplayerSession(): boolean {
   return state.isConnected && state.roomId !== null;
 }
 
+function registerLocalAvatarForSession(state: MultiplayerState) {
+  if (!state.isConnected || !state.localPeerId) return;
+
+  console.log('[AvatarBridge] Session active, registering local avatar');
+
+  // Set local peer ID on multiAvatarManager
+  multiAvatarManager.setLocalPeerId(state.localPeerId);
+
+  // If there's already a local VRM loaded, register it (don't re-load!)
+  const existingVRM = avatarManager.getVRM();
+  if (existingVRM) {
+    console.log('[AvatarBridge] Registering existing avatar with multiplayer (no reload)');
+    // Use registerExistingAvatar to avoid creating a duplicate
+    multiAvatarManager.registerExistingAvatar(
+      state.localPeerId,
+      existingVRM,
+      true,
+      state.localDisplayName
+    );
+
+    // Update peer info
+    state.updatePeer(state.localPeerId, { hasAvatar: true });
+
+    // Broadcast our state to any connected peers
+    syncManager.broadcastFullState();
+  }
+}
+
 /**
  * Initialize the avatar bridge - call this when the app starts
  * This sets up listeners to sync local avatar changes to peers
  */
 export function initAvatarBridge() {
+  if (unsubscribeMultiplayerStore) {
+    return;
+  }
+
   console.log('[AvatarBridge] Initializing');
 
   // When multiplayer session starts, register the local avatar with multiAvatarManager
-  useMultiplayerStore.subscribe((state, prevState) => {
+  unsubscribeMultiplayerStore = useMultiplayerStore.subscribe((state, prevState) => {
     // Session connected
-    if (state.isConnected && !prevState.isConnected && state.localPeerId) {
-      console.log('[AvatarBridge] Session connected, registering local avatar');
-      
-      // Set local peer ID on multiAvatarManager
-      multiAvatarManager.setLocalPeerId(state.localPeerId);
-      
-      // If there's already a local VRM loaded, register it (don't re-load!)
-      const existingVRM = avatarManager.getVRM();
-      if (existingVRM) {
-        console.log('[AvatarBridge] Registering existing avatar with multiplayer (no reload)');
-        // Use registerExistingAvatar to avoid creating a duplicate
-        multiAvatarManager.registerExistingAvatar(
-          state.localPeerId,
-          existingVRM,
-          true,
-          state.localDisplayName
-        );
-        
-        // Update peer info
-        state.updatePeer(state.localPeerId, { hasAvatar: true });
-        
-        // Broadcast our state to any connected peers
-        syncManager.broadcastFullState();
-      }
+    if (
+      state.isConnected &&
+      state.localPeerId &&
+      (!prevState.isConnected || state.localPeerId !== prevState.localPeerId)
+    ) {
+      registerLocalAvatarForSession(state);
     }
 
     // Session disconnected
     if (!state.isConnected && prevState.isConnected) {
       console.log('[AvatarBridge] Session disconnected, cleaning up');
+      const localPeerId = state.localPeerId ?? prevState.localPeerId;
       // Remove all remote avatars but keep the local one
       multiAvatarManager.getAllAvatars().forEach((_, peerId) => {
-        if (peerId !== state.localPeerId) {
+        if (peerId !== localPeerId) {
           multiAvatarManager.removeAvatar(peerId);
         }
       });
     }
   });
+
+  registerLocalAvatarForSession(useMultiplayerStore.getState());
 }
 
 /**
