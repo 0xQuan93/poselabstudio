@@ -192,6 +192,13 @@ const DEFAULT_FACE_MASK_ADJUSTMENTS: FaceMaskAdjustments = {
   crop: 0,
 };
 
+const FACE_MASK_NECK_CROP = {
+  MIN_CLEARANCE: 0.025,
+  MAX_CLEARANCE_RATIO: 0.045,
+  NECK_SPAN_CLEARANCE: 0.32,
+  FALLBACK_HEAD_DROP_RATIO: 0.14,
+};
+
 export class MotionCaptureManager {
   private holistic: any = null; // Main thread holistic instance
   private vrm?: VRM;
@@ -1167,35 +1174,63 @@ export class MotionCaptureManager {
       }
 
       const faceTokens = ['head', 'face', 'hair', 'eye', 'iris', 'lash', 'brow', 'mouth', 'teeth', 'tongue', 'ear', 'nose', 'cheek', 'neck'];
+      const clipTokens = ['head', 'neck'];
+      const detailFaceTokens = ['hair', 'eye', 'iris', 'lash', 'brow', 'mouth', 'teeth', 'tongue', 'ear', 'nose', 'cheek'];
       const bodyTokens = ['body', 'torso', 'chest', 'spine', 'hips', 'pelvis', 'waist', 'arm', 'hand', 'finger', 'leg', 'foot', 'feet', 'shoe', 'boot', 'sock', 'skirt', 'dress', 'pants', 'short', 'shirt', 'jacket', 'coat', 'sleeve', 'glove'];
       const faceMeshes: THREE.Mesh[] = [];
       const bodyMeshes: THREE.Mesh[] = [];
+      const meshInfos: Array<{
+          mesh: THREE.Mesh;
+          hasBodyToken: boolean;
+          hasClipToken: boolean;
+          hasDetailFaceToken: boolean;
+          hasFaceToken: boolean;
+      }> = [];
 
       this.vrm.scene.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          materials.forEach((material) => {
-              if (!material || this.faceMaskMaterialRecords.some((record) => record.material === material)) return;
-              this.faceMaskMaterialRecords.push({
-                  material,
-                  clippingPlanes: material.clippingPlanes ? [...material.clippingPlanes] : null,
-                  clipIntersection: material.clipIntersection,
-                  clipShadows: material.clipShadows,
-              });
-              material.clippingPlanes = [this.faceMaskClipPlane];
-              material.clipIntersection = false;
-              material.clipShadows = true;
-              material.needsUpdate = true;
-          });
-
           const materialNames = Array.isArray(object.material)
               ? object.material.map((material) => material.name).join(' ')
               : object.material?.name ?? '';
           const label = `${object.name} ${materialNames}`.toLowerCase();
           const hasFaceToken = faceTokens.some((token) => label.includes(token));
           const hasBodyToken = bodyTokens.some((token) => label.includes(token));
-          if (hasFaceToken) faceMeshes.push(object);
-          if (hasBodyToken && !hasFaceToken) bodyMeshes.push(object);
+          const hasClipToken = clipTokens.some((token) => label.includes(token));
+          const hasDetailFaceToken = detailFaceTokens.some((token) => label.includes(token));
+
+          meshInfos.push({
+              mesh: object,
+              hasBodyToken,
+              hasClipToken,
+              hasDetailFaceToken,
+              hasFaceToken,
+          });
+      });
+
+      const hasExplicitHeadOrNeckMesh = meshInfos.some((info) => info.hasClipToken);
+
+      meshInfos.forEach((info) => {
+          const shouldClipNeck = info.hasClipToken
+              || (!hasExplicitHeadOrNeckMesh && info.hasFaceToken && !info.hasDetailFaceToken);
+          if (shouldClipNeck) {
+              const materials = Array.isArray(info.mesh.material) ? info.mesh.material : [info.mesh.material];
+              materials.forEach((material) => {
+                  if (!material || this.faceMaskMaterialRecords.some((record) => record.material === material)) return;
+                  this.faceMaskMaterialRecords.push({
+                      material,
+                      clippingPlanes: material.clippingPlanes ? [...material.clippingPlanes] : null,
+                      clipIntersection: material.clipIntersection,
+                      clipShadows: material.clipShadows,
+                  });
+                  material.clippingPlanes = [this.faceMaskClipPlane];
+                  material.clipIntersection = false;
+                  material.clipShadows = true;
+                  material.needsUpdate = true;
+              });
+          }
+
+          if (info.hasFaceToken) faceMeshes.push(info.mesh);
+          if (info.hasBodyToken && !info.hasFaceToken) bodyMeshes.push(info.mesh);
       });
 
       if (faceMeshes.length === 0 || bodyMeshes.length === 0) return;
@@ -1271,11 +1306,27 @@ export class MotionCaptureManager {
       const reference = new THREE.Vector3();
 
       if (this.hasFaceMaskNeutralNeck) {
-          this.getFaceMaskNeutralWorld(this.faceMaskNeutralNeckLocal, reference);
-          reference.y -= Math.max(0.025, this.faceMaskBaseAvatarHeight * 0.015);
+          const neckWorld = this.getFaceMaskNeutralWorld(this.faceMaskNeutralNeckLocal, reference);
+          const headWorld = this.hasFaceMaskNeutralHead
+              ? this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, new THREE.Vector3())
+              : null;
+          const headNeckSpan = headWorld ? Math.max(0, headWorld.y - neckWorld.y) : 0;
+          const maxClearance = Math.max(
+              FACE_MASK_NECK_CROP.MIN_CLEARANCE,
+              this.faceMaskBaseAvatarHeight * FACE_MASK_NECK_CROP.MAX_CLEARANCE_RATIO,
+          );
+          const clearance = headNeckSpan > 0
+              ? THREE.MathUtils.clamp(
+                  headNeckSpan * FACE_MASK_NECK_CROP.NECK_SPAN_CLEARANCE,
+                  FACE_MASK_NECK_CROP.MIN_CLEARANCE,
+                  maxClearance,
+              )
+              : Math.min(maxClearance, this.faceMaskBaseAvatarHeight * 0.028);
+          reference.copy(neckWorld);
+          reference.y -= clearance;
       } else if (this.hasFaceMaskNeutralHead) {
           this.getFaceMaskNeutralWorld(this.faceMaskNeutralHeadLocal, reference);
-          reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * 0.11);
+          reference.y -= Math.max(0.16, this.faceMaskBaseAvatarHeight * FACE_MASK_NECK_CROP.FALLBACK_HEAD_DROP_RATIO);
       } else {
           return;
       }

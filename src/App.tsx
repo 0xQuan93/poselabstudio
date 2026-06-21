@@ -19,7 +19,7 @@ import { AIAgentWidget } from './components/AIAgentWidget';
 import { SessionHUD } from './components/SessionHUD';
 import { TickerTape } from './components/TickerTape';
 import { MobileWelcomeModal } from './components/MobileWelcomeModal';
-import { Fire } from '@phosphor-icons/react';
+import { Fire, SlidersHorizontal, X } from '@phosphor-icons/react';
 import { useDiscordActivity, isEmbeddedApp } from './hooks/useDiscordActivity';
 import { CreatorFeed } from './components/feed/CreatorFeed';
 import { StudioChatPanel } from './components/studio/StudioChatPanel';
@@ -36,7 +36,7 @@ const IS_DEV = import.meta.env.DEV;
 
 function App() {
   const { isReady, error, discordSdk } = useDiscordActivity();
-  const { mode, setMode, focusModeActive, sidebarOpen } = useUIStore();
+  const { mode, setMode, focusModeActive, sidebarOpen, mobileDrawerOpen, setMobileDrawerOpen } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
@@ -151,12 +151,23 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    if (!isMobile || mode === 'studio' || streamMode) {
+      setMobileDrawerOpen(false);
+    }
+  }, [isMobile, mode, setMobileDrawerOpen, streamMode]);
+
+  const handleModeChange = (nextMode: typeof mode) => {
+    setMode(nextMode);
+    setMobileDrawerOpen(false);
+  };
+
   if (isEmbeddedApp && error) return <div>Error: {error.message}</div>;
   if (isEmbeddedApp && !isReady) return <div>Loading...</div>;
 
   return (
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
-      <AppHeader mode={mode} onModeChange={setMode} />
+      <AppHeader mode={mode} onModeChange={handleModeChange} />
 
       {isDragging && (
         <div className="drag-drop-overlay">
@@ -188,6 +199,36 @@ function App() {
           </div>
         )}
       </main>
+
+      {isMobile && mode !== 'studio' && !streamMode && (
+        <>
+          <button
+            type="button"
+            className="control-toggle"
+            onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+            aria-expanded={mobileDrawerOpen}
+            aria-controls="mobile-control-drawer"
+            aria-label={mobileDrawerOpen ? 'Close PoseLab tools' : 'Open PoseLab tools'}
+          >
+            {mobileDrawerOpen ? <X size={22} weight="bold" /> : <SlidersHorizontal size={24} weight="duotone" />}
+          </button>
+          {mobileDrawerOpen && (
+            <button
+              type="button"
+              className="drawer-backdrop"
+              aria-label="Close PoseLab tools"
+              onClick={() => setMobileDrawerOpen(false)}
+            />
+          )}
+          <aside
+            id="mobile-control-drawer"
+            className={`control-drawer ${mobileDrawerOpen ? 'open' : ''}`}
+            aria-hidden={!mobileDrawerOpen}
+          >
+            <ControlPanel mode={mode} />
+          </aside>
+        </>
+      )}
 
       <ToastHost />
       <ConnectionProgressPanel />

@@ -1,11 +1,11 @@
 .pose-lab {
-  min-height: 100vh;
+  min-height: 100svh;
   background: #05060d;
   color: #f0f4ff;
-  padding: 2rem;
+  padding: clamp(1rem, 3vw, 2rem);
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: clamp(1rem, 3vw, 2rem);
   font-family: 'Space Grotesk', 'Clash Display', system-ui, sans-serif;
   max-width: 1200px;
   margin: 0 auto;
@@ -17,19 +17,19 @@
 
 .pose-lab__header h1 {
   margin: 0 0 0.5rem 0;
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 6vw, 2.5rem);
 }
 
 .pose-lab__header .muted {
   color: rgba(240, 244, 255, 0.6);
-  font-size: 1.1rem;
+  font-size: clamp(0.95rem, 3vw, 1.1rem);
 }
 
 .pose-lab__workflow {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 2rem;
-  margin: 2rem 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(1rem, 3vw, 2rem);
+  margin: clamp(0.5rem, 3vw, 2rem) 0;
 }
 
 .pose-lab__step {
@@ -61,17 +61,18 @@
 .drop-zone {
   border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: var(--radius-md);
-  padding: 2rem;
+  padding: clamp(1rem, 4vw, 2rem);
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  min-height: 200px;
+  min-height: clamp(132px, 22vw, 200px);
   text-align: center;
+  touch-action: manipulation;
 }
 
 .drop-zone:hover {
@@ -114,11 +115,12 @@
 /* Canvas */
 .pose-lab__canvas {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 1;
   border: none;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: rgba(0, 0, 0, 0.3);
+  min-height: 280px;
 }
 
 /* Status Card */
@@ -161,7 +163,8 @@
 
 .pose-lab__button,
 .pose-lab__actions button {
-  padding: 1rem 2rem;
+  min-height: 44px;
+  padding: 0.85rem 1.2rem;
   border-radius: var(--radius-md);
   border: var(--border-default);
   background: rgba(255, 255, 255, 0.08);
@@ -170,6 +173,7 @@
   font-weight: 600;
   font-size: 1rem;
   transition: all 0.2s ease;
+  touch-action: manipulation;
 }
 
 .pose-lab__actions button:hover:not(:disabled) {
@@ -189,12 +193,67 @@
 
 /* Responsive */
 @media (max-width: 960px) {
+  .pose-lab {
+    max-width: none;
+  }
+
   .pose-lab__workflow {
     grid-template-columns: 1fr;
+    margin: 0;
   }
   
   .drop-zone {
     min-height: 150px;
+  }
+
+  .pose-lab__actions {
+    justify-content: stretch;
+  }
+
+  .pose-lab__actions button {
+    flex: 1 1 180px;
+  }
+}
+
+@media (max-width: 520px) {
+  .pose-lab {
+    padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .pose-lab__workflow,
+  .pose-lab__step,
+  .pose-lab__animation-controls,
+  .status-card {
+    gap: 0.75rem;
+  }
+
+  .pose-lab__header {
+    text-align: left;
+  }
+
+  .pose-lab__header h1 {
+    margin-bottom: 0.25rem;
+  }
+
+  .step-content h3 {
+    margin-bottom: 0.6rem;
+  }
+
+  .pose-lab__canvas {
+    min-height: min(84vw, 380px);
+  }
+
+  .drop-zone__icon {
+    font-size: 2.25rem;
+  }
+
+  .pose-lab__actions {
+    gap: 0.7rem;
+  }
+
+  .pose-lab__actions button {
+    width: 100%;
+    flex-basis: 100%;
   }
 }
 

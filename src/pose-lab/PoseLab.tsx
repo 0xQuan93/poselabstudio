@@ -15,9 +15,27 @@ import {
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
 camera.position.set(0, 1.4, 2.3);
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const isMobileViewport = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
+};
+
+const getRendererPixelRatio = () => {
+  if (typeof window === 'undefined') return 1;
+  return Math.min(window.devicePixelRatio || 1, isMobileViewport() ? 1.25 : 2);
+};
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: !isMobileViewport(),
+  alpha: true,
+  powerPreference: isMobileViewport() ? 'low-power' : 'high-performance',
+});
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.setSize(640, 640);
+renderer.setPixelRatio(getRendererPixelRatio());
+renderer.setSize(640, 640, false);
+renderer.domElement.style.width = '100%';
+renderer.domElement.style.height = '100%';
+renderer.domElement.style.display = 'block';
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x080820, 1.2);
 scene.add(hemi);
@@ -107,9 +125,26 @@ function PoseLab() {
     controls.enableDamping = true;
     controls.minDistance = 1.2;
     controls.maxDistance = 3;
+
+    const resizeRenderer = () => {
+      if (!canvasRef.current) return;
+      const width = Math.max(1, Math.floor(canvasRef.current.clientWidth));
+      const height = Math.max(1, Math.floor(canvasRef.current.clientHeight || width));
+      renderer.setPixelRatio(getRendererPixelRatio());
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+    };
+
+    const resizeObserver = new ResizeObserver(resizeRenderer);
+    resizeObserver.observe(canvasRef.current);
+    resizeRenderer();
     
     // Start render loop
+    let animationFrameId = 0;
     const animate = () => {
+      animationFrameId = requestAnimationFrame(animate);
       const delta = clockRef.current.getDelta();
       controls?.update();
       
@@ -124,11 +159,12 @@ function PoseLab() {
       }
       
       renderer.render(scene, camera);
-      requestAnimationFrame(animate);
     };
     animate();
     
     return () => {
+      cancelAnimationFrame(animationFrameId);
+      resizeObserver.disconnect();
       controls?.dispose();
     };
   }, []);
