@@ -1,32 +1,65 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DeviceMobile, HandTap, X } from '@phosphor-icons/react';
 
 export function MobileWelcomeModal() {
   const [isOpen, setIsOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Check if mobile
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches;
     
     // Check if already seen in this session
-    const hasSeen = sessionStorage.getItem('poselab_mobile_welcome_seen');
+    let hasSeen = false;
+    try {
+      hasSeen = sessionStorage.getItem('poselab_mobile_welcome_seen') === 'true';
+    } catch {
+      // Storage can be unavailable in private or embedded browsing contexts.
+    }
 
     if (isMobile && !hasSeen) {
       setIsOpen(true);
     }
   }, []);
 
-  const handleClose = () => {
+  function handleClose() {
     setIsOpen(false);
-    sessionStorage.setItem('poselab_mobile_welcome_seen', 'true');
-  };
+    try {
+      sessionStorage.setItem('poselab_mobile_welcome_seen', 'true');
+    } catch {
+      // Closing the dialog should never depend on storage access.
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialog?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 2000 }}>
-      <div className="modal-content" style={{ maxWidth: '400px', textAlign: 'center' }}>
-        <button className="modal-close" onClick={handleClose}>
+    <div className="modal-overlay mobile-welcome-overlay" style={{ zIndex: 2000 }}>
+      <div
+        ref={dialogRef}
+        className="modal-content mobile-welcome-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-welcome-title"
+        aria-describedby="mobile-welcome-description"
+        tabIndex={-1}
+      >
+        <button className="modal-close" onClick={handleClose} aria-label="Close mobile welcome">
           <X size={24} />
         </button>
         
@@ -39,7 +72,7 @@ export function MobileWelcomeModal() {
           <DeviceMobile size={64} weight="duotone" />
         </div>
 
-        <h2 style={{ 
+        <h2 id="mobile-welcome-title" style={{
           fontFamily: 'var(--font-display)', 
           fontSize: '1.5rem', 
           marginBottom: '1rem',
@@ -48,7 +81,7 @@ export function MobileWelcomeModal() {
           Mobile Mode Active
         </h2>
 
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+        <p id="mobile-welcome-description" style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
           We've optimized performance for your device.
         </p>
 

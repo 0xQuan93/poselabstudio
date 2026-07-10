@@ -156,6 +156,7 @@ export function MocapTab() {
   const [arSupported, setArSupported] = useState(false);
   const [isARActive, setIsARActive] = useState(webXRManager.isActive());
   const [isARStarting, setIsARStarting] = useState(webXRManager.isStarting());
+  const [arVisibility, setArVisibility] = useState<XRVisibilityState | null>(null);
   const [vrSupported, setVrSupported] = useState(false);
   const [isVRActive, setIsVRActive] = useState(false);
   const [isVRStarting, setIsVRStarting] = useState(false);
@@ -194,9 +195,10 @@ export function MocapTab() {
   }, [mocapMode]);
 
   useEffect(() => {
-    const unsubscribeState = webXRManager.subscribe(({ isActive: nextIsActive, isStarting }) => {
+    const unsubscribeState = webXRManager.subscribe(({ isActive: nextIsActive, isStarting, visibilityState }) => {
       setIsARActive(nextIsActive);
       setIsARStarting(isStarting);
+      setArVisibility(visibilityState);
     });
     const unsubscribeSessionEnd = webXRManager.subscribeSessionEnd(() => {
       addToast("AR mode ended", "info");
@@ -1145,11 +1147,17 @@ export function MocapTab() {
                             onClick={isARActive ? exitAR : startAR}
                             disabled={isARStarting}
                             aria-pressed={isARActive}
+                            aria-busy={isARStarting}
                             title={isARActive ? "End the active AR session" : "Start an immersive AR session if this browser and device allow it"}
                         >
                             <MagicWand size={16} weight="fill" style={{ color: '#00ffff' }} />
                             {isARActive ? 'Exit AR Mode' : isARStarting ? 'Starting AR...' : 'Enter AR Mode'}
                         </button>
+                    )}
+                    {isARActive && arVisibility === 'hidden' && (
+                      <p className="muted small" role="status" aria-live="polite">
+                        AR is paused while the headset or camera view is hidden.
+                      </p>
                     )}
                 </div>
             )}

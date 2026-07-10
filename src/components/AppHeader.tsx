@@ -60,10 +60,10 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
     <>
       <header className="app-header">
         <div className="app-header__left">
-          <div className="app-header__logo" onClick={handleResetScene} style={{ cursor: 'pointer' }}>
+          <button type="button" className="app-header__logo" onClick={handleResetScene} aria-label="Reset scene">
             <img src="/logo/poselab.svg" alt="PoseLab" />
             <span>PoseLab</span>
-          </div>
+          </button>
           <div className="mode-switch">
             <button className={mode === 'reactions' ? 'active' : ''} onClick={() => handleModeChange('reactions')}>
               <Atom size={16} weight="duotone" />
@@ -88,9 +88,9 @@ export function AppHeader({ mode, onModeChange }: AppHeaderProps) {
         </div>
 
         <div className="app-header__right">
-          <button className="icon-button" onClick={() => setShowSettings(true)}><GearSix size={20} /></button>
-          <button className="icon-button" onClick={handleProjectSave}><FloppyDisk size={20} /></button>
-          <button className="icon-button" onClick={() => setSidebarOpen(!sidebarOpen)}><List size={20} /></button>
+          <button className="icon-button" aria-label="Open settings" onClick={() => setShowSettings(true)}><GearSix size={20} /></button>
+          <button className="icon-button" aria-label="Save project" onClick={handleProjectSave}><FloppyDisk size={20} /></button>
+          <button className="icon-button" aria-label={sidebarOpen ? 'Close tools panel' : 'Open tools panel'} aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)}><List size={20} /></button>
           <LoginButton />
         </div>
       </header>

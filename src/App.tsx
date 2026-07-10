@@ -224,7 +224,9 @@ function App() {
             id="mobile-control-drawer"
             className={`control-drawer ${mobileDrawerOpen ? 'open' : ''}`}
             aria-hidden={!mobileDrawerOpen}
+            aria-label="PoseLab tools"
           >
+            <div className="control-drawer__handle" aria-hidden="true" />
             <ControlPanel mode={mode} />
           </aside>
         </>

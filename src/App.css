@@ -59,6 +59,10 @@
   color: var(--accent);
   mix-blend-mode: difference;
   transition: transform var(--duration-fast);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
 .app-header__logo:hover {
@@ -2296,7 +2300,10 @@
 
 @media (max-width: 960px) {
   .app-header {
-    padding: 0 var(--space-4);
+    min-height: 56px;
+    height: 56px;
+    padding: env(safe-area-inset-top) var(--space-3) 0;
+    flex-shrink: 0;
   }
 
   .app-header__left {
@@ -2308,6 +2315,8 @@
   }
 
   .mode-switch button {
+    min-width: 44px;
+    min-height: 44px;
     padding: var(--space-2) var(--space-3);
     font-size: var(--text-xs);
   }
@@ -2318,8 +2327,8 @@
   }
 
   .viewport {
-    padding: var(--space-2);
-    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+    padding: 0;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .control-panel {
@@ -2341,8 +2350,8 @@
     position: fixed;
     bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
     right: var(--space-4);
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-600) 100%);
     color: var(--color-abyss);
     border-radius: var(--radius-md);
@@ -2362,23 +2371,26 @@
     background: rgba(0, 0, 0, 0.6);
     z-index: 998;
     animation: fadeIn var(--duration-fast) var(--ease-out);
+    border: 0;
+    border-radius: 0;
+    backdrop-filter: blur(3px);
   }
 
   .control-drawer {
     display: block;
     position: fixed;
-    bottom: 24px;
+    bottom: 0;
     left: 0;
     right: 0;
-    height: 75vh;
-    max-height: 75vh;
+    height: min(78dvh, 720px);
+    max-height: calc(100dvh - 64px - env(safe-area-inset-top));
     background: var(--glass-bg);
     border-top: 1px solid var(--glass-border);
-    border-radius: var(--radius-md);
+    border-radius: 20px 20px 0 0;
     transition: all var(--duration-slow) var(--ease-spring);
     z-index: 999;
-    overflow-y: auto;
-    padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom));
+    overflow: hidden;
+    padding: var(--space-2) 0 calc(var(--space-2) + env(safe-area-inset-bottom));
     box-shadow: var(--shadow-md);
     transform-origin: bottom center;
     transform: scaleY(0);
@@ -2565,6 +2577,101 @@
 
   .background-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header__left {
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .app-header__right {
+    gap: var(--space-1);
+  }
+
+  .app-header__right .icon-button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .app-header__right .icon-button:nth-of-type(2),
+  .app-header__right .icon-button:nth-of-type(3) {
+    display: none;
+  }
+
+  .mode-switch {
+    gap: 0;
+  }
+
+  .mode-switch button {
+    padding-inline: var(--space-2);
+  }
+
+  .mode-switch button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* Mobile dialogs respect notches, browser chrome, and reachable touch sizing. */
+.mobile-welcome-overlay {
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.mobile-welcome-dialog {
+  width: min(400px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: center;
+}
+
+.mobile-welcome-dialog button {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 960px) {
+  .control-drawer__handle {
+    width: 40px;
+    height: 4px;
+    margin: 2px auto 8px;
+    border-radius: 999px;
+    background: var(--text-tertiary);
+    opacity: 0.6;
+    flex: 0 0 auto;
+  }
+
+  .control-drawer button,
+  .control-drawer input,
+  .control-drawer select {
+    min-height: 44px;
+  }
+
+  .control-drawer .control-panel__content {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom));
   }
 }
 

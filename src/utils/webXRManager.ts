@@ -4,6 +4,7 @@ import { sceneManager } from '../three/sceneManager';
 type WebXRSessionState = {
   isActive: boolean;
   isStarting: boolean;
+  visibilityState: XRVisibilityState | null;
 };
 
 type WebXRSessionStateListener = (state: WebXRSessionState) => void;
@@ -35,6 +36,7 @@ export class WebXRManager {
     return {
       isActive: !!this.currentSession,
       isStarting: this.isStartingSession,
+      visibilityState: this.currentSession?.visibilityState ?? null,
     };
   }
 
@@ -70,8 +72,14 @@ export class WebXRManager {
   }
 
   async startAR() {
+    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+      throw new Error("AR requires a secure HTTPS connection");
+    }
+    if (document.visibilityState !== 'visible' || !document.hasFocus()) {
+      throw new Error("Keep this page visible and focused, then try AR again");
+    }
     if (!navigator.xr) {
-      throw new Error("WebXR not supported in this browser");
+      throw new Error("This browser does not support WebXR. Try Chrome on a compatible Android device");
     }
 
     const supported = await navigator.xr.isSessionSupported('immersive-ar');
@@ -110,12 +118,14 @@ export class WebXRManager {
 
       this.currentSession = requestedSession;
       requestedSession.addEventListener('end', this.onSessionEnd);
+      requestedSession.addEventListener('visibilitychange', this.onVisibilityChange);
       await this.renderer.xr.setSession(requestedSession);
 
       console.log("[WebXRManager] AR Session started");
     } catch (e) {
       if (requestedSession) {
         requestedSession.removeEventListener('end', this.onSessionEnd);
+        requestedSession.removeEventListener('visibilitychange', this.onVisibilityChange);
         if (this.currentSession === requestedSession) {
           this.currentSession = null;
         }
@@ -129,6 +139,17 @@ export class WebXRManager {
       }
       this.restoreRendererXrEnabled();
       console.error("[WebXRManager] Failed to start AR session", e);
+      if (e instanceof DOMException) {
+        if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
+          throw new Error("AR access was blocked. Allow motion/camera access and keep the page focused", { cause: e });
+        }
+        if (e.name === 'NotSupportedError') {
+          throw new Error("Immersive AR is not available on this browser or device", { cause: e });
+        }
+        if (e.name === 'InvalidStateError') {
+          throw new Error("AR could not start because the page is not active. Return to the page and try again", { cause: e });
+        }
+      }
       throw e;
     } finally {
       this.isStartingSession = false;
@@ -140,12 +161,20 @@ export class WebXRManager {
     const session = event.target as XRSession | null;
     const wasCurrentSession = !session || session === this.currentSession;
     session?.removeEventListener('end', this.onSessionEnd);
+    session?.removeEventListener('visibilitychange', this.onVisibilityChange);
     if (!wasCurrentSession) return;
 
     console.log("[WebXRManager] AR Session ended");
     this.currentSession = null;
     this.restoreRendererXrEnabled();
     this.notifySessionEnd();
+    this.notifyState();
+  };
+
+  private onVisibilityChange = () => {
+    // The UA can temporarily blur or hide an immersive session (for example,
+    // when a system prompt appears). Surface that state instead of treating it
+    // as a session failure.
     this.notifyState();
   };
 
