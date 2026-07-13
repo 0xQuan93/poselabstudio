@@ -56,9 +56,9 @@ const TUTORIAL_STEPS = [
     title: '6. Camera & Scene Controls',
     description: (
       <span>
-        Use hotkeys <span className="hotkey-hint">1</span> <span className="hotkey-hint">3</span> <span className="hotkey-hint">5</span> <span className="hotkey-hint">7</span> for quick views. 
-        Press <span className="hotkey-hint">Space</span> for snapshot. 
-        Click <DiceFive size={16} weight="duotone" /> to randomize avatar, or the PoseLab logo to reset the scene.
+        On touch devices, open Camera Tools in the upper-left for quick views and aspect ratios.
+        Open the Tools drawer to pose, capture, or start mocap. On desktop, number keys select camera views.
+        Click <DiceFive size={16} weight="duotone" /> to randomize the avatar.
       </span>
     ),
     targetId: 'canvas-stage',

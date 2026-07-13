@@ -38,9 +38,11 @@ function App() {
   const { isReady, error, discordSdk } = useDiscordActivity();
   const { mode, setMode, focusModeActive, sidebarOpen, mobileDrawerOpen, setMobileDrawerOpen } = useUIStore();
   const streamMode = useUIStore((state) => state.streamMode);
+  const setStreamMode = useUIStore((state) => state.setStreamMode);
   const { theme, locale, textScale, autosaveEnabled, autosaveIntervalMinutes, autosaveMaxEntries } = useSettingsStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 960);
   const [isDragging, setIsDragging] = useState(false);
+  const [studioMobileView, setStudioMobileView] = useState<'feed' | 'chat'>('feed');
   const user = useUserStore((state) => state.user);
   const { setFileSource } = useAvatarSource();
   const { addToast } = useToastStore();
@@ -115,6 +117,15 @@ function App() {
   }, [streamMode]);
 
   useEffect(() => {
+    if (!streamMode) return;
+    const exitStreamMode = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setStreamMode(false);
+    };
+    window.addEventListener('keydown', exitStreamMode);
+    return () => window.removeEventListener('keydown', exitStreamMode);
+  }, [setStreamMode, streamMode]);
+
+  useEffect(() => {
     const root = document.documentElement;
     if (theme !== 'system') {
       root.setAttribute('data-theme', theme);
@@ -157,10 +168,20 @@ function App() {
     }
   }, [isMobile, mode, setMobileDrawerOpen, streamMode]);
 
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const closeDrawer = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileDrawerOpen(false);
+    };
+    window.addEventListener('keydown', closeDrawer);
+    return () => window.removeEventListener('keydown', closeDrawer);
+  }, [mobileDrawerOpen, setMobileDrawerOpen]);
+
   const handleModeChange = (nextMode: typeof mode) => {
     setMode(nextMode);
     setMobileDrawerOpen(false);
   };
+  const mobileToolsLabel = mode === 'reactions' ? 'Reactions tools' : 'Pose Lab tools';
 
   if (isEmbeddedApp && error) return <div>Error: {error.message}</div>;
   if (isEmbeddedApp && !isReady) return <div>Loading...</div>;
@@ -168,6 +189,12 @@ function App() {
   return (
     <div className={`app-shell ${focusModeActive ? 'focus-mode' : ''} ${streamMode ? 'stream-mode' : ''}`}>
       <AppHeader mode={mode} onModeChange={handleModeChange} />
+
+      {streamMode && (
+        <button type="button" className="exit-stream-mode-btn" onClick={() => setStreamMode(false)} aria-label="Exit clean stream output">
+          <X size={18} weight="bold" /> Exit Stream Output
+        </button>
+      )}
 
       {isDragging && (
         <div className="drag-drop-overlay">
@@ -179,11 +206,17 @@ function App() {
       )}
 
       <main className={`layout ${mode === 'studio' ? 'studio-layout' : ''} ${!sidebarOpen ? 'sidebar-closed' : ''}`}>
-        <div className="studio-mode-wrapper" style={{ display: mode === 'studio' ? 'flex' : 'none', flex: 1 }}>
+        {isMobile && mode === 'studio' && (
+          <nav className="studio-mobile-switch" aria-label="Studio view">
+            <button className={studioMobileView === 'feed' ? 'active' : ''} onClick={() => setStudioMobileView('feed')}>Feed</button>
+            <button className={studioMobileView === 'chat' ? 'active' : ''} onClick={() => setStudioMobileView('chat')}>Chat</button>
+          </nav>
+        )}
+        <div className="studio-mode-wrapper" style={{ display: mode === 'studio' && (!isMobile || studioMobileView === 'feed') ? 'flex' : 'none', flex: 1 }}>
           <CreatorFeed />
         </div>
 
-        {mode === 'studio' && <StudioChatPanel />}
+        {mode === 'studio' && (!isMobile || studioMobileView === 'chat') && <StudioChatPanel />}
 
         <section className="viewport" style={{ display: mode === 'studio' ? 'none' : 'flex' }}>
           <ErrorBoundary>
@@ -208,7 +241,7 @@ function App() {
             onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
             aria-expanded={mobileDrawerOpen}
             aria-controls="mobile-control-drawer"
-            aria-label={mobileDrawerOpen ? 'Close PoseLab tools' : 'Open PoseLab tools'}
+            aria-label={mobileDrawerOpen ? `Close ${mobileToolsLabel}` : `Open ${mobileToolsLabel}`}
           >
             {mobileDrawerOpen ? <X size={22} weight="bold" /> : <SlidersHorizontal size={24} weight="duotone" />}
           </button>
@@ -220,15 +253,17 @@ function App() {
               onClick={() => setMobileDrawerOpen(false)}
             />
           )}
-          <aside
-            id="mobile-control-drawer"
-            className={`control-drawer ${mobileDrawerOpen ? 'open' : ''}`}
-            aria-hidden={!mobileDrawerOpen}
-            aria-label="PoseLab tools"
-          >
-            <div className="control-drawer__handle" aria-hidden="true" />
-            <ControlPanel mode={mode} />
-          </aside>
+          {mobileDrawerOpen && (
+            <aside id="mobile-control-drawer" className="control-drawer open" aria-label={mobileToolsLabel}>
+              <div className="control-drawer__handle" aria-hidden="true" />
+              <nav className="mobile-quick-actions" aria-label="Quick tools">
+                <button onClick={() => { setMode('reactions'); useUIStore.getState().setReactionTab('mocap'); }}>Face AR</button>
+                <button onClick={() => { setMode('reactions'); useUIStore.getState().setReactionTab('export'); }}>Capture</button>
+                <button onClick={() => { setMode('reactions'); useUIStore.getState().setReactionTab('scene'); }}>Scene</button>
+              </nav>
+              <ControlPanel mode={mode} />
+            </aside>
+          )}
         </>
       )}
 

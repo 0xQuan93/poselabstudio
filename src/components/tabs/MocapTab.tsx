@@ -30,7 +30,8 @@ import {
   Lightbulb,
   ArrowRight,
   Lock,
-  Camera
+  Camera,
+  Broadcast
 } from '@phosphor-icons/react';
 
 const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
@@ -98,7 +99,7 @@ type StartMocapOptions = {
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
-  const { startCalibration, isCalibrationActive } = useUIStore();
+  const { startCalibration, isCalibrationActive, setStreamMode } = useUIStore();
   const {
     liveModeEnabled,
     liveControlsEnabled,
@@ -318,7 +319,7 @@ export function MocapTab() {
 
   const handleModeChange = useCallback((mode: 'full' | 'face') => {
       if (faceMaskEnabled) {
-          addToast("Disable XR Face Mask before changing mocap modes.", "warning");
+          addToast("Stop Face AR before changing mocap modes.", "warning");
           return;
       }
 
@@ -487,7 +488,7 @@ export function MocapTab() {
   const saveFaceMaskCalibration = useCallback(() => {
     const manager = managerRef.current;
     if (!manager) {
-      addToast("Start XR Face Mask before saving calibration.", "warning");
+      addToast("Start Face AR before saving calibration.", "warning");
       return;
     }
 
@@ -502,7 +503,7 @@ export function MocapTab() {
     setFaceMaskAdjustments(normalized);
     setFaceMaskProfile(getFaceMaskProfileKey(), normalized);
     setManagerStatus(manager.getStatus());
-    addToast("XR Face Mask neutral calibration saved for this avatar and camera.", "success");
+    addToast("Face AR neutral calibration saved for this avatar and camera.", "success");
   }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
 
   const resetFaceMaskAdjustments = useCallback(() => {
@@ -510,7 +511,7 @@ export function MocapTab() {
     const next = normalizeFaceMaskAdjustments(managerRef.current?.getFaceMaskAdjustments());
     setFaceMaskProfile(getFaceMaskProfileKey(), next);
     setFaceMaskAdjustments(next);
-    addToast("XR Face Mask adjustments reset", "info");
+    addToast("Face AR adjustments reset", "info");
   }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
 
   const stopMocap = useCallback(() => {
@@ -616,7 +617,7 @@ export function MocapTab() {
 
   const toggleSelfieMode = () => {
     if (faceMaskEnabled) {
-      addToast("Disable XR Face Mask before enabling Selfie Mode.", "warning");
+      addToast("Stop Face AR before enabling Selfie Mode.", "warning");
       return;
     }
     const next = !isSelfieMode;
@@ -660,13 +661,13 @@ export function MocapTab() {
       managerRef.current.setFaceMaskMode(false);
       setFaceMaskEnabled(false);
       setFaceMaskDebug(false);
-      addToast("XR Face Mask disabled", "info");
+      addToast("Face AR stopped", "info");
       return;
     }
 
     const vrm = avatarManager.getVRM();
     if (!vrm) {
-      addToast("Load a VRM avatar before enabling XR Face Mask.", "warning");
+      addToast("Load a VRM avatar before starting Face AR.", "warning");
       return;
     }
 
@@ -703,7 +704,7 @@ export function MocapTab() {
     sceneManager.setBackground('transparent');
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
-    addToast("XR Face Mask enabled. The canvas now composites webcam body plus VRM head.", "success");
+    addToast("Face AR started. Your front camera is now driving the avatar overlay.", "success");
   }, [addToast, faceMaskDebug, faceMaskEnabled, getFaceMaskProfile, getFaceMaskProfileKey, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
 
   const enterVR = async () => {
@@ -832,18 +833,37 @@ export function MocapTab() {
   return (
     <div className="tab-content mocap-tab">
       <div className="tab-section">
-        <h3>LIVE Mode</h3>
+        <h3>Face AR</h3>
         <p className="muted small">
-          LIVE turns on upper-body mocap with voice sync. Arrow keys can trigger poses at any time.
+          Use the iPhone front camera to place your VRM head over the live camera view and drive it with facial motion. Runs entirely in Safari—no native app required.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <button
+            className={`primary full-width ${faceMaskEnabled ? 'secondary' : ''}`}
+            onClick={toggleFaceMask}
+            disabled={isStarting}
+            aria-pressed={faceMaskEnabled}
+            style={{ flex: '1 1 100%' }}
+          >
+            <MagicWand size={18} weight="duotone" /> {faceMaskEnabled ? 'Stop Face AR' : 'Start Face AR'}
+          </button>
           <button
             className={`primary full-width ${liveModeEnabled ? 'secondary' : ''}`}
             onClick={() => setLiveModeEnabled(!liveModeEnabled)}
             aria-pressed={liveModeEnabled}
             style={{ flex: '1 1 100%' }}
           >
-            {liveModeEnabled ? 'Disable LIVE Mode' : 'Enable LIVE Mode'}
+            {liveModeEnabled ? 'Stop Voice + Controls' : 'Add Voice + Controls'}
+          </button>
+          <button
+            className="secondary full-width"
+            onClick={() => {
+              setStreamMode(true);
+              addToast('Clean Stream Output active. Press Esc or move your pointer to the top-right to exit.', 'info');
+            }}
+            style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <Broadcast size={16} weight="duotone" /> Open Clean Stream Output
           </button>
           <button
             className={`secondary full-width ${liveControlsEnabled ? 'active' : ''}`}
@@ -854,7 +874,7 @@ export function MocapTab() {
             {liveControlsEnabled ? 'Arrow Key Controls: On' : 'Arrow Key Controls: Off'}
           </button>
         </div>
-        <div className="mocap-checklist" aria-label="LIVE mode status">
+        <div className="mocap-checklist" aria-label="Live performance readiness">
           <span className={avatarManager.getVRM() ? 'is-ready' : ''}>Avatar</span>
           <span className={isActive ? 'is-ready' : ''}>Camera</span>
           <span className={isVoiceLipSyncActive ? 'is-ready' : isVoiceStarting ? 'is-pending' : ''}>
@@ -895,7 +915,7 @@ export function MocapTab() {
           <span className={`mocap-signal ${faceFresh ? 'is-ready' : ''}`}>Face</span>
           <span className={`mocap-signal ${leftHandFresh ? 'is-ready' : ''}`}>Left Hand</span>
           <span className={`mocap-signal ${rightHandFresh ? 'is-ready' : ''}`}>Right Hand</span>
-          <span className={`mocap-signal ${faceMaskFresh ? 'is-ready' : ''}`}>XR Mask</span>
+          <span className={`mocap-signal ${faceMaskFresh ? 'is-ready' : ''}`}>Face AR</span>
           <span className={`mocap-signal ${managerStatus.fps > 12 ? 'is-ready' : ''}`}>{managerStatus.fps} FPS</span>
         </div>
         
@@ -1051,13 +1071,13 @@ export function MocapTab() {
                 disabled={isStarting}
                 aria-pressed={faceMaskEnabled}
                 style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                title="Replace your webcam head with the loaded VRM head in the canvas"
+                title="Use the front camera to composite and drive the loaded VRM head"
             >
-                <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'XR Face Mask: On' : 'XR Face Mask'}
+                <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'Face AR: On' : 'Face AR'}
             </button>
 
             {faceMaskEnabled && (
-                <div className="mocap-mask-controls" aria-label="XR Face Mask manual adjustments">
+                <div className="mocap-mask-controls" aria-label="Face AR manual adjustments">
                     <div className="mocap-mask-controls__header">
                         <span>Mask Adjust</span>
                         <div className="mocap-mask-controls__actions">
@@ -1220,7 +1240,7 @@ export function MocapTab() {
           <h3>Instructions</h3>
           <ul className="small muted" style={{ paddingLeft: '1.2rem' }}>
               <li><strong>Upper Body:</strong> Track face, hands, and arms without lower-body tracking.</li>
-              <li><strong>XR Face Mask:</strong> Shows the webcam feed in-canvas and replaces the tracked human head with the loaded VRM head.</li>
+              <li><strong>Face AR:</strong> Uses the front camera as a live backdrop and replaces the tracked human head with the loaded VRM head.</li>
               <li><strong>Full Body:</strong> Stand back so your head, torso, legs, and hands are visible.</li>
               <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button to align your body and gaze.</li>
               <li>If the camera stops immediately, check browser camera permissions and close other apps using the camera.</li>

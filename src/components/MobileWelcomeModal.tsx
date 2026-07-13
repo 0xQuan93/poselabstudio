@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { DeviceMobile, HandTap, X } from '@phosphor-icons/react';
+import { useAvatarSource } from '../state/useAvatarSource';
 
 export function MobileWelcomeModal() {
+  const avatarType = useAvatarSource((state) => state.avatarType);
   const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -17,10 +19,12 @@ export function MobileWelcomeModal() {
       // Storage can be unavailable in private or embedded browsing contexts.
     }
 
-    if (isMobile && !hasSeen) {
+    // The avatar onboarding already introduces first-time users. Avoid stacking
+    // two modal experiences on a fresh mobile session.
+    if (isMobile && avatarType !== 'none' && !hasSeen) {
       setIsOpen(true);
     }
-  }, []);
+  }, [avatarType]);
 
   function handleClose() {
     setIsOpen(false);

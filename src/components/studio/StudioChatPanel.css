@@ -14,8 +14,8 @@
 @media (max-width: 960px) {
   .studio-chat-panel {
     width: 100%;
-    flex: none; /* override flex: 1 on mobile to use fixed height */
-    height: 45vh; /* Take up bottom portion of screen */
+    flex: 1;
+    height: auto;
     border-left: none;
     border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
   }

@@ -763,12 +763,12 @@ export function ExportTab({ mode = 'reactions' }: ExportTabProps) {
           className="secondary full-width"
           onClick={() => {
             setStreamMode(true);
-            addToast("Stream Mode Active (Press Esc to exit)", "info");
+            addToast("Clean Stream Output active. Press Esc or move your pointer to the top-right to exit.", "info");
           }}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
         >
           <Broadcast size={16} weight="duotone" style={{ color: 'var(--accent)' }} />
-          Enter Stream Mode
+          Open Clean Stream Output
         </button>
       </div>
 

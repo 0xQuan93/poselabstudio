@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { 
   X, 
   Users, 
@@ -18,14 +19,23 @@ interface AboutModalProps {
 }
 
 export function AboutModal({ isOpen, onClose }: AboutModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); previousFocus?.focus(); };
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-        <button className="modal-close" onClick={onClose}><X size={20} weight="bold" /></button>
+      <div ref={dialogRef} className="modal-content" role="dialog" aria-modal="true" aria-labelledby="about-dialog-title" tabIndex={-1} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <button className="modal-close" onClick={onClose} aria-label="Close About"><X size={20} weight="bold" /></button>
         
-        <h2 style={{ 
+        <h2 id="about-dialog-title" style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '10px',

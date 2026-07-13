@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSettingsStore, type Locale, type QualityLevel } from '../state/useSettingsStore';
 import { autosaveManager, type AutosaveEntry } from '../persistence/autosaveManager';
 import { projectManager } from '../persistence/projectManager';
@@ -19,6 +19,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const {
     quality,
     shadows,
@@ -79,14 +80,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); previousFocus?.focus(); };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+      <div ref={dialogRef} className="modal-content" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" tabIndex={-1} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2><GearSix size={24} weight="duotone" /> Settings</h2>
-          <button className="close-button" onClick={onClose}>&times;</button>
+          <h2 id="settings-dialog-title"><GearSix size={24} weight="duotone" /> Settings</h2>
+          <button className="close-button" onClick={onClose} aria-label="Close Settings">&times;</button>
         </div>
         
         <div className="modal-body">

@@ -129,8 +129,8 @@ const HAND_CONSTRAINTS = {
 
 /** Camera capture configuration */
 const CAMERA_CONFIG = {
-  WIDTH: 640,
-  HEIGHT: 480,
+  WIDTH: 1920,
+  HEIGHT: 1080,
   /** Use front-facing camera on mobile devices */
   FACING_MODE: 'user' as const,
 };
@@ -671,21 +671,36 @@ export class MotionCaptureManager {
 
         // Custom MediaStream management to support device selection
         // Use provided deviceId or fall back to FACING_MODE
-        const constraints: MediaStreamConstraints = {
-            video: deviceId 
-                ? { deviceId: { exact: deviceId }, width: CAMERA_CONFIG.WIDTH, height: CAMERA_CONFIG.HEIGHT }
-                : { facingMode: CAMERA_CONFIG.FACING_MODE, width: CAMERA_CONFIG.WIDTH, height: CAMERA_CONFIG.HEIGHT }
+        const preferredVideo: MediaTrackConstraints = {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: CAMERA_CONFIG.FACING_MODE } }),
+            width: { ideal: CAMERA_CONFIG.WIDTH },
+            height: { ideal: CAMERA_CONFIG.HEIGHT },
+            frameRate: { ideal: 30, max: 60 },
+            aspectRatio: { ideal: 16 / 9 },
         };
+        const constraints: MediaStreamConstraints = { video: preferredVideo, audio: false };
 
         console.log('[MotionCaptureManager] Requesting camera with constraints:', constraints);
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        let stream: MediaStream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (preferredError) {
+            // Older iOS/Safari camera drivers can reject otherwise valid ideal
+            // constraints. Retry with only the selected front camera.
+            console.warn('[MotionCaptureManager] Preferred camera profile unavailable, retrying compatibility profile', preferredError);
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: CAMERA_CONFIG.FACING_MODE },
+                audio: false,
+            });
+        }
         this.videoElement.srcObject = stream;
+        const settings = stream.getVideoTracks()[0]?.getSettings();
+        console.log('[MotionCaptureManager] Camera profile active:', settings);
         
         // Wait for video to be ready
         await new Promise<void>((resolve) => {
             this.videoElement.onloadedmetadata = () => {
-                this.videoElement.play();
-                resolve();
+                this.videoElement.play().then(resolve).catch(resolve);
             };
         });
 

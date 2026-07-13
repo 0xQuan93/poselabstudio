@@ -25,10 +25,12 @@ Previously, physics often updated *before* bones moved, causing hair and clothes
   3. **Render**: Draws the frame.
 - **Benefit**: Every bone movement is perfectly synchronized with the physics engine.
 
-### 3. 👓 WebXR / AR Mode
+### 3. 📱 Face AR (iPhone Safari prioritized)
 You can now bring your avatar into the real world.
 - **Supported Devices**: Android Phones (Chrome), Meta Quest, Vision Pro.
-- **Usage**: Click the **"Enter AR Mode"** button in the Mocap tab.
+- **Usage**: Load a VRM, open **Mocap**, then tap **Start Face AR**. Allow front-camera access when Safari asks.
+- **How it works**: The browser uses MediaPipe facial landmarks to drive and composite the VRM head over the live front-camera view.
+- **iPhone note**: This is a browser-based Face AR experience. Safari does not expose native ARKit face anchors or immersive WebXR AR to web apps.
 - **Function**: The background becomes your camera feed, and the avatar stands on your floor/desk.
 
 ---
