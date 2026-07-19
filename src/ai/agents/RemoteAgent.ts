@@ -88,7 +88,9 @@ export class RemoteAgent implements IAgent {
       useAIStore.getState().setThought(null);
 
       // Execute actions found in the response
-      await ActionParser.execute(responseText, (t) => this.speak(t));
+      // A response from a configurable remote endpoint is never allowed to
+      // initiate a camera-frame request.
+      await ActionParser.execute(responseText, (t) => this.speak(t), { allowAiVisionCapture: false });
       
       return responseText;
 

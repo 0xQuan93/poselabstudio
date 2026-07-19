@@ -111,7 +111,9 @@ class DirectorManager {
         shot.actions!.forEach(action => {
           console.log(`[Director] Executing action: ${action}`);
           // Pass empty speak function as we don't want TTS during script execution unless specified
-          ActionParser.execute(action, () => {}); 
+          // Scripts can be authored remotely or replayed later; they may not
+          // request a live camera frame.
+          ActionParser.execute(action, () => {}, { allowAiVisionCapture: false });
         });
     }
 

@@ -58,6 +58,8 @@ export class VoiceLipSync {
   private analyser: AnalyserNode | null = null;
   private microphone: MediaStreamAudioSourceNode | null = null;
   private mediaStream: MediaStream | null = null;
+  /** Whether this instance created the stream and is responsible for stopping it. */
+  private ownsMediaStream = false;
   
   // Analysis buffers
   private frequencyData: Uint8Array<ArrayBuffer> = new Uint8Array(0);
@@ -134,21 +136,33 @@ export class VoiceLipSync {
   /**
    * Start listening to microphone and driving lip sync
    */
-  async start(): Promise<void> {
+  async start(sharedStream?: MediaStream | null): Promise<void> {
     if (this.isActive) return;
 
     try {
-      // Request microphone access
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // Reuse an existing microphone stream when a capture session already owns
+      // it. iOS Safari is much more reliable when Face AR, lip sync, and video
+      // recording share one microphone rather than opening competing streams.
+      const sharedAudioTracks = sharedStream?.getAudioTracks() ?? [];
+      if (sharedAudioTracks.length > 0) {
+        this.mediaStream = sharedStream!;
+        this.ownsMediaStream = false;
+      } else {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        this.ownsMediaStream = true;
+      }
 
       // Create audio context and analyser
-      this.audioContext = new AudioContext();
+      this.audioContext = new (window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext || AudioContext)();
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = this.config.fftSize;
       this.analyser.smoothingTimeConstant = 0.8;
@@ -168,6 +182,11 @@ export class VoiceLipSync {
 
       console.log('[VoiceLipSync] Started - FFT bins:', bufferLength);
     } catch (error) {
+      if (this.ownsMediaStream) {
+        this.mediaStream?.getTracks().forEach((track) => track.stop());
+      }
+      this.mediaStream = null;
+      this.ownsMediaStream = false;
       console.error('[VoiceLipSync] Failed to start:', error);
       throw error;
     }
@@ -179,10 +198,11 @@ export class VoiceLipSync {
   stop() {
     this.stopUpdateLoop();
 
-    if (this.mediaStream) {
+    if (this.mediaStream && this.ownsMediaStream) {
       this.mediaStream.getTracks().forEach(track => track.stop());
-      this.mediaStream = null;
     }
+    this.mediaStream = null;
+    this.ownsMediaStream = false;
 
     if (this.microphone) {
       this.microphone.disconnect();
@@ -209,6 +229,15 @@ export class VoiceLipSync {
    */
   getIsActive(): boolean {
     return this.isActive;
+  }
+
+  /**
+   * Returns the live microphone stream while lip sync is active. Consumers must
+   * never stop these tracks; the owning capture session/lip-sync instance does
+   * that during its normal shutdown.
+   */
+  getMediaStream(): MediaStream | null {
+    return this.mediaStream;
   }
 
   /**

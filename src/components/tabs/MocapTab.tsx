@@ -42,6 +42,8 @@ const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
   videoWidth: 0,
   videoHeight: 0,
   fps: 0,
+  targetFps: 0,
+  droppedVideoFrames: 0,
   lastFrameAt: null,
   lastPoseAt: null,
   lastFaceAt: null,
@@ -96,6 +98,17 @@ type StartMocapOptions = {
   isolateFaceMask?: boolean;
 };
 
+function getBrowserCaptureSupport() {
+  const canUseCamera = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+  const canRecordCanvas = typeof MediaRecorder !== 'undefined'
+    && typeof HTMLCanvasElement !== 'undefined'
+    && typeof HTMLCanvasElement.prototype.captureStream === 'function';
+  const isTouchDevice = typeof window !== 'undefined'
+    && (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(pointer: coarse)').matches);
+
+  return { canUseCamera, canRecordCanvas, isTouchDevice };
+}
+
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
@@ -134,6 +147,7 @@ export function MocapTab() {
     setFaceMaskEnabled,
     setFaceMaskProfile,
     getFaceMaskProfile,
+    clearFaceMaskProfiles,
     setVoiceVolume,
     setVoiceSensitivity,
   } = useMocapStore();
@@ -168,6 +182,7 @@ export function MocapTab() {
   const [faceMaskAvatarProfileId, setFaceMaskAvatarProfileId] = useState('avatar');
   const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
   const [faceMaskDebug, setFaceMaskDebug] = useState(false);
+  const [browserCaptureSupport, setBrowserCaptureSupport] = useState(getBrowserCaptureSupport);
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
@@ -194,6 +209,13 @@ export function MocapTab() {
       setManagerStatus(managerRef.current.getStatus());
     }
   }, [mocapMode]);
+
+  useEffect(() => {
+    const refreshCaptureSupport = () => setBrowserCaptureSupport(getBrowserCaptureSupport());
+    refreshCaptureSupport();
+    window.addEventListener('pageshow', refreshCaptureSupport);
+    return () => window.removeEventListener('pageshow', refreshCaptureSupport);
+  }, []);
 
   useEffect(() => {
     const unsubscribeState = webXRManager.subscribe(({ isActive: nextIsActive, isStarting, visibilityState }) => {
@@ -427,12 +449,13 @@ export function MocapTab() {
     setVoiceVolume(0);
   }, [isVoiceLipSyncActive, setIsVoiceLipSyncActive, setVoiceVolume]);
 
-  const startVoiceLipSync = useCallback(async () => {
-    if (isVoiceLipSyncActive || voiceStartingRef.current) return;
+  const startVoiceLipSync = useCallback(async (): Promise<boolean> => {
+    if (isVoiceLipSyncActive) return true;
+    if (voiceStartingRef.current) return false;
     const vrm = avatarManager.getVRM();
     if (!vrm) {
       addToast("Load an avatar first!", "error");
-      return;
+      return false;
     }
     voiceStartingRef.current = true;
     setIsVoiceStarting(true);
@@ -447,7 +470,9 @@ export function MocapTab() {
         voiceLipSync.stop();
         setIsVoiceLipSyncActive(false);
         setVoiceVolume(0);
+        return false;
       }
+      return true;
     } catch (e: any) {
       console.error('[VoiceLipSync]', e);
       let msg = "Failed to access microphone.";
@@ -457,6 +482,7 @@ export function MocapTab() {
         msg = "No microphone found.";
       }
       addToast(msg, "error");
+      return false;
     } finally {
       voiceStartingRef.current = false;
       setIsVoiceStarting(false);
@@ -513,6 +539,18 @@ export function MocapTab() {
     setFaceMaskAdjustments(next);
     addToast("Face AR adjustments reset", "info");
   }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
+
+  const clearFacialCaptureData = useCallback(() => {
+    const confirmed = window.confirm(
+      'Clear the saved Facial XR camera choice and all local face-mask calibration profiles? Your browser permissions and downloaded recordings will not be changed.',
+    );
+    if (!confirmed) return;
+
+    clearFaceMaskProfiles();
+    managerRef.current?.resetFaceMaskAdjustments();
+    setFaceMaskAdjustments(DEFAULT_FACE_MASK_ADJUSTMENTS);
+    addToast('Saved Facial XR calibration and camera choice cleared from this device.', 'success');
+  }, [addToast, clearFaceMaskProfiles]);
 
   const stopMocap = useCallback(() => {
     if (!managerRef.current || !isActive) return;
@@ -654,7 +692,7 @@ export function MocapTab() {
     }
   }, [addToast, isARActive]);
 
-  const toggleFaceMask = useCallback(async () => {
+  const toggleFaceMask = useCallback(async (withVoice = false) => {
     if (!managerRef.current) return;
 
     if (faceMaskEnabled) {
@@ -704,8 +742,28 @@ export function MocapTab() {
     sceneManager.setBackground('transparent');
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
-    addToast("Face AR started. Your front camera is now driving the avatar overlay.", "success");
-  }, [addToast, faceMaskDebug, faceMaskEnabled, getFaceMaskProfile, getFaceMaskProfileKey, isActive, isSelfieMode, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap]);
+    const voiceReady = withVoice ? await startVoiceLipSync() : isVoiceLipSyncActive;
+    addToast(
+      voiceReady
+        ? "Facial XR started. Your front camera and voice are driving the avatar."
+        : "Face AR started. Add voice when you are ready to record.",
+      "success",
+    );
+  }, [addToast, faceMaskDebug, faceMaskEnabled, getFaceMaskProfile, getFaceMaskProfileKey, isActive, isSelfieMode, isVoiceLipSyncActive, mocapMode, setFaceMaskEnabled, setMocapMode, startMocap, startVoiceLipSync]);
+
+  const toggleFacialXR = useCallback(async () => {
+    if (faceMaskEnabled) {
+      managerRef.current?.setFaceMaskMode(false);
+      setFaceMaskEnabled(false);
+      setFaceMaskDebug(false);
+      stopVoiceLipSync();
+      stopMocap();
+      addToast("Facial XR ended. Camera and microphone released.", "info");
+      return;
+    }
+
+    await toggleFaceMask(true);
+  }, [addToast, faceMaskEnabled, setFaceMaskEnabled, stopMocap, stopVoiceLipSync, toggleFaceMask]);
 
   const enterVR = async () => {
     const vrm = avatarManager.getVRM();
@@ -804,11 +862,19 @@ export function MocapTab() {
   const faceMaskFresh = isFresh(managerStatus.lastFaceMaskAt, now);
   const frameFresh = isFresh(managerStatus.lastFrameAt, now);
   const activePartCount = [poseFresh, faceFresh, leftHandFresh, rightHandFresh].filter(Boolean).length;
-  const cameraStateLabel = isStarting ? 'Starting' : isActive ? 'Live' : 'Idle';
+  const cameraStateLabel = isStarting
+    ? 'Starting'
+    : isActive && managerStatus.isTracking
+      ? 'Live'
+      : isActive
+        ? 'Interrupted'
+        : 'Idle';
   const trackingQualityLabel = !managerStatus.isHolisticReady
     ? 'MediaPipe unavailable'
     : !isActive
       ? 'Standby'
+      : !managerStatus.isTracking
+        ? 'Camera interrupted'
       : !frameFresh
         ? 'Searching'
         : activePartCount >= 3
@@ -820,6 +886,8 @@ export function MocapTab() {
     ? 'Reload if the CDN script failed.'
     : !isActive
       ? 'Ready when the camera starts.'
+      : !managerStatus.isTracking
+        ? 'Camera stream ended. Stop, then start the camera to reconnect.'
       : !frameFresh
         ? 'Waiting for camera frames.'
         : activePartCount >= 3
@@ -829,23 +897,26 @@ export function MocapTab() {
     ? `${managerStatus.videoWidth}x${managerStatus.videoHeight}`
     : 'No video';
   const vmcLabel = vmcEnabled ? vmcStatus : 'off';
+  const facialXrReady = Boolean(avatarManager.getVRM())
+    && browserCaptureSupport.canUseCamera
+    && browserCaptureSupport.canRecordCanvas;
 
   return (
     <div className="tab-content mocap-tab">
       <div className="tab-section">
         <h3>Face AR</h3>
         <p className="muted small">
-          Use the iPhone front camera to place your VRM head over the live camera view and drive it with facial motion. Runs entirely in Safari—no native app required.
+          Browser-first facial capture for your VRM: front camera, voice lip sync, and local video recording. It uses browser landmarks—not native TrueDepth/ARKit data.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           <button
             className={`primary full-width ${faceMaskEnabled ? 'secondary' : ''}`}
-            onClick={toggleFaceMask}
+            onClick={toggleFacialXR}
             disabled={isStarting}
             aria-pressed={faceMaskEnabled}
             style={{ flex: '1 1 100%' }}
           >
-            <MagicWand size={18} weight="duotone" /> {faceMaskEnabled ? 'Stop Face AR' : 'Start Face AR'}
+            <MagicWand size={18} weight="duotone" /> {faceMaskEnabled ? 'Exit Facial XR' : 'Enter Facial XR'}
           </button>
           <button
             className={`primary full-width ${liveModeEnabled ? 'secondary' : ''}`}
@@ -876,15 +947,28 @@ export function MocapTab() {
         </div>
         <div className="mocap-checklist" aria-label="Live performance readiness">
           <span className={avatarManager.getVRM() ? 'is-ready' : ''}>Avatar</span>
-          <span className={isActive ? 'is-ready' : ''}>Camera</span>
+          <span className={browserCaptureSupport.canUseCamera ? 'is-ready' : ''}>Camera API</span>
           <span className={isVoiceLipSyncActive ? 'is-ready' : isVoiceStarting ? 'is-pending' : ''}>
             {isVoiceStarting ? 'Voice starting' : 'Voice'}
           </span>
-          <span className={liveControlsEnabled ? 'is-ready' : ''}>Controls</span>
+          <span className={browserCaptureSupport.canRecordCanvas ? 'is-ready' : ''}>Video recorder</span>
         </div>
         <p className="small muted" style={{ marginTop: '0.75rem' }}>
-          Arrow keys map to presets: ↑ Sunset Call, ↓ Signal Reverie, ← Wave, → Point.
+          {facialXrReady
+            ? browserCaptureSupport.isTouchDevice
+              ? 'Preflight ready. Keep your face centered, use front lighting, then tap Enter Facial XR. Use the red camera button on the stage to save a local take.'
+              : 'Preflight ready. Enter Facial XR, then use the red camera button on the stage to save a local take.'
+            : 'Load an avatar and use a browser with camera and video-recording support to enter Facial XR.'}
         </p>
+        <button
+          type="button"
+          className="secondary full-width"
+          onClick={clearFacialCaptureData}
+          style={{ marginTop: '0.5rem', minHeight: '44px' }}
+          title="Remove saved Facial XR calibration and camera preferences from this browser"
+        >
+          Clear local Facial XR data
+        </button>
       </div>
       <div className="tab-section">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><VideoCamera size={18} weight="duotone" /> Webcam Motion Capture</h3>
@@ -916,7 +1000,12 @@ export function MocapTab() {
           <span className={`mocap-signal ${leftHandFresh ? 'is-ready' : ''}`}>Left Hand</span>
           <span className={`mocap-signal ${rightHandFresh ? 'is-ready' : ''}`}>Right Hand</span>
           <span className={`mocap-signal ${faceMaskFresh ? 'is-ready' : ''}`}>Face AR</span>
-          <span className={`mocap-signal ${managerStatus.fps > 12 ? 'is-ready' : ''}`}>{managerStatus.fps} FPS</span>
+          <span
+            className={`mocap-signal ${managerStatus.fps > 12 ? 'is-ready' : ''}`}
+            title={managerStatus.droppedVideoFrames > 0 ? `${managerStatus.droppedVideoFrames} camera frames skipped to protect rendering performance` : 'Tracker frame rate'}
+          >
+            {managerStatus.targetFps ? `${managerStatus.fps}/${managerStatus.targetFps} FPS` : `${managerStatus.fps} FPS`}
+          </span>
         </div>
         
         {/* Camera Selector */}
@@ -1067,13 +1156,13 @@ export function MocapTab() {
 
             <button
                 className={`secondary full-width ${faceMaskEnabled ? 'active' : ''}`}
-                onClick={toggleFaceMask}
+                onClick={() => toggleFaceMask(false)}
                 disabled={isStarting}
                 aria-pressed={faceMaskEnabled}
                 style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                 title="Use the front camera to composite and drive the loaded VRM head"
             >
-                <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'Face AR: On' : 'Face AR'}
+                <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'Face Overlay: On' : 'Face Overlay'}
             </button>
 
             {faceMaskEnabled && (

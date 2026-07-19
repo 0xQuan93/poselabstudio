@@ -13,6 +13,10 @@ import { voiceLipSync } from './voiceLipSync';
 import { useSceneSettingsStore } from '../state/useSceneSettingsStore';
 import { getObjectBounds } from '../three/utils/boundsUtils';
 import { FaceMaskCompositor, type FaceMaskDebugFrame } from './faceMaskCompositor';
+import {
+  consumeAiVisionCaptureAuthorization,
+  type AiVisionCaptureAuthorization,
+} from './aiVisionConsent';
 
 // ======================
 // Configuration Constants
@@ -131,9 +135,20 @@ const HAND_CONSTRAINTS = {
 const CAMERA_CONFIG = {
   WIDTH: 1920,
   HEIGHT: 1080,
+  MOBILE_WIDTH: 1280,
+  MOBILE_HEIGHT: 720,
+  DESKTOP_TARGET_FPS: 30,
+  MOBILE_TARGET_FPS: 24,
+  MOBILE_MIN_INFERENCE_FPS: 18,
   /** Use front-facing camera on mobile devices */
   FACING_MODE: 'user' as const,
 };
+
+function isMobileCaptureDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || window.matchMedia('(pointer: coarse)').matches;
+}
 
 interface RecordedFrame {
     time: number;
@@ -163,6 +178,8 @@ export interface MotionCaptureStatus {
   videoWidth: number;
   videoHeight: number;
   fps: number;
+  targetFps: number;
+  droppedVideoFrames: number;
   lastFrameAt: number | null;
   lastPoseAt: number | null;
   lastFaceAt: number | null;
@@ -230,6 +247,16 @@ export class MotionCaptureManager {
 
   // Custom Loop State for Camera
   private cameraLoopId?: number;
+  private videoFrameCallbackId?: number;
+  private cameraLoopGeneration = 0;
+  private cameraVisibilityHandler?: () => void;
+  private readonly isMobileCaptureDevice = isMobileCaptureDevice();
+  private inferenceTargetFps = this.isMobileCaptureDevice
+    ? CAMERA_CONFIG.MOBILE_TARGET_FPS
+    : CAMERA_CONFIG.DESKTOP_TARGET_FPS;
+  private lastInferenceAt = 0;
+  private inferenceDurationAverageMs = 0;
+  private droppedVideoFrames = 0;
   private lastFrameAt: number | null = null;
   private lastPoseAt: number | null = null;
   private lastFaceAt: number | null = null;
@@ -613,6 +640,8 @@ export class MotionCaptureManager {
       videoWidth: this.videoElement.videoWidth || 0,
       videoHeight: this.videoElement.videoHeight || 0,
       fps: this.measuredFps,
+      targetFps: this.inferenceTargetFps,
+      droppedVideoFrames: this.droppedVideoFrames,
       lastFrameAt: this.lastFrameAt,
       lastPoseAt: this.lastPoseAt,
       lastFaceAt: this.lastFaceAt,
@@ -662,6 +691,14 @@ export class MotionCaptureManager {
 
   async start(deviceId?: string) {
     if (this.isTracking) return;
+
+    // A requestVideoFrameCallback queued by an old session can otherwise wake up
+    // after a quick stop/start and create a second MediaPipe loop.
+    this.stopCameraProcessingLoop();
+    this.detachCameraLifecycle();
+    const staleStream = this.videoElement.srcObject as MediaStream | null;
+    staleStream?.getTracks().forEach((track) => track.stop());
+    this.videoElement.srcObject = null;
     
     try {
         this.resetTrackingStats();
@@ -669,78 +706,229 @@ export class MotionCaptureManager {
             this.vrm.lookAt.target = undefined; 
         }
 
-        // Custom MediaStream management to support device selection
-        // Use provided deviceId or fall back to FACING_MODE
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('This browser does not support camera capture. Open Facial XR in Safari or another modern browser.');
+        }
+
+        // Safari can advertise a stale device ID after an app switch or a
+        // privacy rotation. Start with the user's selection, then fall back to
+        // the front camera and finally a browser-selected camera instead of
+        // leaving iPhone users stuck on an OverconstrainedError.
+        const preferredWidth = this.isMobileCaptureDevice ? CAMERA_CONFIG.MOBILE_WIDTH : CAMERA_CONFIG.WIDTH;
+        const preferredHeight = this.isMobileCaptureDevice ? CAMERA_CONFIG.MOBILE_HEIGHT : CAMERA_CONFIG.HEIGHT;
+        const preferredFps = this.isMobileCaptureDevice ? CAMERA_CONFIG.MOBILE_TARGET_FPS : CAMERA_CONFIG.DESKTOP_TARGET_FPS;
+        const maxCameraFps = this.isMobileCaptureDevice ? 30 : 60;
         const preferredVideo: MediaTrackConstraints = {
             ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: CAMERA_CONFIG.FACING_MODE } }),
-            width: { ideal: CAMERA_CONFIG.WIDTH },
-            height: { ideal: CAMERA_CONFIG.HEIGHT },
-            frameRate: { ideal: 30, max: 60 },
+            width: { ideal: preferredWidth },
+            height: { ideal: preferredHeight },
+            frameRate: { ideal: preferredFps, max: maxCameraFps },
             aspectRatio: { ideal: 16 / 9 },
         };
-        const constraints: MediaStreamConstraints = { video: preferredVideo, audio: false };
+        const cameraProfiles: MediaStreamConstraints[] = [
+            { video: preferredVideo, audio: false },
+            { video: { facingMode: { ideal: CAMERA_CONFIG.FACING_MODE } }, audio: false },
+            { video: true, audio: false },
+        ];
 
-        console.log('[MotionCaptureManager] Requesting camera with constraints:', constraints);
-        let stream: MediaStream;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (preferredError) {
-            // Older iOS/Safari camera drivers can reject otherwise valid ideal
-            // constraints. Retry with only the selected front camera.
-            console.warn('[MotionCaptureManager] Preferred camera profile unavailable, retrying compatibility profile', preferredError);
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: CAMERA_CONFIG.FACING_MODE },
-                audio: false,
-            });
+        console.log('[MotionCaptureManager] Requesting camera with profiles:', cameraProfiles);
+        let stream: MediaStream | undefined;
+        let lastCameraError: unknown;
+        for (const profile of cameraProfiles) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(profile);
+                break;
+            } catch (cameraError) {
+                lastCameraError = cameraError;
+                const errorName = cameraError instanceof DOMException ? cameraError.name : '';
+                // Permission and security failures cannot be recovered by
+                // retrying a weaker profile, and repeat prompts are hostile.
+                if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+                    throw cameraError;
+                }
+                console.warn('[MotionCaptureManager] Camera profile unavailable; trying compatibility profile', profile, cameraError);
+            }
         }
+        if (!stream) throw lastCameraError ?? new Error('No compatible camera profile was available.');
         this.videoElement.srcObject = stream;
         const settings = stream.getVideoTracks()[0]?.getSettings();
         console.log('[MotionCaptureManager] Camera profile active:', settings);
         
-        // Wait for video to be ready
-        await new Promise<void>((resolve) => {
-            this.videoElement.onloadedmetadata = () => {
-                this.videoElement.play().then(resolve).catch(resolve);
-            };
+        // Wait for a real playback-ready frame. Resolving when play() fails
+        // leaves Safari in a misleading "camera live" state with no frames.
+        await new Promise<void>((resolve, reject) => {
+            let handled = false;
+            const videoElement = this.videoElement;
+            const timeout = window.setTimeout(() => finish(new Error('Camera preview did not become ready. Try closing other camera apps and retry.')), 8_000);
+            function startPlayback() {
+                void videoElement.play()
+                    .then(() => finish())
+                    .catch((error: unknown) => finish(error instanceof Error ? error : new Error('Camera preview could not start.')));
+            }
+            function finish(error?: Error) {
+                if (handled) return;
+                handled = true;
+                window.clearTimeout(timeout);
+                videoElement.removeEventListener('loadedmetadata', startPlayback);
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve();
+                }
+            }
+
+            videoElement.addEventListener('loadedmetadata', startPlayback, { once: true });
+            if (videoElement.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                startPlayback();
+            }
         });
 
         // Start processing loop
         this.isTracking = true;
+        this.attachCameraLifecycle(stream);
         this.startCameraProcessingLoop();
         this.startUpdateLoop('camera');
         this.recordingStartTime = performance.now();
     } catch (e) {
+        this.detachCameraLifecycle();
+        const activeStream = this.videoElement.srcObject as MediaStream | null;
+        activeStream?.getTracks().forEach((track) => track.stop());
+        this.videoElement.srcObject = null;
         console.error('Failed to start camera:', e);
         throw e;
     }
   }
 
   private startCameraProcessingLoop() {
-      const loop = async () => {
-          if (!this.videoElement.paused && !this.videoElement.ended && this.holistic) {
-              await this.holistic.send({ image: this.videoElement });
-          }
-          if (this.videoElement.srcObject) {
-               // Use requestVideoFrameCallback if available for better performance/sync
-               if ('requestVideoFrameCallback' in this.videoElement) {
-                   this.videoElement.requestVideoFrameCallback(loop);
-               } else {
-                   this.cameraLoopId = requestAnimationFrame(loop);
-               }
-          }
-      };
-      loop();
-  }
+       this.stopCameraProcessingLoop();
+       const generation = ++this.cameraLoopGeneration;
 
-  stop() {
+       const scheduleNextFrame = () => {
+           if (generation !== this.cameraLoopGeneration || !this.videoElement.srcObject) return;
+
+           // requestVideoFrameCallback follows the camera's actual cadence and
+           // avoids rendering work for duplicate frames. Keep its handle so a
+           // stop/start cycle can cancel it on Safari as well as Chromium.
+           if (typeof this.videoElement.requestVideoFrameCallback === 'function') {
+               this.videoFrameCallbackId = this.videoElement.requestVideoFrameCallback(() => {
+                   this.videoFrameCallbackId = undefined;
+                   void processFrame();
+               });
+               return;
+           }
+
+           this.cameraLoopId = requestAnimationFrame(() => {
+               this.cameraLoopId = undefined;
+               void processFrame();
+           });
+       };
+
+       const processFrame = async () => {
+           if (generation !== this.cameraLoopGeneration) return;
+
+            if (!this.videoElement.paused && !this.videoElement.ended && this.holistic) {
+                const startedAt = performance.now();
+                const frameIntervalMs = 1000 / this.inferenceTargetFps;
+                if (startedAt - this.lastInferenceAt < frameIntervalMs) {
+                    this.droppedVideoFrames += 1;
+                    scheduleNextFrame();
+                    return;
+                }
+                this.lastInferenceAt = startedAt;
+                try {
+                    await this.holistic.send({ image: this.videoElement });
+                    this.updateInferenceBudget(performance.now() - startedAt);
+                } catch (error) {
+                   // Stopping a camera can race with an in-flight MediaPipe send.
+                   // Ignore that expected cancellation, but leave a useful trace
+                   // for genuine tracker failures.
+                   if (generation === this.cameraLoopGeneration) {
+                       console.warn('[MotionCaptureManager] Camera frame processing failed', error);
+                   }
+               }
+           }
+
+           if (generation === this.cameraLoopGeneration) {
+               scheduleNextFrame();
+           }
+       };
+
+       void processFrame();
+   }
+
+    private stopCameraProcessingLoop() {
+        this.cameraLoopGeneration += 1;
+
+       if (this.cameraLoopId !== undefined) {
+           cancelAnimationFrame(this.cameraLoopId);
+           this.cameraLoopId = undefined;
+       }
+
+       if (this.videoFrameCallbackId !== undefined) {
+           this.videoElement.cancelVideoFrameCallback?.(this.videoFrameCallbackId);
+            this.videoFrameCallbackId = undefined;
+        }
+    }
+
+    private updateInferenceBudget(durationMs: number) {
+        if (!this.isMobileCaptureDevice) return;
+
+        this.inferenceDurationAverageMs = this.inferenceDurationAverageMs === 0
+            ? durationMs
+            : (this.inferenceDurationAverageMs * 0.82) + (durationMs * 0.18);
+
+        const nextTarget = this.inferenceDurationAverageMs > 52
+            ? CAMERA_CONFIG.MOBILE_MIN_INFERENCE_FPS
+            : this.inferenceDurationAverageMs > 41
+                ? 20
+                : CAMERA_CONFIG.MOBILE_TARGET_FPS;
+
+        if (nextTarget !== this.inferenceTargetFps) {
+            this.inferenceTargetFps = nextTarget;
+            console.info('[MotionCaptureManager] Adaptive mobile inference target:', `${nextTarget} FPS`, `(${Math.round(this.inferenceDurationAverageMs)}ms average)`);
+        }
+    }
+
+    private attachCameraLifecycle(stream: MediaStream) {
+        this.detachCameraLifecycle();
+        const resumeVideo = () => {
+            if (document.visibilityState !== 'visible' || this.videoElement.srcObject !== stream) return;
+            if (this.videoElement.paused && !this.videoElement.ended) {
+                void this.videoElement.play().catch((error) => {
+                    console.warn('[MotionCaptureManager] Camera preview did not resume automatically', error);
+                });
+            }
+        };
+
+        this.cameraVisibilityHandler = resumeVideo;
+        document.addEventListener('visibilitychange', resumeVideo);
+        stream.getVideoTracks().forEach((track) => {
+            track.addEventListener('unmute', resumeVideo);
+            track.addEventListener('ended', () => {
+                if (this.videoElement.srcObject !== stream) return;
+                this.stopCameraProcessingLoop();
+                this.detachCameraLifecycle();
+                this.isTracking = false;
+                this.measuredFps = 0;
+                this.stopUpdateLoop('camera');
+            }, { once: true });
+        });
+    }
+
+    private detachCameraLifecycle() {
+        if (this.cameraVisibilityHandler) {
+            document.removeEventListener('visibilitychange', this.cameraVisibilityHandler);
+            this.cameraVisibilityHandler = undefined;
+        }
+    }
+
+   stop() {
     if (this.faceMaskMode) {
         this.setFaceMaskMode(false);
     }
-    // Stop the custom loop
-    if (this.cameraLoopId) {
-        cancelAnimationFrame(this.cameraLoopId);
-        this.cameraLoopId = undefined;
-    }
+    // Stop the custom loop, including any queued requestVideoFrameCallback.
+    this.stopCameraProcessingLoop();
+    this.detachCameraLifecycle();
 
     if (this.videoElement.srcObject) {
         const stream = this.videoElement.srcObject as MediaStream;
@@ -803,10 +991,16 @@ export class MotionCaptureManager {
       this.lastFaceAt = null;
       this.lastLeftHandAt = null;
       this.lastRightHandAt = null;
-      this.measuredFps = 0;
-      this.fpsFrameCount = 0;
-      this.fpsWindowStartedAt = performance.now();
-  }
+       this.measuredFps = 0;
+       this.fpsFrameCount = 0;
+       this.fpsWindowStartedAt = performance.now();
+       this.lastInferenceAt = 0;
+       this.inferenceDurationAverageMs = 0;
+       this.inferenceTargetFps = this.isMobileCaptureDevice
+           ? CAMERA_CONFIG.MOBILE_TARGET_FPS
+           : CAMERA_CONFIG.DESKTOP_TARGET_FPS;
+       this.droppedVideoFrames = 0;
+   }
 
   private recordTrackingFrame(now: number) {
       this.lastFrameAt = now;
@@ -1573,9 +1767,16 @@ export class MotionCaptureManager {
    * Captures a still frame from the webcam and uses AI to "Interpret" the pose.
    * This acts as an "Under the Hood" corrector/enhancer for the vision data.
    */
-  async aiInterpret(prompt?: string) {
+  async aiInterpret(prompt?: string, authorization?: AiVisionCaptureAuthorization) {
       if (!this.isTracking || !this.videoElement) {
           console.warn('[MotionCaptureManager] Cannot AI interpret: Tracking not active');
+          return;
+      }
+
+      // A camera frame is sensitive biometric/contextual data. Do not read the
+      // video element until a fresh, one-time user authorization is supplied.
+      if (!consumeAiVisionCaptureAuthorization(authorization)) {
+          console.warn('[MotionCaptureManager] AI interpretation blocked: no user-approved vision capture authorization.');
           return;
       }
 

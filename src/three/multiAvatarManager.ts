@@ -621,7 +621,7 @@ class MultiAvatarManager {
     try {
       const def = animated 
         ? await getPoseDefinitionWithAnimation(poseId as any, instance.vrm) 
-        : getPoseDefinition(poseId as any);
+        : await getPoseDefinition(poseId as any);
         
       if (!def) return;
 

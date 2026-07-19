@@ -25,6 +25,7 @@ interface MocapState {
   setFaceMaskEnabled: (enabled: boolean) => void;
   setFaceMaskProfile: (profileKey: string, adjustments: FaceMaskAdjustments) => void;
   getFaceMaskProfile: (profileKey: string) => FaceMaskAdjustments | undefined;
+  clearFaceMaskProfiles: () => void;
   setVoiceVolume: (volume: number) => void;
   setVoiceSensitivity: (sensitivity: number) => void;
 }
@@ -61,6 +62,7 @@ export const useMocapStore = create<MocapState>()(
         },
       })),
       getFaceMaskProfile: (profileKey) => get().faceMaskProfiles[profileKey],
+      clearFaceMaskProfiles: () => set({ selectedDeviceId: '', faceMaskProfiles: {} }),
       setVoiceVolume: (volume) => set({ voiceVolume: volume }),
       setVoiceSensitivity: (sensitivity) => set({ voiceSensitivity: sensitivity }),
     }),

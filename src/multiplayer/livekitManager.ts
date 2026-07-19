@@ -21,6 +21,11 @@ type ConnectionHandler = (peerId: PeerId, state: ConnectionState) => void;
 type ErrorHandler = (error: Error) => void;
 type BackgroundTransferHandler = (peerId: PeerId, fileName: string, fileType: string, dataUrl: string) => void;
 
+// Legitimate avatar/background chunks remain comfortably below this ceiling.
+// Rejecting before TextDecoder/JSON.parse keeps a malicious data packet from
+// consuming a large allocation on an iPhone before SyncManager can validate it.
+const MAX_DATA_MESSAGE_BYTES = 64 * 1024;
+
 /**
  * LiveKitManager handles WebRTC connections using LiveKit.
  * Replaces the previous PeerJS-based PeerManager.
@@ -436,6 +441,11 @@ class LiveKitManager {
   }
 
   private handleDataReceived(payload: Uint8Array, participant: RemoteParticipant) {
+    if (payload.byteLength > MAX_DATA_MESSAGE_BYTES) {
+      console.warn(`[LiveKitManager] Ignored oversized data message from ${participant.identity}`);
+      return;
+    }
+
     try {
       const decoder = new TextDecoder();
       const json = decoder.decode(payload);

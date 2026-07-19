@@ -23,6 +23,87 @@ import { sceneManager } from '../three/sceneManager';
 import { useAvatarSource } from '../state/useAvatarSource';
 import { notifyTransferProgress, clearTransferProgress } from '../components/ConnectionProgressPanel';
 
+type VRMTransferBuffer = {
+  chunks: (ArrayBuffer | undefined)[];
+  receivedCount: number;
+  receivedBytes: number;
+  totalChunks: number;
+  fileName: string;
+  retries: number;
+  expiresAt: number;
+};
+
+type BackgroundTransferBuffer = {
+  chunks: (ArrayBuffer | undefined)[];
+  receivedCount: number;
+  receivedBytes: number;
+  totalChunks: number;
+  fileName: string;
+  fileType: string;
+  expiresAt: number;
+};
+
+const MEBIBYTE = 1024 * 1024;
+const MAX_VRM_TRANSFER_BYTES = 20 * MEBIBYTE;
+const MAX_BACKGROUND_TRANSFER_BYTES = 5 * MEBIBYTE;
+// Keep small legacy scene-sync payloads working, but move larger backgrounds
+// onto the bounded binary transfer path before they hit LiveKit JSON parsing.
+const MAX_INLINE_BACKGROUND_BASE64_CHARS = 32 * 1024;
+const VRM_TRANSFER_CHUNK_SIZE = DEFAULT_MULTIPLAYER_CONFIG.vrmChunkSize;
+const BACKGROUND_TRANSFER_CHUNK_SIZE = 16 * 1024;
+const MAX_VRM_TRANSFER_CHUNKS = Math.ceil(MAX_VRM_TRANSFER_BYTES / VRM_TRANSFER_CHUNK_SIZE);
+const MAX_BACKGROUND_TRANSFER_CHUNKS = Math.ceil(MAX_BACKGROUND_TRANSFER_BYTES / BACKGROUND_TRANSFER_CHUNK_SIZE);
+const MAX_VRM_BASE64_CHARS = Math.ceil(VRM_TRANSFER_CHUNK_SIZE / 3) * 4;
+const MAX_BACKGROUND_BASE64_CHARS = Math.ceil(BACKGROUND_TRANSFER_CHUNK_SIZE / 3) * 4;
+const MAX_BACKGROUND_TRANSFER_BASE64_CHARS = Math.ceil(MAX_BACKGROUND_TRANSFER_BYTES / 3) * 4;
+const TRANSFER_EXPIRY_MS = 60_000;
+const BASE64_CHUNK_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function hasValidChunkCoordinates(chunkIndex: number, totalChunks: number, maxChunks: number) {
+  return Number.isInteger(totalChunks)
+    && totalChunks > 0
+    && totalChunks <= maxChunks
+    && Number.isInteger(chunkIndex)
+    && chunkIndex >= 0
+    && chunkIndex < totalChunks;
+}
+
+function isValidTransferSize(totalSize: number, maxBytes: number) {
+  return Number.isInteger(totalSize) && totalSize > 0 && totalSize <= maxBytes;
+}
+
+function decodeTransferChunk(
+  data: string | ArrayBuffer,
+  maxDecodedBytes: number,
+  maxBase64Chars: number,
+): ArrayBuffer | null {
+  if (data instanceof ArrayBuffer) {
+    return data.byteLength > 0 && data.byteLength <= maxDecodedBytes ? data : null;
+  }
+
+  if (
+    typeof data !== 'string'
+    || data.length === 0
+    || data.length > maxBase64Chars
+    || !BASE64_CHUNK_PATTERN.test(data)
+  ) {
+    return null;
+  }
+
+  try {
+    const binaryString = atob(data);
+    if (binaryString.length === 0 || binaryString.length > maxDecodedBytes) return null;
+
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index++) {
+      bytes[index] = binaryString.charCodeAt(index);
+    }
+    return bytes.buffer;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * SyncManager handles the synchronization of avatar state between peers.
  * It bridges the PeerManager (networking) with the MultiAvatarManager (rendering).
@@ -36,8 +117,10 @@ class SyncManager {
   private poseSyncInterval = 1000 / this.poseSyncRate;
   private expressionSyncInterval = 100; // Sync expressions at 10Hz for smoother mocap
   private isActive = false;
-  private vrmTransferBuffers = new Map<PeerId, { chunks: (ArrayBuffer | undefined)[]; receivedCount: number; totalChunks: number; fileName: string; retries: number }>();
-  private backgroundTransferBuffers = new Map<PeerId, { chunks: (ArrayBuffer | undefined)[]; receivedCount: number; totalChunks: number; fileName: string; fileType: string }>();
+  private vrmTransferBuffers = new Map<PeerId, VRMTransferBuffer>();
+  private backgroundTransferBuffers = new Map<PeerId, BackgroundTransferBuffer>();
+  private vrmTransferExpiryTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
+  private backgroundTransferExpiryTimers = new Map<PeerId, ReturnType<typeof setTimeout>>();
   private pendingVRMRequests = new Set<PeerId>(); // Track pending requests to avoid duplicates
   private pendingBackgroundRequests = new Set<PeerId>(); // Track pending background requests
   private activeVRMSends = new Set<PeerId>(); // Track VRM sends in progress to avoid duplicates
@@ -72,8 +155,14 @@ class SyncManager {
   stop() {
     this.isActive = false;
     this.stopSyncLoop();
+    this.vrmTransferExpiryTimers.forEach((timer) => clearTimeout(timer));
+    this.backgroundTransferExpiryTimers.forEach((timer) => clearTimeout(timer));
     this.vrmTransferBuffers.clear();
+    this.backgroundTransferBuffers.clear();
+    this.vrmTransferExpiryTimers.clear();
+    this.backgroundTransferExpiryTimers.clear();
     this.pendingVRMRequests.clear();
+    this.pendingBackgroundRequests.clear();
     console.log('[SyncManager] Stopped');
   }
 
@@ -89,6 +178,96 @@ class SyncManager {
       this.stopSyncLoop();
       this.startSyncLoop();
     }
+  }
+
+  private isValidDirectedTransferEnvelope(
+    senderPeerId: PeerId,
+    message: { type: string; peerId: PeerId; targetPeerId: PeerId },
+  ) {
+    const localPeerId = useMultiplayerStore.getState().localPeerId;
+    const isValid = Boolean(localPeerId)
+      && message.peerId === senderPeerId
+      && message.targetPeerId === localPeerId;
+
+    if (!isValid) {
+      console.warn(`[SyncManager] Ignored ${message.type} with an inconsistent sender or target`);
+    }
+
+    return isValid;
+  }
+
+  private clearVRMBuffer(peerId: PeerId) {
+    const timer = this.vrmTransferExpiryTimers.get(peerId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.vrmTransferExpiryTimers.delete(peerId);
+    this.vrmTransferBuffers.delete(peerId);
+  }
+
+  private clearVRMTransfer(peerId: PeerId) {
+    this.clearVRMBuffer(peerId);
+    this.pendingVRMRequests.delete(peerId);
+  }
+
+  private clearBackgroundBuffer(peerId: PeerId) {
+    const timer = this.backgroundTransferExpiryTimers.get(peerId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.backgroundTransferExpiryTimers.delete(peerId);
+    this.backgroundTransferBuffers.delete(peerId);
+  }
+
+  private clearBackgroundTransfer(peerId: PeerId) {
+    this.clearBackgroundBuffer(peerId);
+    this.pendingBackgroundRequests.delete(peerId);
+  }
+
+  private scheduleVRMTransferExpiry(peerId: PeerId) {
+    const buffer = this.vrmTransferBuffers.get(peerId);
+    if (!buffer) return;
+
+    const previousTimer = this.vrmTransferExpiryTimers.get(peerId);
+    if (previousTimer !== undefined) clearTimeout(previousTimer);
+
+    const expiresAt = Date.now() + TRANSFER_EXPIRY_MS;
+    buffer.expiresAt = expiresAt;
+    const timer = setTimeout(() => {
+      const currentBuffer = this.vrmTransferBuffers.get(peerId);
+      if (!currentBuffer || currentBuffer.expiresAt !== expiresAt) return;
+
+      const peerInfo = useMultiplayerStore.getState().peers.get(peerId);
+      const displayName = peerInfo?.displayName ?? `Peer-${peerId.slice(-4)}`;
+      console.warn(`[SyncManager] VRM transfer from ${peerId} expired`);
+      notifyTransferProgress({
+        peerId,
+        displayName,
+        direction: 'receiving',
+        chunksComplete: currentBuffer.receivedCount,
+        totalChunks: currentBuffer.totalChunks,
+        status: 'error',
+      });
+      this.clearVRMTransfer(peerId);
+    }, TRANSFER_EXPIRY_MS);
+
+    this.vrmTransferExpiryTimers.set(peerId, timer);
+  }
+
+  private scheduleBackgroundTransferExpiry(peerId: PeerId) {
+    const buffer = this.backgroundTransferBuffers.get(peerId);
+    if (!buffer) return;
+
+    const previousTimer = this.backgroundTransferExpiryTimers.get(peerId);
+    if (previousTimer !== undefined) clearTimeout(previousTimer);
+
+    const expiresAt = Date.now() + TRANSFER_EXPIRY_MS;
+    buffer.expiresAt = expiresAt;
+    const timer = setTimeout(() => {
+      const currentBuffer = this.backgroundTransferBuffers.get(peerId);
+      if (!currentBuffer || currentBuffer.expiresAt !== expiresAt) return;
+
+      console.warn(`[SyncManager] Background transfer from ${peerId} expired`);
+      this.clearBackgroundTransfer(peerId);
+    }, TRANSFER_EXPIRY_MS);
+
+    this.backgroundTransferExpiryTimers.set(peerId, timer);
   }
 
   // ==================
@@ -158,15 +337,21 @@ class SyncManager {
     const store = useMultiplayerStore.getState();
     if (!store.localPeerId) return;
 
-    // If background is 'custom', include the custom background data
+    // Small custom backgrounds can remain inline for compatibility. Larger
+    // payloads travel through the bounded, sender-validated chunk path below.
     let customBackgroundData: string | undefined;
     let customBackgroundType: string | undefined;
+    let sendBackgroundSeparately = false;
     
     if (settings.background === 'custom') {
       const sceneState = useSceneSettingsStore.getState();
       if (sceneState.customBackgroundData) {
-        customBackgroundData = sceneState.customBackgroundData;
-        customBackgroundType = sceneState.customBackgroundType || 'image/png';
+        if (sceneState.customBackgroundData.length <= MAX_INLINE_BACKGROUND_BASE64_CHARS) {
+          customBackgroundData = sceneState.customBackgroundData;
+          customBackgroundType = sceneState.customBackgroundType || 'image/png';
+        } else {
+          sendBackgroundSeparately = true;
+        }
       }
     }
 
@@ -180,6 +365,12 @@ class SyncManager {
     };
 
     peerManager.broadcast(message);
+
+    if (sendBackgroundSeparately) {
+      store.peers.forEach((peer, peerId) => {
+        if (!peer.isLocal) void this.sendBackgroundToPeer(peerId);
+      });
+    }
   }
 
   /**
@@ -205,13 +396,18 @@ class SyncManager {
       return;
     }
 
+    if (vrmArrayBuffer.byteLength === 0 || vrmArrayBuffer.byteLength > MAX_VRM_TRANSFER_BYTES) {
+      console.warn(`[SyncManager] Refusing VRM transfer outside the ${MAX_VRM_TRANSFER_BYTES / MEBIBYTE}MiB limit`);
+      return;
+    }
+
     // Mark as sending
     this.activeVRMSends.add(peerId);
 
     const store = useMultiplayerStore.getState();
     const peerInfo = store.peers.get(peerId);
     const peerDisplayName = peerInfo?.displayName ?? `Peer-${peerId.slice(-4)}`;
-    const chunkSize = DEFAULT_MULTIPLAYER_CONFIG.vrmChunkSize;
+    const chunkSize = VRM_TRANSFER_CHUNK_SIZE;
     
     const fileSizeKB = Math.round(vrmArrayBuffer.byteLength / 1024);
     console.log(`[SyncManager] Sending VRM to peer ${peerId}: (${fileSizeKB} KB)`);
@@ -365,23 +561,39 @@ class SyncManager {
     const { customBackgroundData, customBackgroundType } = useSceneSettingsStore.getState();
     if (!customBackgroundData) return;
 
+    if (
+      customBackgroundData.length === 0
+      || customBackgroundData.length > MAX_BACKGROUND_TRANSFER_BASE64_CHARS
+      || !BASE64_CHUNK_PATTERN.test(customBackgroundData)
+    ) {
+      console.warn(`[SyncManager] Refusing malformed or oversized background transfer to ${peerId}`);
+      return;
+    }
+
+    let binaryString: string;
+    try {
+      binaryString = atob(customBackgroundData);
+    } catch {
+      console.warn(`[SyncManager] Refusing malformed background transfer to ${peerId}`);
+      return;
+    }
+
+    if (binaryString.length === 0 || binaryString.length > MAX_BACKGROUND_TRANSFER_BYTES) {
+      console.warn(`[SyncManager] Refusing background transfer outside the ${MAX_BACKGROUND_TRANSFER_BYTES / MEBIBYTE}MiB limit`);
+      return;
+    }
+
     this.activeBackgroundSends.add(peerId);
 
     const store = useMultiplayerStore.getState();
     const peerInfo = store.peers.get(peerId);
     const peerDisplayName = peerInfo?.displayName ?? `Peer-${peerId.slice(-4)}`;
-    
-    // Convert base64 to ArrayBuffer chunks
-    // Note: customBackgroundData is currently stored as Base64 string in the store
-    // We decode it once here to send efficiently
-    const binaryString = atob(customBackgroundData);
-    const bytes = new Uint8Array(binaryString.length);
+    const uint8Array = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      uint8Array[i] = binaryString.charCodeAt(i);
     }
-    const uint8Array = bytes;
-    
-    const chunkSize = 16 * 1024; // 16KB chunks
+
+    const chunkSize = BACKGROUND_TRANSFER_CHUNK_SIZE;
     const totalChunks = Math.ceil(uint8Array.length / chunkSize);
     const fileName = 'custom-background';
 
@@ -443,7 +655,7 @@ class SyncManager {
       timestamp: Date.now(),
       fileName,
       fileType: customBackgroundType || 'image/png',
-      totalSize: customBackgroundData.length
+      totalSize: uint8Array.byteLength
     };
 
     peerManager.send(peerId, completeMessage);
@@ -502,31 +714,31 @@ class SyncManager {
 
       case 'vrm-request':
         // Peer is requesting our VRM file
-        this.handleVRMRequest(peerId);
+        this.handleVRMRequest(peerId, message as VRMRequestMessage);
         break;
 
       case 'vrm-chunk':
-        this.handleVRMChunk(message as VRMChunkMessage);
+        this.handleVRMChunk(peerId, message as VRMChunkMessage);
         break;
 
       case 'vrm-complete':
-        this.handleVRMComplete(message as VRMCompleteMessage);
+        this.handleVRMComplete(peerId, message as VRMCompleteMessage);
         break;
 
       case 'vrm-chunk-request':
-        this.handleVRMChunkRequest(message as any);
+        this.handleVRMChunkRequest(peerId, message as VRMChunkRequestMessage);
         break;
 
       case 'background-request':
-        this.handleBackgroundRequest(peerId);
+        this.handleBackgroundRequest(peerId, message as { type: string; peerId: PeerId; targetPeerId: PeerId });
         break;
 
       case 'background-chunk':
-        this.handleBackgroundChunk(message as BackgroundChunkMessage);
+        this.handleBackgroundChunk(peerId, message as BackgroundChunkMessage);
         break;
 
       case 'background-complete':
-        this.handleBackgroundComplete(message as BackgroundCompleteMessage);
+        this.handleBackgroundComplete(peerId, message as BackgroundCompleteMessage);
         break;
 
       case 'peer-join':
@@ -608,18 +820,30 @@ class SyncManager {
     }
   }
 
-  private handleVRMRequest(peerId: PeerId) {
+  private handleVRMRequest(senderPeerId: PeerId, message: VRMRequestMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
+
+    const peerId = senderPeerId;
     console.log(`[SyncManager] VRM requested by peer: ${peerId}`);
     this.sendVRMToPeer(peerId);
   }
 
-  private handleBackgroundRequest(peerId: PeerId) {
+  private handleBackgroundRequest(
+    senderPeerId: PeerId,
+    message: { type: string; peerId: PeerId; targetPeerId: PeerId },
+  ) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
+
+    const peerId = senderPeerId;
     console.log(`[SyncManager] Background requested by peer: ${peerId}`);
     this.sendBackgroundToPeer(peerId);
   }
 
-  private async handleVRMChunkRequest(message: { peerId: PeerId; targetPeerId: PeerId; chunkIndex: number }) {
-    const { peerId: requesterPeerId, chunkIndex } = message;
+  private async handleVRMChunkRequest(senderPeerId: PeerId, message: VRMChunkRequestMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
+
+    const requesterPeerId = senderPeerId;
+    const { chunkIndex } = message;
     console.log(`[SyncManager] Received request for missing chunk ${chunkIndex} from ${requesterPeerId}`);
 
     const { vrmArrayBuffer } = useAvatarSource.getState();
@@ -628,7 +852,12 @@ class SyncManager {
       return;
     }
 
-    const chunkSize = DEFAULT_MULTIPLAYER_CONFIG.vrmChunkSize;
+    if (vrmArrayBuffer.byteLength === 0 || vrmArrayBuffer.byteLength > MAX_VRM_TRANSFER_BYTES) {
+      console.warn(`[SyncManager] Cannot resend VRM outside the ${MAX_VRM_TRANSFER_BYTES / MEBIBYTE}MiB limit.`);
+      return;
+    }
+
+    const chunkSize = VRM_TRANSFER_CHUNK_SIZE;
     const uint8Array = new Uint8Array(vrmArrayBuffer);
     const totalChunks = Math.ceil(uint8Array.length / chunkSize);
 
@@ -665,81 +894,92 @@ class SyncManager {
     }
   }
 
-  private handleBackgroundChunk(message: BackgroundChunkMessage) {
-    const { peerId, chunkIndex, totalChunks, data, fileType } = message;
-    
+  private handleBackgroundChunk(senderPeerId: PeerId, message: BackgroundChunkMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
+
+    const { chunkIndex, totalChunks, data, fileType } = message;
+    if (!hasValidChunkCoordinates(chunkIndex, totalChunks, MAX_BACKGROUND_TRANSFER_CHUNKS)) {
+      console.warn(`[SyncManager] Ignored background chunk with invalid coordinates from ${senderPeerId}`);
+      return;
+    }
+
+    const chunkData = decodeTransferChunk(data, BACKGROUND_TRANSFER_CHUNK_SIZE, MAX_BACKGROUND_BASE64_CHARS);
+    if (!chunkData) {
+      console.warn(`[SyncManager] Ignored malformed background chunk from ${senderPeerId}`);
+      return;
+    }
+
+    const peerId = senderPeerId;
     let buffer = this.backgroundTransferBuffers.get(peerId);
     if (!buffer || buffer.totalChunks !== totalChunks) {
+      this.clearBackgroundBuffer(peerId);
       buffer = {
         chunks: new Array(totalChunks).fill(undefined),
         receivedCount: 0,
+        receivedBytes: 0,
         totalChunks,
         fileName: message.fileName,
-        fileType
+        fileType,
+        expiresAt: 0,
       };
       this.backgroundTransferBuffers.set(peerId, buffer);
     }
 
-    if (!buffer.chunks[chunkIndex]) {
-      // Handle legacy string data or new ArrayBuffer
-      if (typeof data === 'string') {
-          // Convert base64 to ArrayBuffer if needed, or just keep consistency
-          // Since we reassemble to base64 for background (because SceneManager takes base64/URL),
-          // we might actually want to Convert ArrayBuffer BACK to base64 here if we want to keep `chunks` as string.
-          // BUT, for consistency with VRM, let's store ArrayBuffer and convert at the end.
-          const binaryString = atob(data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-          }
-          buffer.chunks[chunkIndex] = bytes.buffer;
-      } else {
-          buffer.chunks[chunkIndex] = data;
-      }
-      buffer.receivedCount++;
+    if (buffer.chunks[chunkIndex]) return;
+    if (buffer.receivedBytes + chunkData.byteLength > MAX_BACKGROUND_TRANSFER_BYTES) {
+      console.warn(`[SyncManager] Ignored oversized background transfer from ${peerId}`);
+      this.clearBackgroundTransfer(peerId);
+      return;
     }
+
+    buffer.chunks[chunkIndex] = chunkData;
+    buffer.receivedCount++;
+    buffer.receivedBytes += chunkData.byteLength;
+    this.scheduleBackgroundTransferExpiry(peerId);
   }
 
-  private async handleBackgroundComplete(message: BackgroundCompleteMessage) {
-    const { peerId, fileType } = message;
+  private async handleBackgroundComplete(senderPeerId: PeerId, message: BackgroundCompleteMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
+
+    const peerId = senderPeerId;
+    const { fileType, totalSize } = message;
+    if (
+      !isValidTransferSize(totalSize, MAX_BACKGROUND_TRANSFER_BYTES)
+      || typeof fileType !== 'string'
+      || fileType.length > 128
+    ) {
+      console.warn(`[SyncManager] Ignored invalid background completion from ${peerId}`);
+      this.clearBackgroundTransfer(peerId);
+      return;
+    }
+
     const buffer = this.backgroundTransferBuffers.get(peerId);
     if (!buffer) return;
 
-    if (buffer.receivedCount === buffer.totalChunks) {
-      // Filter valid chunks
-      const validChunks = buffer.chunks.filter((c): c is ArrayBuffer => c !== undefined);
-      
-      // Create Blob
-      const blob = new Blob(validChunks, { type: fileType });
-      
-      // Convert Blob to Base64 (DataURL) for SceneManager
-      // Alternatively, SceneManager could take a blob URL, which is more efficient!
-      // Let's check SceneManager... it takes a string (URL or DataURL).
-      // Blob URL is perfect and faster.
-      const blobUrl = URL.createObjectURL(blob);
-      
-      // Apply background
-      sceneManager.setBackground(blobUrl);
-      
-      // For persistence, we still need the Base64 data if we want to save it to the store/project file
-      // But for immediate display, Blob URL is fine.
-      // Let's generate Base64 for the store to maintain compatibility.
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          const base64data = reader.result as string;
-          // Strip the prefix "data:image/png;base64,"
-          const content = base64data.split(',')[1];
-          
-          const sceneState = useSceneSettingsStore.getState();
-          sceneState.setCustomBackground(content, fileType);
-      };
-      reader.readAsDataURL(blob);
-      
-      console.log(`[SyncManager] Background transfer complete from ${peerId}`);
+    if (
+      buffer.receivedCount !== buffer.totalChunks
+      || buffer.receivedBytes !== totalSize
+    ) {
+      console.warn(`[SyncManager] Background transfer size mismatch from ${peerId}`);
+      this.clearBackgroundTransfer(peerId);
+      return;
     }
 
-    this.backgroundTransferBuffers.delete(peerId);
-    this.pendingBackgroundRequests.delete(peerId);
+    const validChunks = buffer.chunks.filter((chunk): chunk is ArrayBuffer => chunk !== undefined);
+    const blob = new Blob(validChunks, { type: fileType });
+    const blobUrl = URL.createObjectURL(blob);
+    sceneManager.setBackground(blobUrl);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64data = reader.result as string;
+      const content = base64data.split(',')[1];
+      useSceneSettingsStore.getState().setCustomBackground(content, fileType);
+    };
+    reader.readAsDataURL(blob);
+
+    console.log(`[SyncManager] Background transfer complete from ${peerId}`);
+    this.clearBackgroundTransfer(peerId);
   }
 
   private handleAvatarState(peerId: PeerId, message: AvatarStateMessage) {
@@ -893,16 +1133,20 @@ class SyncManager {
     // Only apply if from host and we're a guest
     if (store.role === 'guest') {
       if (message.background) {
-        if (message.background === 'custom' && message.customBackgroundData) {
-          // Create data URL from base64 and apply
-          const dataUrl = `data:${message.customBackgroundType || 'image/png'};base64,${message.customBackgroundData}`;
-          sceneManager.setBackground(dataUrl);
-          
-          // Store in scene settings for persistence
-          const sceneState = useSceneSettingsStore.getState();
-          sceneState.setCustomBackground(message.customBackgroundData, message.customBackgroundType || 'image/png');
-          
-          console.log('[SyncManager] Applied custom background from host');
+        if (message.background === 'custom') {
+          if (!message.customBackgroundData) {
+            console.info('[SyncManager] Waiting for bounded custom background transfer');
+          } else {
+            // Create data URL from base64 and apply
+            const dataUrl = `data:${message.customBackgroundType || 'image/png'};base64,${message.customBackgroundData}`;
+            sceneManager.setBackground(dataUrl);
+
+            // Store in scene settings for persistence
+            const sceneState = useSceneSettingsStore.getState();
+            sceneState.setCustomBackground(message.customBackgroundData, message.customBackgroundType || 'image/png');
+
+            console.log('[SyncManager] Applied custom background from host');
+          }
         } else {
           sceneManager.setBackground(message.background);
         }
@@ -913,26 +1157,37 @@ class SyncManager {
     }
   }
 
-  private handleVRMChunk(message: VRMChunkMessage) {
-    const { peerId, chunkIndex, totalChunks, data } = message;
+  private handleVRMChunk(senderPeerId: PeerId, message: VRMChunkMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
 
+    const { chunkIndex, totalChunks, data } = message;
+    if (!hasValidChunkCoordinates(chunkIndex, totalChunks, MAX_VRM_TRANSFER_CHUNKS)) {
+      console.warn(`[SyncManager] Ignored VRM chunk with invalid coordinates from ${senderPeerId}`);
+      return;
+    }
+
+    const chunkData = decodeTransferChunk(data, VRM_TRANSFER_CHUNK_SIZE, MAX_VRM_BASE64_CHARS);
+    if (!chunkData) {
+      console.warn(`[SyncManager] Ignored malformed VRM chunk from ${senderPeerId}`);
+      return;
+    }
+
+    const peerId = senderPeerId;
     const store = useMultiplayerStore.getState();
     const peerInfo = store.peers.get(peerId);
     const peerDisplayName = peerInfo?.displayName ?? `Peer-${peerId.slice(-4)}`;
-
-    // Initialize or reset buffer for this peer
-    // If totalChunks differs, this is a new transfer - reset the buffer
     const existingBuffer = this.vrmTransferBuffers.get(peerId);
     if (!existingBuffer || existingBuffer.totalChunks !== totalChunks) {
+      this.clearVRMBuffer(peerId);
       this.vrmTransferBuffers.set(peerId, {
         chunks: new Array(totalChunks).fill(undefined),
         receivedCount: 0,
+        receivedBytes: 0,
         totalChunks,
         fileName: '',
         retries: 0,
+        expiresAt: 0,
       });
-      
-      // Notify UI of transfer start
       notifyTransferProgress({
         peerId,
         displayName: peerDisplayName,
@@ -944,52 +1199,47 @@ class SyncManager {
     }
 
     const buffer = this.vrmTransferBuffers.get(peerId)!;
-    
-    // Validate data is an ArrayBuffer (or string if legacy)
-    let chunkData: ArrayBuffer;
-    if (typeof data === 'string') {
-        // Legacy support or fallback: decode base64
-        const binaryString = atob(data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        chunkData = bytes.buffer;
-    } else {
-        chunkData = data;
+    if (buffer.chunks[chunkIndex]) return;
+    if (buffer.receivedBytes + chunkData.byteLength > MAX_VRM_TRANSFER_BYTES) {
+      console.warn(`[SyncManager] Ignored oversized VRM transfer from ${peerId}`);
+      this.clearVRMTransfer(peerId);
+      return;
     }
-    
-    // Only count if this chunk wasn't already received (avoid duplicates)
-    const isNewChunk = !buffer.chunks[chunkIndex];
+
     buffer.chunks[chunkIndex] = chunkData;
-    
-    if (isNewChunk) {
-      buffer.receivedCount++;
+    buffer.receivedCount++;
+    buffer.receivedBytes += chunkData.byteLength;
+    this.scheduleVRMTransferExpiry(peerId);
 
-      // Update progress UI (only on new chunks to avoid spam)
-      if (buffer.receivedCount % 10 === 0 || buffer.receivedCount === totalChunks) {
-        notifyTransferProgress({
-          peerId,
-          displayName: peerDisplayName,
-          direction: 'receiving',
-          chunksComplete: buffer.receivedCount,
-          totalChunks,
-          status: 'transferring',
-        });
-      }
-
-      console.log(`[SyncManager] Received VRM chunk ${chunkIndex + 1}/${totalChunks} from ${peerId} (${buffer.receivedCount}/${totalChunks} received)`);
+    if (buffer.receivedCount % 10 === 0 || buffer.receivedCount === totalChunks) {
+      notifyTransferProgress({
+        peerId,
+        displayName: peerDisplayName,
+        direction: 'receiving',
+        chunksComplete: buffer.receivedCount,
+        totalChunks,
+        status: 'transferring',
+      });
     }
+
+    console.log(`[SyncManager] Received VRM chunk ${chunkIndex + 1}/${totalChunks} from ${peerId} (${buffer.receivedCount}/${totalChunks} received)`);
   }
 
-  private async handleVRMComplete(message: VRMCompleteMessage) {
-    const { peerId, fileName, totalSize } = message;
-    const buffer = this.vrmTransferBuffers.get(peerId);
+  private async handleVRMComplete(senderPeerId: PeerId, message: VRMCompleteMessage) {
+    if (!this.isValidDirectedTransferEnvelope(senderPeerId, message)) return;
 
+    const peerId = senderPeerId;
+    const { fileName, totalSize } = message;
     const store = useMultiplayerStore.getState();
     const peerInfo = store.peers.get(peerId);
     const displayName = peerInfo?.displayName ?? `Peer-${peerId.slice(-4)}`;
+    if (!isValidTransferSize(totalSize, MAX_VRM_TRANSFER_BYTES)) {
+      console.warn(`[SyncManager] Ignored invalid VRM completion from ${peerId}`);
+      this.clearVRMTransfer(peerId);
+      return;
+    }
 
+    const buffer = this.vrmTransferBuffers.get(peerId);
     if (!buffer) {
       console.error('[SyncManager] VRM complete received but no chunks buffered');
       notifyTransferProgress({
@@ -1005,27 +1255,22 @@ class SyncManager {
 
     console.log(`[SyncManager] VRM transfer complete from ${peerId}: ${fileName} (${totalSize} bytes)`);
     console.log(`[SyncManager] Received ${buffer.receivedCount}/${buffer.totalChunks} chunks`);
-
-    // Verify all chunks were received
     if (buffer.receivedCount !== buffer.totalChunks) {
       console.error(`[SyncManager] Missing chunks: expected ${buffer.totalChunks}, received ${buffer.receivedCount}`);
-      
       if (buffer.retries < 5) {
         buffer.retries++;
-        console.log(`[SyncManager] Requesting missing chunks (attempt ${buffer.retries})...`);
-        for (let i = 0; i < buffer.totalChunks; i++) {
-          if (!buffer.chunks[i]) {
-            const requestMessage: VRMChunkRequestMessage = {
+        this.scheduleVRMTransferExpiry(peerId);
+        for (let index = 0; index < buffer.totalChunks; index++) {
+          if (!buffer.chunks[index]) {
+            peerManager.send(peerId, {
               type: 'vrm-chunk-request',
               peerId: useMultiplayerStore.getState().localPeerId!,
               targetPeerId: peerId,
               timestamp: Date.now(),
-              chunkIndex: i,
-            };
-            peerManager.send(peerId, requestMessage);
+              chunkIndex: index,
+            });
           }
         }
-        // Don't delete the buffer, wait for the requested chunks
         return;
       }
 
@@ -1037,45 +1282,24 @@ class SyncManager {
         totalChunks: buffer.totalChunks,
         status: 'error',
       });
-      this.vrmTransferBuffers.delete(peerId);
-      this.pendingVRMRequests.delete(peerId);
+      this.clearVRMTransfer(peerId);
       return;
     }
 
-    // Verify no empty chunks
-    for (let i = 0; i < buffer.chunks.length; i++) {
-      if (!buffer.chunks[i]) {
-        console.error(`[SyncManager] Missing chunk at index ${i}`);
-        
-        if (buffer.retries < 5) {
-          buffer.retries++;
-          const requestMessage: VRMChunkRequestMessage = {
-            type: 'vrm-chunk-request',
-            peerId: useMultiplayerStore.getState().localPeerId!,
-            targetPeerId: peerId,
-            timestamp: Date.now(),
-            chunkIndex: i,
-          };
-          peerManager.send(peerId, requestMessage);
-          // Don't delete buffer, wait for retry
-          return;
-        }
-
-        notifyTransferProgress({
-          peerId,
-          displayName,
-          direction: 'receiving',
-          chunksComplete: buffer.receivedCount,
-          totalChunks: buffer.totalChunks,
-          status: 'error',
-        });
-        this.vrmTransferBuffers.delete(peerId);
-        this.pendingVRMRequests.delete(peerId);
-        return;
-      }
+    if (buffer.receivedBytes !== totalSize) {
+      console.error(`[SyncManager] VRM transfer size mismatch from ${peerId}`);
+      notifyTransferProgress({
+        peerId,
+        displayName,
+        direction: 'receiving',
+        chunksComplete: buffer.receivedCount,
+        totalChunks: buffer.totalChunks,
+        status: 'error',
+      });
+      this.clearVRMTransfer(peerId);
+      return;
     }
 
-    // Update UI to show loading state
     notifyTransferProgress({
       peerId,
       displayName,
@@ -1086,25 +1310,14 @@ class SyncManager {
     });
 
     try {
-      // Reassemble from ArrayBuffer chunks
-      // Filter out undefined chunks (should already be verified, but for type safety)
-      const validChunks = buffer.chunks.filter((c): c is ArrayBuffer => c !== undefined);
-      
-      console.log(`[SyncManager] Reassembling from ${validChunks.length} chunks`);
-      
-      // Create Blob directly from ArrayBuffers
+      const validChunks = buffer.chunks.filter((chunk): chunk is ArrayBuffer => chunk !== undefined);
       const blob = new Blob(validChunks, { type: 'model/gltf-binary' });
       const arrayBuffer = await blob.arrayBuffer();
+      if (arrayBuffer.byteLength !== totalSize) {
+        throw new Error('Reassembled VRM size does not match the signed transfer size');
+      }
 
-      console.log(`[SyncManager] Decoded ${arrayBuffer.byteLength} bytes`);
-
-      // Load the VRM
-      console.log(`[SyncManager] Loading VRM for ${displayName}`);
       await multiAvatarManager.loadRemoteAvatarFromBuffer(peerId, arrayBuffer, displayName);
-
-      console.log(`[SyncManager] Remote avatar loaded for ${peerId}`);
-
-      // Mark as complete
       notifyTransferProgress({
         peerId,
         displayName,
@@ -1113,32 +1326,24 @@ class SyncManager {
         totalChunks: buffer.totalChunks,
         status: 'complete',
       });
-      // Clear after a delay
       setTimeout(() => clearTransferProgress(peerId), 3000);
 
-      // Apply any pending state we received
       const pendingState = store.remoteAvatarStates.get(peerId);
       if (pendingState) {
-        console.log(`[SyncManager] Applying pending state for ${peerId}`);
         multiAvatarManager.applyAvatarState(peerId, pendingState);
       }
-
-      // Update peer info to show they have an avatar loaded on our end
       store.updatePeer(peerId, { hasAvatar: true });
-
     } catch (error) {
       console.error('[SyncManager] Failed to load remote VRM:', error);
     } finally {
-      // Clean up
-      this.vrmTransferBuffers.delete(peerId);
-      this.pendingVRMRequests.delete(peerId);
+      this.clearVRMTransfer(peerId);
     }
   }
 
   private handlePeerLeave(peerId: PeerId, removeAvatar = false) {
-    // Clean up any pending VRM transfers
-    this.vrmTransferBuffers.delete(peerId);
-    this.pendingVRMRequests.delete(peerId);
+    // Clean up any pending binary transfers and their expiry timers.
+    this.clearVRMTransfer(peerId);
+    this.clearBackgroundTransfer(peerId);
 
     // Only remove the avatar if explicitly requested (e.g., intentional leave)
     // Otherwise, keep the avatar but mark as offline for visual feedback

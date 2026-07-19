@@ -1,64 +1,6 @@
-import * as THREE from 'three';
-import dawnRunner from './dawn-runner.json';
-import sunsetCall from './sunset-call.json';
-import cipherWhisper from './cipher-whisper.json';
-import nebulaDrift from './nebula-drift.json';
-import signalReverie from './signal-reverie.json';
-import agentTaunt from './agent-taunt.json';
-import agentDance from './agent-dance.json';
-import agentClapping from './agent-clapping.json';
-import sillyAgent from './silly-agent.json';
-import simpleWave from './simple-wave.json';
-import point from './point.json';
-import defeat from './defeat.json';
-import focus from './focus.json';
-import ropeClimb from './rope-climb.json';
-import climbTop from './climb-top.json';
-import thumbsUp from './thumbs-up.json';
-import offensiveIdle from './offensive-idle.json';
-import waking from './waking.json';
-import treadingWater from './treading-water.json';
-import cheering from './cheering.json';
-
-// New Locomotion Pool
-import locomotionWalk from './locomotion-walk.json';
-import locomotionRun from './locomotion-run.json';
-import locomotionJog from './locomotion-jog.json';
-import locomotionCrouchWalk from './locomotion-crouch-walk.json';
-import locomotionTurnLeft from './locomotion-turn-left.json';
-import locomotionTurnRight from './locomotion-turn-right.json';
-import locomotionStop from './locomotion-stop.json';
-
-// New Idle Pool
-import idleNeutral from './idle-neutral.json';
-import idleHappy from './idle-happy.json';
-import idleNervous from './idle-nervous.json';
-
-// New Sitting Pool
-import sitChair from './sit-chair.json';
-import sitSad from './sit-sad.json';
-import transitionStandToSit from './transition-stand-to-sit.json';
-import transitionSitToStand from './transition-sit-to-stand.json';
-
-// New Social Pool
-import emoteWave from './emote-wave.json';
-import emotePoint from './emote-point.json';
-import emoteClap from './emote-clap.json';
-import emoteCheer from './emote-cheer.json';
-import emoteThumbsup from './emote-thumbsup.json';
-import emoteBow from './emote-bow.json';
-import emoteDanceSilly from './emote-dance-silly.json';
-import emoteTaunt from './emote-taunt.json';
-
-// New Action Pool
-import actionFocus from './action-focus.json';
-import actionRopeClimb from './action-rope-climb.json';
-import actionClimbTop from './action-climb-top.json';
-import actionSwim from './action-swim.json';
-import actionWaking from './action-waking.json';
-
+import type { AnimationClip } from 'three';
+import type { VRM, VRMPose } from '@pixiv/three-vrm';
 import type { PoseId } from '../types/reactions';
-import type { VRMPose } from '@pixiv/three-vrm';
 
 type EulerDegrees = {
   x?: number;
@@ -70,117 +12,149 @@ export type PoseDefinition = {
   sceneRotation?: EulerDegrees;
   vrmPose?: VRMPose;
   boneRotations?: Record<string, EulerDegrees>;
-  // Optional: animation clip for animated poses
-  animationClip?: THREE.AnimationClip;
-  // Optional: is this an animated pose?
+  /** Optional animation clip, resolved separately when a pose is animated. */
+  animationClip?: AnimationClip;
   isAnimated?: boolean;
 };
 
-export const poseLibrary: Record<PoseId, PoseDefinition> = {
-  'dawn-runner': dawnRunner as unknown as PoseDefinition,
-  'sunset-call': sunsetCall as unknown as PoseDefinition,
-  'cipher-whisper': cipherWhisper as unknown as PoseDefinition,
-  'nebula-drift': nebulaDrift as unknown as PoseDefinition,
-  'signal-reverie': signalReverie as unknown as PoseDefinition,
-  'agent-taunt': agentTaunt as unknown as PoseDefinition,
-  'agent-dance': agentDance as unknown as PoseDefinition,
-  'agent-clapping': agentClapping as unknown as PoseDefinition,
-  'silly-agent': sillyAgent as unknown as PoseDefinition,
-  'simple-wave': simpleWave as unknown as PoseDefinition,
-  'point': point as unknown as PoseDefinition,
-  'defeat': defeat as unknown as PoseDefinition,
-  'focus': focus as unknown as PoseDefinition,
-  'rope-climb': ropeClimb as unknown as PoseDefinition,
-  'climb-top': climbTop as unknown as PoseDefinition,
-  'thumbs-up': thumbsUp as unknown as PoseDefinition,
-  'offensive-idle': offensiveIdle as unknown as PoseDefinition,
-  'waking': waking as unknown as PoseDefinition,
-  'treading-water': treadingWater as unknown as PoseDefinition,
-  'cheering': cheering as unknown as PoseDefinition,
+type PoseModule = { default: unknown };
+type PoseLoader = () => Promise<PoseDefinition>;
 
-  // New Locomotion Pool
-  'locomotion-walk': locomotionWalk as unknown as PoseDefinition,
-  'locomotion-run': locomotionRun as unknown as PoseDefinition,
-  'locomotion-jog': locomotionJog as unknown as PoseDefinition,
-  'locomotion-crouch-walk': locomotionCrouchWalk as unknown as PoseDefinition,
-  'locomotion-turn-left': locomotionTurnLeft as unknown as PoseDefinition,
-  'locomotion-turn-right': locomotionTurnRight as unknown as PoseDefinition,
-  'locomotion-stop': locomotionStop as unknown as PoseDefinition,
-
-  // New Idle Pool
-  'idle-neutral': idleNeutral as unknown as PoseDefinition,
-  'idle-happy': idleHappy as unknown as PoseDefinition,
-  'idle-breathing': { ...idleNeutral, isAnimated: true } as unknown as PoseDefinition,
-  'idle-nervous': idleNervous as unknown as PoseDefinition,
-  'idle-offensive': offensiveIdle as unknown as PoseDefinition,
-
-  // New Sitting Pool
-  'sit-chair': sitChair as unknown as PoseDefinition,
-  'sit-floor': { ...sitSad, isAnimated: true } as unknown as PoseDefinition,
-  'sit-sad': sitSad as unknown as PoseDefinition,
-  'sit-typing': { ...sitChair, isAnimated: true } as unknown as PoseDefinition,
-  'transition-stand-to-sit': transitionStandToSit as unknown as PoseDefinition,
-  'transition-sit-to-stand': transitionSitToStand as unknown as PoseDefinition,
-  'transition-floor-to-stand': { isAnimated: true } as PoseDefinition,
-
-  // New Social Pool
-  'emote-wave': emoteWave as unknown as PoseDefinition,
-  'emote-point': emotePoint as unknown as PoseDefinition,
-  'emote-clap': emoteClap as unknown as PoseDefinition,
-  'emote-cheer': emoteCheer as unknown as PoseDefinition,
-  'emote-thumbsup': emoteThumbsup as unknown as PoseDefinition,
-  'emote-bow': emoteBow as unknown as PoseDefinition,
-  'emote-dance-silly': emoteDanceSilly as unknown as PoseDefinition,
-  'emote-taunt': emoteTaunt as unknown as PoseDefinition,
-  'emote-bored': { ...idleNeutral, isAnimated: true } as unknown as PoseDefinition,
-
-  // New Action Pool
-  'action-defeat': defeat as unknown as PoseDefinition,
-  'action-focus': actionFocus as unknown as PoseDefinition,
-  'action-rope-climb': actionRopeClimb as unknown as PoseDefinition,
-  'action-climb-top': actionClimbTop as unknown as PoseDefinition,
-  'action-swim': actionSwim as unknown as PoseDefinition,
-  'action-waking': actionWaking as unknown as PoseDefinition,
+/**
+ * Wrap a JSON module in a loader so each authored pose remains an independent
+ * production chunk. Keeping the import paths literal lets Vite include every
+ * pose while fetching only the selected one at runtime.
+ */
+const loadJsonPose = (
+  load: () => Promise<PoseModule>,
+  overrides: Partial<PoseDefinition> = {},
+): PoseLoader => async () => {
+  const { default: definition } = await load();
+  return { ...(definition as PoseDefinition), ...overrides };
 };
 
 /**
- * Get pose definition, optionally loading animation clip
+ * The full authored pose catalogue is large. Do not turn this into static
+ * imports: the lightweight loader table makes avatar startup independent of
+ * every optional animation in the catalogue.
  */
-export function getPoseDefinition(id: PoseId): PoseDefinition | undefined {
-  return poseLibrary[id];
+const poseLoaders = {
+  'dawn-runner': loadJsonPose(() => import('./dawn-runner.json')),
+  'sunset-call': loadJsonPose(() => import('./sunset-call.json')),
+  'cipher-whisper': loadJsonPose(() => import('./cipher-whisper.json')),
+  'nebula-drift': loadJsonPose(() => import('./nebula-drift.json')),
+  'signal-reverie': loadJsonPose(() => import('./signal-reverie.json')),
+  'agent-taunt': loadJsonPose(() => import('./agent-taunt.json')),
+  'agent-dance': loadJsonPose(() => import('./agent-dance.json')),
+  'agent-clapping': loadJsonPose(() => import('./agent-clapping.json')),
+  'silly-agent': loadJsonPose(() => import('./silly-agent.json')),
+  'simple-wave': loadJsonPose(() => import('./simple-wave.json')),
+  point: loadJsonPose(() => import('./point.json')),
+  defeat: loadJsonPose(() => import('./defeat.json')),
+  focus: loadJsonPose(() => import('./focus.json')),
+  'rope-climb': loadJsonPose(() => import('./rope-climb.json')),
+  'climb-top': loadJsonPose(() => import('./climb-top.json')),
+  'thumbs-up': loadJsonPose(() => import('./thumbs-up.json')),
+  'offensive-idle': loadJsonPose(() => import('./offensive-idle.json')),
+  waking: loadJsonPose(() => import('./waking.json')),
+  'treading-water': loadJsonPose(() => import('./treading-water.json')),
+  cheering: loadJsonPose(() => import('./cheering.json')),
+
+  'locomotion-walk': loadJsonPose(() => import('./locomotion-walk.json')),
+  'locomotion-run': loadJsonPose(() => import('./locomotion-run.json')),
+  'locomotion-jog': loadJsonPose(() => import('./locomotion-jog.json')),
+  'locomotion-crouch-walk': loadJsonPose(() => import('./locomotion-crouch-walk.json')),
+  'locomotion-turn-left': loadJsonPose(() => import('./locomotion-turn-left.json')),
+  'locomotion-turn-right': loadJsonPose(() => import('./locomotion-turn-right.json')),
+  'locomotion-stop': loadJsonPose(() => import('./locomotion-stop.json')),
+
+  'idle-neutral': loadJsonPose(() => import('./idle-neutral.json')),
+  'idle-happy': loadJsonPose(() => import('./idle-happy.json')),
+  'idle-breathing': loadJsonPose(() => import('./idle-neutral.json'), { isAnimated: true }),
+  'idle-nervous': loadJsonPose(() => import('./idle-nervous.json')),
+  'idle-offensive': loadJsonPose(() => import('./offensive-idle.json')),
+
+  'sit-chair': loadJsonPose(() => import('./sit-chair.json')),
+  'sit-floor': loadJsonPose(() => import('./sit-sad.json'), { isAnimated: true }),
+  'sit-sad': loadJsonPose(() => import('./sit-sad.json')),
+  'sit-typing': loadJsonPose(() => import('./sit-chair.json'), { isAnimated: true }),
+  'transition-stand-to-sit': loadJsonPose(() => import('./transition-stand-to-sit.json')),
+  'transition-sit-to-stand': loadJsonPose(() => import('./transition-sit-to-stand.json')),
+  'transition-floor-to-stand': async () => ({ isAnimated: true }),
+
+  'emote-wave': loadJsonPose(() => import('./emote-wave.json')),
+  'emote-point': loadJsonPose(() => import('./emote-point.json')),
+  'emote-clap': loadJsonPose(() => import('./emote-clap.json')),
+  'emote-cheer': loadJsonPose(() => import('./emote-cheer.json')),
+  'emote-thumbsup': loadJsonPose(() => import('./emote-thumbsup.json')),
+  'emote-bow': loadJsonPose(() => import('./emote-bow.json')),
+  'emote-dance-silly': loadJsonPose(() => import('./emote-dance-silly.json')),
+  'emote-taunt': loadJsonPose(() => import('./emote-taunt.json')),
+  'emote-bored': loadJsonPose(() => import('./idle-neutral.json'), { isAnimated: true }),
+
+  'action-defeat': loadJsonPose(() => import('./defeat.json')),
+  'action-focus': loadJsonPose(() => import('./action-focus.json')),
+  'action-rope-climb': loadJsonPose(() => import('./action-rope-climb.json')),
+  'action-climb-top': loadJsonPose(() => import('./action-climb-top.json')),
+  'action-swim': loadJsonPose(() => import('./action-swim.json')),
+  'action-waking': loadJsonPose(() => import('./action-waking.json')),
+} satisfies Record<PoseId, PoseLoader>;
+
+/** Stable public catalogue for AI command validation and external ID listing. */
+export const poseLibrary = Object.fromEntries(
+  (Object.keys(poseLoaders) as PoseId[]).map((id) => [id, {}]),
+) as Record<PoseId, PoseDefinition>;
+
+const definitionPromises = new Map<PoseId, Promise<PoseDefinition>>();
+
+/**
+ * Resolve an authored pose on demand. Repeated calls share one promise and
+ * hydrate the public catalogue entry after the first successful load.
+ */
+export function getPoseDefinition(id: PoseId): Promise<PoseDefinition | undefined> {
+  const loader = poseLoaders[id];
+  if (!loader) return Promise.resolve(undefined);
+
+  const existing = definitionPromises.get(id);
+  if (existing) return existing;
+
+  const pending = loader()
+    .then((definition) => {
+      poseLibrary[id] = definition;
+      return definition;
+    })
+    .catch((error: unknown) => {
+      // A transient chunk request failure should be retryable.
+      definitionPromises.delete(id);
+      throw error;
+    });
+
+  definitionPromises.set(id, pending);
+  return pending;
 }
 
 /**
- * Get pose definition with animation clip loaded (async)
- * Use this when you need the full animation data
- * 
- * @param id - The pose ID to get
- * @param vrm - Optional VRM to retarget the animation to. Required for proper playback.
+ * Resolve a pose and, only when needed, load and retarget its animation clip.
  */
-export async function getPoseDefinitionWithAnimation(id: PoseId, vrm?: import('@pixiv/three-vrm').VRM): Promise<PoseDefinition | undefined> {
-  const definition = poseLibrary[id];
+export async function getPoseDefinitionWithAnimation(
+  id: PoseId,
+  vrm?: VRM,
+): Promise<PoseDefinition | undefined> {
+  const definition = await getPoseDefinition(id);
   if (!definition) return undefined;
 
-  // If animation clip is already loaded AND we don't have a VRM to retarget to, return as-is
-  // Note: We should ideally always retarget, but for backwards compatibility we allow cached clips
-  if (definition.animationClip && !vrm) {
-    return definition;
-  }
+  // Preserve the existing cache behavior for callers that do not retarget.
+  if (definition.animationClip && !vrm) return definition;
 
-  // Try to load animation clip from file
   const { loadAnimationClip } = await import('./loadAnimationClip');
   const animationClip = await loadAnimationClip(id, vrm);
 
-  if (animationClip) {
-    // Return with the loaded (and potentially retargeted) animation clip
-    // Note: We don't cache retargeted clips since they're VRM-specific
-    return {
-      ...definition,
-      animationClip,
-      isAnimated: true,
-    };
-  }
+  if (!animationClip) return definition;
 
-  return definition;
+  // Retargeted clips are VRM-specific, so do not cache this derived result.
+  return {
+    ...definition,
+    animationClip,
+    isAnimated: true,
+  };
 }
-

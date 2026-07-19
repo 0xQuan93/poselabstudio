@@ -356,7 +356,7 @@ export class GeminiAgent implements IAgent {
       useAIStore.getState().setThought(null);
       
       // Use ActionParser to execute commands
-      await ActionParser.execute(text!, (t) => this.speak(t));
+      await ActionParser.execute(text!, (t) => this.speak(t), { allowAiVisionCapture: true });
       
       return text!;
 

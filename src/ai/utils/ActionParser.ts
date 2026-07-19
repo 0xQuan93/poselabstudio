@@ -18,6 +18,7 @@ import { directorManager } from "../../three/DirectorManager";
 import { agentManager } from "../AgentManager";
 import { exportAsWebM, exportOfflineWebM } from "../../export/exportVideo";
 import { getMocapManager } from "../../utils/mocapInstance";
+import { requestAiVisionCaptureAuthorization } from "../../utils/aiVisionConsent";
 import { geminiService } from "../../services/gemini";
 import { avatarController, type GestureType, type EmotionState } from "../AvatarController";
 import type { PoseId } from "../../types/reactions";
@@ -93,8 +94,20 @@ const EMOTION_COMMAND_MAP: Record<string, EmotionState> = {
   'calm': 'neutral',
 };
 
+export interface ActionExecutionOptions {
+  /**
+   * Only direct, locally initiated AI interactions may request a camera frame.
+   * Remote feeds, collaboration data, and director scripts must leave this false.
+   */
+  allowAiVisionCapture?: boolean;
+}
+
 export class ActionParser {
-  static async execute(response: string, speak: (text: string) => void) {
+  static async execute(
+    response: string,
+    speak: (text: string) => void,
+    { allowAiVisionCapture = false }: ActionExecutionOptions = {},
+  ) {
     console.log("🤖 AI Response:", response);
     
     // 0. Safety check - ensure VRM is loaded
@@ -415,10 +428,24 @@ export class ActionParser {
 
           case 'LOOK_AT_USER':
             {
+              if (!allowAiVisionCapture) {
+                console.warn('[ActionParser] Ignored LOOK_AT_USER from a non-local action source.');
+                break;
+              }
+
+              const authorization = requestAiVisionCaptureAuthorization();
+              if (!authorization) {
+                console.info('[ActionParser] AI vision capture was not approved by the user.');
+                break;
+              }
+
               useAIStore.getState().setThought("Watching...");
               const manager = getMocapManager();
               if (manager) {
-                await manager.aiInterpret("The user wants you to look at them and interpret their state.");
+                await manager.aiInterpret(
+                  "The user wants you to look at them and interpret their state.",
+                  authorization,
+                );
                 actionTaken = true;
               }
               useAIStore.getState().setThought(null);

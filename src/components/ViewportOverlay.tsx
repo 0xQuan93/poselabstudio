@@ -40,6 +40,14 @@ import { getPoseLabTimestamp } from '../utils/exportNaming';
 import { SparkleField, useSparkles } from './SparkleField';
 import { useUserStore } from '../state/useUserStore';
 import { toggleLabGrid } from '../three/backgrounds';
+import { voiceLipSync } from '../utils/voiceLipSync';
+import {
+  createTakePassport,
+  downloadTakePassport,
+  type TakePassport,
+  type TakePassportIntegrityEventInput,
+} from '../utils/takePassport';
+import { getMocapManager, getMocapVideo } from '../utils/mocapInstance';
 
 type AspectRatio = '16:9' | '1:1' | '9:16';
 
@@ -48,6 +56,44 @@ interface ViewportOverlayProps {
   isPlaying?: boolean;
   onPlayPause?: () => void;
   onStop?: () => void;
+}
+
+type RecordingFormat = {
+  mimeType: string;
+  extension: 'mp4' | 'webm';
+};
+
+const RECORDING_FORMATS: RecordingFormat[] = [
+  // Prefer WebM where it is available, but Safari on iPhone commonly only
+  // exposes an MP4 MediaRecorder implementation.
+  { mimeType: 'video/webm;codecs=vp9,opus', extension: 'webm' },
+  { mimeType: 'video/webm;codecs=vp8,opus', extension: 'webm' },
+  { mimeType: 'video/webm', extension: 'webm' },
+  { mimeType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', extension: 'mp4' },
+  { mimeType: 'video/mp4', extension: 'mp4' },
+];
+
+function getSupportedRecordingFormat(): RecordingFormat | null {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return null;
+  }
+
+  // Safari can record WebM on some recent builds, but MP4/H.264/AAC is the
+  // more reliable handoff format on iPhone (Photos, Messages, AirDrop). Keep
+  // the more broadly efficient WebM preference on other browsers.
+  const isAppleMobile = typeof navigator !== 'undefined'
+    && (/iPhone|iPad|iPod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const formats = isAppleMobile
+    ? [...RECORDING_FORMATS.filter((format) => format.extension === 'mp4'), ...RECORDING_FORMATS.filter((format) => format.extension === 'webm')]
+    : RECORDING_FORMATS;
+
+  return formats.find(({ mimeType }) => MediaRecorder.isTypeSupported(mimeType)) ?? null;
+}
+
+function getRecordingExtension(mimeType: string, fallback: RecordingFormat | null): 'mp4' | 'webm' {
+  if (mimeType.toLowerCase().includes('mp4')) return 'mp4';
+  return fallback?.extension ?? 'webm';
 }
 
 import { MusicPlayer } from './MusicPlayer';
@@ -59,7 +105,7 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
   const { addToast } = useToastStore();
   const { lightingPreset, setLightingPreset } = useSceneSettingsStore();
   const { isPoppedOut, togglePopOut } = usePopOutViewport(activeCssOverlay);
-  const { avatarType, setRemoteUrl } = useAvatarSource();
+  const { avatarType, setRemoteUrl, sourceLabel } = useAvatarSource();
   const { fetchAvatars, getRandomAvatar, isLoading: isAvatarListLoading } = useAvatarListStore();
   const { user } = useUserStore();
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
@@ -82,13 +128,16 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
   
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingStarting, setIsRecordingStarting] = useState(false);
+  const [latestTakePassport, setLatestTakePassport] = useState<TakePassport | null>(null);
   const [mobileCameraOpen, setMobileCameraOpen] = useState(false);
   
   // Sparkle celebration effect
   const { active: sparklesActive, trigger: triggerSparkles } = useSparkles(3000);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartingRef = useRef(false);
+  const recordingVideoStreamRef = useRef<MediaStream | null>(null);
+  const recordingAudioStreamRef = useRef<MediaStream | null>(null);
 
   const handleToggleGrid = () => {
     const newVisible = !gridVisible;
@@ -130,85 +179,255 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
 
   const handleToggleRecording = async () => {
     if (isRecording) {
-      // Stop Recording
+      // Keep tracks alive until onstop. Safari can lose the tail of an MP4 when
+      // its microphone track is stopped before MediaRecorder flushes it.
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
-      
-      // Stop audio tracks we requested
-      if (recordingStreamRef.current) {
-        recordingStreamRef.current.getAudioTracks().forEach(track => track.stop());
-        recordingStreamRef.current = null;
-      }
-      
-      setIsRecording(false);
-    } else {
-      // Start Recording
-      const canvas = avatarType === 'live2d' ? live2dManager.getCanvas() : sceneManager.getCanvas();
-      if (!canvas) {
-        addToast('No canvas available to record', 'error');
-        return;
+      return;
+    }
+
+    if (recordingStartingRef.current) return;
+
+    const canvas = avatarType === 'live2d' ? live2dManager.getCanvas() : sceneManager.getCanvas();
+    if (!canvas) {
+      addToast('No canvas available to record', 'error');
+      return;
+    }
+    if (typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
+      addToast('Video recording is not supported in this browser.', 'error');
+      return;
+    }
+
+    recordingStartingRef.current = true;
+    setIsRecordingStarting(true);
+    setLatestTakePassport(null);
+
+    let videoStream: MediaStream | null = null;
+    let audioStream: MediaStream | null = null;
+
+    try {
+      videoStream = canvas.captureStream(30);
+      if (videoStream.getVideoTracks().length === 0) {
+        throw new Error('The canvas did not provide a video track.');
       }
 
-      try {
-        const stream = canvas.captureStream(30); // 30 FPS
-        
-        // Request Microphone access
-        let audioStream: MediaStream | null = null;
+      // Reuse the live lip-sync microphone when it is active. Cloning the
+      // track gives the recorder ownership of its copy, so stopping a take
+      // never interrupts the performer's live facial voice control.
+      const liveVoiceTracks = voiceLipSync.getMediaStream()
+        ?.getAudioTracks()
+        .filter((track) => track.readyState === 'live') ?? [];
+      if (liveVoiceTracks.length > 0) {
+        audioStream = new MediaStream(liveVoiceTracks.map((track) => track.clone()));
+        console.log('[ViewportOverlay] Reusing the live lip-sync microphone for recording');
+      } else if (navigator.mediaDevices?.getUserMedia) {
         try {
-          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          recordingStreamRef.current = audioStream;
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+            },
+          });
           console.log('[ViewportOverlay] Microphone access granted for recording');
-        } catch (err) {
-          console.warn('[ViewportOverlay] Microphone access denied or failed, recording video only.', err);
+        } catch (error) {
+          console.warn('[ViewportOverlay] Microphone access denied or failed, recording video only.', error);
           addToast('Microphone access denied. Recording video only.', 'warning');
         }
-
-        // Combine video and audio tracks if available
-        const tracks = [...stream.getVideoTracks()];
-        if (audioStream) {
-          tracks.push(...audioStream.getAudioTracks());
-        }
-        const combinedStream = new MediaStream(tracks);
-        
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-          ? 'video/webm;codecs=vp9' 
-          : 'video/webm';
-
-        const recorder = new MediaRecorder(combinedStream, { mimeType });
-        
-        chunksRef.current = [];
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
-        };
-
-        recorder.onstop = () => {
-          const blob = new Blob(chunksRef.current, { type: mimeType });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `PoseLab_Recording_${getPoseLabTimestamp()}.webm`;
-          a.click();
-          URL.revokeObjectURL(url);
-          addToast('🎬 Video saved!', 'success');
-        };
-
-        recorder.start();
-        mediaRecorderRef.current = recorder;
-        setIsRecording(true);
-        addToast('🔴 Recording started...', 'success');
-      } catch (e) {
-        console.error('Recording failed:', e);
-        addToast('Failed to start recording', 'error');
-        setIsRecording(false);
-        // Clean up stream if failed
-        if (recordingStreamRef.current) {
-           recordingStreamRef.current.getAudioTracks().forEach(track => track.stop());
-           recordingStreamRef.current = null;
-        }
+      } else {
+        addToast('Microphone access is unavailable. Recording video only.', 'warning');
       }
+
+      audioStream?.getAudioTracks().forEach((track) => {
+        if ('contentHint' in track) {
+          try {
+            track.contentHint = 'speech';
+          } catch {
+            // Older WebKit versions expose a read-only or unsupported hint.
+          }
+        }
+      });
+
+      const combinedStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...(audioStream?.getAudioTracks() ?? []),
+      ]);
+      const preferredFormat = getSupportedRecordingFormat();
+      let recorder: MediaRecorder;
+
+      try {
+        recorder = preferredFormat
+          ? new MediaRecorder(combinedStream, { mimeType: preferredFormat.mimeType })
+          : new MediaRecorder(combinedStream);
+      } catch (error) {
+        // Some WebKit builds report an MP4 MIME type as supported but reject a
+        // codec-specific option. Let the browser select its compatible default.
+        if (!preferredFormat) throw error;
+        console.warn('[ViewportOverlay] Preferred recorder format was rejected; using the browser default.', error);
+        recorder = new MediaRecorder(combinedStream);
+      }
+
+      const mimeType = recorder.mimeType || preferredFormat?.mimeType || 'video/webm';
+      const extension = getRecordingExtension(mimeType, preferredFormat);
+      const chunks: Blob[] = [];
+      let recordingFailed = false;
+      const captureStartedAt = new Date();
+      const sourceCameraTrack = (getMocapVideo()?.srcObject as MediaStream | null)
+        ?.getVideoTracks()[0] ?? null;
+      const sourceMicrophoneTrack = audioStream?.getAudioTracks()[0] ?? null;
+      const integrityEvents: TakePassportIntegrityEventInput[] = [
+        { at: captureStartedAt, type: 'recording.started' },
+        { type: 'recording.codec-selected', detail: mimeType },
+        sourceCameraTrack
+          ? { type: 'recording.camera-attached' }
+          : { type: 'recording.canvas-only' },
+        sourceMicrophoneTrack
+          ? { type: 'recording.microphone-attached' }
+          : { type: 'recording.microphone-unavailable' },
+      ];
+      const releaseRecorderTracks = () => {
+        // Release only recorder-owned tracks. The active lip-sync stream keeps
+        // running because the recorder received cloned audio tracks.
+        videoStream?.getVideoTracks().forEach((track) => track.stop());
+        audioStream?.getAudioTracks().forEach((track) => track.stop());
+        if (recordingVideoStreamRef.current === videoStream) recordingVideoStreamRef.current = null;
+        if (recordingAudioStreamRef.current === audioStream) recordingAudioStreamRef.current = null;
+      };
+
+      recordingVideoStreamRef.current = videoStream;
+      recordingAudioStreamRef.current = audioStream;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
+        setIsRecording(false);
+
+        if (recordingFailed) {
+          releaseRecorderTracks();
+          return;
+        }
+
+        if (chunks.length === 0) {
+          releaseRecorderTracks();
+          addToast('Recording finished without video data.', 'error');
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: mimeType });
+        const takeName = `PoseLab_Recording_${getPoseLabTimestamp()}`;
+        const finalMocapStatus = getMocapManager()?.getStatus();
+        integrityEvents.push({ type: 'recording.stopped' });
+        if (
+          finalMocapStatus
+          && finalMocapStatus.targetFps > 0
+          && finalMocapStatus.fps < finalMocapStatus.targetFps * 0.75
+        ) {
+          integrityEvents.push({
+            type: 'tracking.below-target-fps',
+            detail: `${finalMocapStatus.fps}/${finalMocapStatus.targetFps} FPS at take end.`,
+          });
+        }
+        const url = URL.createObjectURL(blob);
+        const download = document.createElement('a');
+        download.href = url;
+        download.download = `${takeName}.${extension}`;
+        download.style.display = 'none';
+        document.body.appendChild(download);
+        download.click();
+        download.remove();
+        // Revoking immediately can cancel an iOS Safari download before it has
+        // consumed the Blob. Keep the URL briefly, then release its memory.
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        addToast('🎬 Video saved!', 'success');
+
+        // Create a local-only provenance companion after the primary download.
+        // It never contains raw face data, voice data, device identifiers, or
+        // an upload URL; it lets the creator verify exactly what was captured.
+        void createTakePassport({
+          blob,
+          selectedMimeType: mimeType,
+          canvas,
+          captureStartedAt,
+          captureEndedAt: new Date(),
+          avatarSourceLabel: sourceLabel,
+          tracking: finalMocapStatus ? {
+            provider: 'MediaPipe Holistic',
+            modelVersion: '0.5.1675471629',
+            mode: finalMocapStatus.isFaceMaskMode ? 'face-mask' : finalMocapStatus.mode,
+            actualFps: finalMocapStatus.fps,
+            targetFps: finalMocapStatus.targetFps,
+            droppedVideoFrames: finalMocapStatus.droppedVideoFrames,
+          } : undefined,
+          cameraTrack: sourceCameraTrack,
+          microphoneTrack: sourceMicrophoneTrack,
+          integrityEvents,
+        }).then((passport) => {
+          setLatestTakePassport(passport);
+          addToast('Take Passport ready — download it to keep this take verifiable.', 'info');
+        }).catch((error) => {
+          console.warn('[ViewportOverlay] Could not create Take Passport', error);
+        });
+        releaseRecorderTracks();
+      };
+      recorder.onerror = (event) => {
+        recordingFailed = true;
+        console.error('[ViewportOverlay] Recording failed:', event);
+        releaseRecorderTracks();
+        if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
+        setIsRecording(false);
+        addToast('Recording stopped because the browser reported an error.', 'error');
+      };
+
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      addToast('🔴 Recording started...', 'success');
+    } catch (error) {
+      console.error('[ViewportOverlay] Recording failed:', error);
+      videoStream?.getVideoTracks().forEach((track) => track.stop());
+      audioStream?.getAudioTracks().forEach((track) => track.stop());
+      if (recordingVideoStreamRef.current === videoStream) recordingVideoStreamRef.current = null;
+      if (recordingAudioStreamRef.current === audioStream) recordingAudioStreamRef.current = null;
+      addToast('Failed to start recording', 'error');
+      setIsRecording(false);
+    } finally {
+      recordingStartingRef.current = false;
+      setIsRecordingStarting(false);
     }
   };
+
+  const handleDownloadTakePassport = () => {
+    if (!latestTakePassport) return;
+    const downloaded = downloadTakePassport(latestTakePassport, {
+      filename: `PoseLab_Take_Passport_${latestTakePassport.captureId}.json`,
+    });
+    addToast(
+      downloaded ? 'Take Passport downloaded locally.' : 'Could not download the Take Passport in this browser.',
+      downloaded ? 'success' : 'error',
+    );
+  };
+
+  useEffect(() => () => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      // Do not trigger a download while this overlay is being unmounted.
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      try {
+        recorder.stop();
+      } catch (error) {
+        console.warn('[ViewportOverlay] Unable to stop recorder during cleanup', error);
+      }
+    }
+    mediaRecorderRef.current = null;
+    recordingVideoStreamRef.current?.getVideoTracks().forEach((track) => track.stop());
+    recordingAudioStreamRef.current?.getAudioTracks().forEach((track) => track.stop());
+    recordingVideoStreamRef.current = null;
+    recordingAudioStreamRef.current = null;
+  }, []);
 
   // Sync with sceneManager on mount
   useEffect(() => {
@@ -662,11 +881,25 @@ export function ViewportOverlay({ mode, isPlaying, onPlayPause, onStop }: Viewpo
         {isRecording && (
           <span className="status-recording neon-flicker">REC</span>
         )}
+        {latestTakePassport && !isRecording && (
+          <button
+            className="secondary"
+            type="button"
+            onClick={handleDownloadTakePassport}
+            title="Download the local Take Passport for the latest recording"
+            aria-label="Download Take Passport for latest recording"
+            style={{ minHeight: '44px', padding: '0 12px', fontSize: '0.75rem' }}
+          >
+            Passport
+          </button>
+        )}
         <button
           className={`recording-button ${isRecording ? 'recording neon-flicker-intense' : ''}`}
           onClick={handleToggleRecording}
-          title={isRecording ? "Stop Recording" : "Record Video"}
-          aria-label={isRecording ? "Stop Recording" : "Record Video"}
+          disabled={isRecordingStarting}
+          title={isRecordingStarting ? 'Preparing recorder...' : isRecording ? 'Stop Recording' : 'Record Video'}
+          aria-label={isRecordingStarting ? 'Preparing recorder' : isRecording ? 'Stop Recording' : 'Record Video'}
+          aria-busy={isRecordingStarting}
           style={{
             width: '50px',
             height: '50px',

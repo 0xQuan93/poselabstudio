@@ -453,7 +453,9 @@ class AvatarManager {
     }
 
     // Pass VRM to getPoseDefinitionWithAnimation so it can retarget the animation tracks
-    const def = shouldAnimate ? await getPoseDefinitionWithAnimation(pose, this.vrm) : getPoseDefinition(pose);
+    const def = shouldAnimate
+      ? await getPoseDefinitionWithAnimation(pose, this.vrm)
+      : await getPoseDefinition(pose);
     if (!def) {
       return;
     }

@@ -53,7 +53,7 @@
 - **HDRI Environments**: Professional lighting with 360° environment maps.
 - **3-Point Lighting**: Studio, Dramatic, Neon, and more lighting presets.
 - **Post-Processing**: Bloom, Color Grading, Vignette, and Film Grain effects.
-- **Privacy First**: [Read our Privacy Policy](PRIVACY.md). All processing happens locally.
+- **Privacy First**: [Read our Privacy Policy](PRIVACY.md). Core rendering and standard facial tracking run locally; optional AI, multiplayer, and publishing use network services.
 - **Multiplayer Sessions**: Host or join a co-op room with scene syncing.
 
 ---
@@ -94,6 +94,13 @@
 2.  **Calibrate**: Stand in T-Pose and click "Calibrate".
 3.  **Record**: Click "Record", perform your action, then "Stop".
 4.  **Use**: The recording is automatically added to your Animations list.
+
+### 📱 **For iPhone Facial XR**
+1.  **Load Avatar**: Use the header menu → **Load avatar** and choose a `.vrm` from Files.
+2.  **Open Facial XR**: Tap the tools button → **Face AR** → **Enter Facial XR**. Allow camera and microphone access when Safari asks.
+3.  **Preflight**: Center your face in even front lighting. The capture panel shows actual tracker FPS and recording readiness.
+4.  **Record**: Tap the red camera button on the stage. Safari uses an MP4-compatible recorder when available and records voice with the avatar canvas.
+5.  **Verify**: After the take saves, download its local **Passport** companion to retain a hash and capture metadata without uploading biometric media.
 
 ### 🤝 **For Co-op Sessions**
 **Goal: Share a live scene with a teammate.**

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { PaperPlaneRight, Hash, Users, Smiley } from '@phosphor-icons/react';
 import { useUserStore } from '../../state/useUserStore';
 import { liveKitManager } from '../../multiplayer/livekitManager';
-import { ActionParser } from '../../ai/utils/ActionParser';
 import './StudioChatPanel.css';
 
 interface Message {
@@ -51,8 +50,6 @@ export const StudioChatPanel = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [memberCount, setMemberCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastProcessedMsgTime = useRef<number>(0);
-  useEffect(() => { lastProcessedMsgTime.current = Date.now(); }, []);
   const seenLiveKitMessages = useRef<Set<string>>(new Set());
 
   const scrollToBottom = () => {
@@ -131,23 +128,10 @@ export const StudioChatPanel = () => {
         const newMap = new Map<string, Message>();
         prevMessages.forEach(m => newMap.set(m.id, m));
         
-        let highestTime = lastProcessedMsgTime.current;
-
         mappedMessages.forEach(m => {
           // Add or overwrite with Discord authoritative message
           newMap.set(m.id, m);
-
-          // Process AI Commands for NEW messages
-          const msgTime = m.timestamp.getTime();
-          if (msgTime > lastProcessedMsgTime.current) {
-            highestTime = Math.max(highestTime, msgTime);
-            if (m.content.includes('<command>')) {
-               ActionParser.execute(m.content, () => {}).catch(e => console.error("ActionParser error:", e));
-            }
-          }
         });
-
-        lastProcessedMsgTime.current = highestTime;
         
         return Array.from(newMap.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
       });
