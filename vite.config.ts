@@ -8,6 +8,15 @@ import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { Server as OscServer } from 'node-osc'
 import { AccessToken } from 'livekit-server-sdk'
+function isPrivateRemoteAddress(address: string | undefined | null): boolean {
+  if (!address) return false
+  const host = address.replace(/^::ffff:/, '').replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
+  if (host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1') return true
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return true
+  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) return true
+  return false
+}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -38,6 +47,7 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === 'development'
   const enableVmcBridge = env.VITE_ENABLE_VMC_BRIDGE === 'true'
   const enablePoseExport = env.VITE_ENABLE_POSE_EXPORT === 'true'
+  const enableArkitFaceBridge = env.VITE_ENABLE_ARKIT_FACE_BRIDGE === 'true'
   const plugins: PluginOption[] = [
     react(),
     nodePolyfills(),
@@ -336,6 +346,48 @@ export default defineConfig(({ mode }) => {
         })
       },
     },
+    enableArkitFaceBridge && {
+      name: 'arkit-face-bridge',
+      configureServer(server: ViteDevServer) {
+        if (!isDev) {
+          console.warn('[arkit-face-bridge] Skipping setup outside development mode.')
+          return
+        }
+        try {
+          const port = 49122
+          console.log(`[arkit-face-bridge] LAN WebSocket hub on 0.0.0.0:${port} (private peers only)`)
+          const wss = new WebSocketServer({ port, host: '0.0.0.0' })
+          wss.on('error', (e: any) => {
+            if (e.code === 'EADDRINUSE') {
+              console.log('[arkit-face-bridge] Port 49122 in use; hub disabled for this instance.')
+            } else {
+              console.error('[arkit-face-bridge] WebSocket error:', e)
+            }
+          })
+          wss.on('connection', (socket, request) => {
+            const remote = request.socket.remoteAddress
+            if (!isPrivateRemoteAddress(remote)) {
+              console.warn('[arkit-face-bridge] Rejected non-LAN peer', remote)
+              socket.close(4003, 'LAN only')
+              return
+            }
+            socket.on('message', (data) => {
+              const payload = typeof data === 'string' ? data : data.toString()
+              wss.clients.forEach((client) => {
+                if (client !== socket && client.readyState === 1) {
+                  client.send(payload)
+                }
+              })
+            })
+          })
+          server.httpServer?.on('close', () => {
+            wss.close()
+          })
+        } catch (err) {
+          console.error('[arkit-face-bridge] Failed to start:', err)
+        }
+      },
+    },
   ].filter(Boolean)
 
   if (!enableVmcBridge) {
@@ -343,6 +395,9 @@ export default defineConfig(({ mode }) => {
   }
   if (!enablePoseExport) {
     console.log('[pose-export] Disabled. Set VITE_ENABLE_POSE_EXPORT=true to enable.')
+  }
+  if (!enableArkitFaceBridge) {
+    console.log('[arkit-face-bridge] Disabled. Set VITE_ENABLE_ARKIT_FACE_BRIDGE=true to enable.')
   }
 
   return {

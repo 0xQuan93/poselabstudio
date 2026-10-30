@@ -3,7 +3,9 @@ import type { AnimationClip } from 'three';
 import { MotionCaptureManager, type FaceMaskAdjustments, type MotionCaptureStatus } from '../../utils/motionCapture';
 import type { MocapMode } from '../../state/useReactionStore';
 import { FaceCaptureLadder } from '../FaceCaptureLadder';
-import { detectFaceCaptureCapabilities, type FaceCaptureCapabilities } from '../../utils/faceCaptureCapabilities';
+import { detectFaceCaptureCapabilities, isArkitFaceBridgeEnabled, type FaceCaptureCapabilities } from '../../utils/faceCaptureCapabilities';
+import { arkitFaceBridge } from '../../utils/arkitFaceBridge';
+import { ARKIT_FACE_DEFAULT_URL } from '../../utils/arkitFaceProtocol';
 import { voiceLipSync } from '../../utils/voiceLipSync';
 import { avatarManager } from '../../three/avatarManager';
 import { useAnimationStore } from '../../state/useAnimationStore';
@@ -155,6 +157,10 @@ export function MocapTab() {
     clearFaceMaskProfiles,
     setVoiceVolume,
     setVoiceSensitivity,
+    arkitCompanionUrl,
+    arkitCompanionEnabled,
+    setArkitCompanionUrl,
+    setArkitCompanionEnabled,
   } = useMocapStore();
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -189,6 +195,9 @@ export function MocapTab() {
   const [faceMaskDebug, setFaceMaskDebug] = useState(false);
   const [browserCaptureSupport, setBrowserCaptureSupport] = useState(getBrowserCaptureSupport);
   const [captureCapabilities, setCaptureCapabilities] = useState<FaceCaptureCapabilities | null>(null);
+  const [arkitStatus, setArkitStatus] = useState(arkitFaceBridge.getStatus());
+  const [arkitBridgeError, setArkitBridgeError] = useState<string | null>(arkitFaceBridge.getError());
+  const arkitFlagEnabled = isArkitFaceBridgeEnabled();
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
@@ -256,6 +265,41 @@ export function MocapTab() {
   useEffect(() => {
     managerRef.current?.setFaceMaskDebug(faceMaskDebug);
   }, [faceMaskDebug]);
+
+  useEffect(() => {
+    return arkitFaceBridge.subscribe((status, nextError) => {
+      setArkitStatus(status);
+      setArkitBridgeError(nextError);
+    });
+  }, []);
+
+  useEffect(() => {
+    return arkitFaceBridge.onFrame((frame) => {
+      const manager = managerRef.current;
+      if (!manager) return;
+      manager.applyExternalArkitFrame(frame.blendshapes, frame.head);
+      setManagerStatus(manager.getStatus());
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!arkitFlagEnabled || !arkitCompanionEnabled) {
+      arkitFaceBridge.disconnect();
+      managerRef.current?.endExternalArkitSource();
+      return;
+    }
+
+    managerRef.current?.beginExternalArkitSource();
+    void arkitFaceBridge.connect(arkitCompanionUrl).catch((error: unknown) => {
+      setArkitBridgeError(error instanceof Error ? error.message : 'Failed to connect ARKit companion');
+      setArkitCompanionEnabled(false);
+    });
+
+    return () => {
+      arkitFaceBridge.disconnect();
+      managerRef.current?.endExternalArkitSource();
+    };
+  }, [arkitCompanionEnabled, arkitCompanionUrl, arkitFlagEnabled, setArkitCompanionEnabled]);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -947,6 +991,7 @@ export function MocapTab() {
         </p>
         <FaceCaptureLadder
           capabilities={captureCapabilities}
+          companionConnected={arkitStatus === 'connected'}
           activeTier={
             managerStatus.capturePath === 'face-landmarker'
               ? 'mediapipe-face'
@@ -1350,6 +1395,38 @@ export function MocapTab() {
         {isCalibrationActive && <CalibrationWizard manager={managerRef.current} />}
       </div>
       
+      {arkitFlagEnabled && (
+        <div className="tab-section">
+          <h3>ARKit companion (LAN)</h3>
+          <p className="muted small">
+            Optional iPhone TrueDepth bridge. Feature-flagged, local network only, never uploaded.
+            Connect the companion app to this computer, then join <code>{ARKIT_FACE_DEFAULT_URL}</code>.
+            This replaces draft PR #21&apos;s generic websocket orchestration for face tracking.
+          </p>
+          <label className="small muted" htmlFor="arkit-url">LAN WebSocket URL</label>
+          <input
+            id="arkit-url"
+            className="full-width"
+            value={arkitCompanionUrl}
+            onChange={(event) => setArkitCompanionUrl(event.target.value)}
+            placeholder={ARKIT_FACE_DEFAULT_URL}
+            style={{ marginBottom: '10px' }}
+          />
+          <button
+            className={`primary full-width ${arkitCompanionEnabled ? 'secondary' : ''}`}
+            onClick={() => setArkitCompanionEnabled(!arkitCompanionEnabled)}
+            aria-pressed={arkitCompanionEnabled}
+            disabled={arkitStatus === 'connecting'}
+          >
+            {arkitStatus === 'connecting' ? 'Connecting companion…' : arkitCompanionEnabled ? 'Disconnect ARKit companion' : 'Connect ARKit companion'}
+          </button>
+          <div className="small muted" style={{ marginTop: '8px' }}>
+            Status: <strong className={`mocap-status-pill is-${arkitStatus === 'connected' ? 'connected' : arkitStatus === 'error' ? 'error' : arkitStatus === 'connecting' ? 'connecting' : ''}`}>{arkitStatus}</strong>
+            {arkitBridgeError && <div className="error-message" style={{ marginTop: '6px' }}>{arkitBridgeError}</div>}
+          </div>
+        </div>
+      )}
+
       <div className="tab-section">
         <h3>VMC Input</h3>
         <p className="muted small">

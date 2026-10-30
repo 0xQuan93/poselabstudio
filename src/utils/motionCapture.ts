@@ -461,6 +461,32 @@ export class MotionCaptureManager {
       }
   }
 
+  beginExternalArkitSource() {
+      this.capturePath = 'arkit-companion';
+      this.startUpdateLoop('arkit-companion');
+  }
+
+  endExternalArkitSource() {
+      this.stopUpdateLoop('arkit-companion');
+      if (this.capturePath === 'arkit-companion') {
+          this.capturePath = this.isTracking
+              ? (faceLandmarkerTracker.isReady() && this.prefersFaceLandmarker() ? 'face-landmarker' : 'holistic')
+              : 'none';
+      }
+  }
+
+  applyExternalArkitFrame(coeffs: ArkitCoefficientMap, head: { x: number; y: number; z: number; w: number }) {
+      this.capturePath = 'arkit-companion';
+      const now = performance.now();
+      this.lastFaceAt = now;
+      this.recordTrackingFrame(now);
+      this.applyArkitBlendshapes(coeffs);
+      // ARKit camera space is +Y up with +Z toward the user; flip Z into VRM/Three.
+      this.applyHeadFromFaceRig({
+          head: { x: head.x, y: head.y, z: -head.z, w: head.w },
+      });
+  }
+
   applyArkitBlendshapes(coeffs: ArkitCoefficientMap) {
       this.lastArkitCoefficients = { ...coeffs };
       const calibrated = applyNeutralCalibration(coeffs, this.faceNeutralRest);
