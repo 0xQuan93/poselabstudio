@@ -91,14 +91,14 @@ This document outlines the planned upgrades and feature requests for PoseLab, fo
 **Goal:** Merge the virtual and physical worlds by overlaying avatars onto the real world via webcam and WebXR.
 
 ### 🎭 Face Overlay (Snapchat Style)
-- [ ] **Background Passthrough:** Render webcam feed as `scene.background` using `THREE.VideoTexture`.
-- [ ] **Head-Only Mode:** Logic to hide avatar body meshes while keeping the head/neck and hair active for a seamless "face swap" effect.
-- [ ] **3D Spatial Alignment:** Project 2D MediaPipe face landmarks into 3D Three.js space with distance estimation for accurate anchoring.
+- [x] **Background Passthrough:** Render webcam feed as `scene.background` using `THREE.VideoTexture` (world-plane fallback remains for debug).
+- [x] **Head-Only Mode:** Hide avatar body meshes while keeping the head/neck and hair active for a "face swap" effect.
+- [x] **3D Spatial Alignment:** Project 2D MediaPipe / Face Landmarker points into 3D Three.js space with distance estimation for anchoring.
 
 ### 🧍 Full-Body AR Overlay
 - [ ] **Root Anchoring:** Anchor avatar hips to the projected 3D position of the user's pelvis for "magic mirror" style tracking.
 - [ ] **Ground Plane Shadows:** Implement a transparent shadow catcher plane to visually ground the avatar in the real-world environment.
-- [ ] **WebXR Immersive-AR:** Leverage native browser AR (ARCore/ARKit) for stable floor tracking, hit testing, and real-world occlusion on supported mobile devices.
+- [ ] **WebXR Immersive-AR:** Browser ARCore / Quest floor tracking on **supported** devices. Not available in iOS Safari (no `immersive-ar`, no ARKit TrueDepth in the browser). Native iPhone face tracking is the optional LAN companion, not this item.
 
 ---
 

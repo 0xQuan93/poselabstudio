@@ -18,6 +18,8 @@ export interface FaceMaskCoverTransform {
     offsetY: number;
 }
 
+export type FacePassthroughMode = 'scene-background' | 'world-plane';
+
 export class FaceMaskCompositor {
     private readonly videoElement: HTMLVideoElement;
     private videoPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
@@ -29,6 +31,9 @@ export class FaceMaskCompositor {
     private debugBox: THREE.LineLoop | null = null;
     private debugCropLine: THREE.Line | null = null;
     private mirrorX = true;
+    private passthroughMode: FacePassthroughMode = 'scene-background';
+    private savedSceneBackground: THREE.Scene['background'] = null;
+    private usingSceneBackground = false;
 
     constructor(videoElement: HTMLVideoElement) {
         this.videoElement = videoElement;
@@ -38,16 +43,57 @@ export class FaceMaskCompositor {
         this.mirrorX = enabled;
     }
 
-    ensureBackdrop() {
-        if (this.videoPlane) return;
-        const scene = sceneManager.getScene();
-        if (!scene) return;
+    setPassthroughMode(mode: FacePassthroughMode) {
+        if (this.passthroughMode === mode) return;
+        const wasActive = Boolean(this.videoTexture);
+        if (wasActive) this.disposeBackdrop();
+        this.passthroughMode = mode;
+        if (wasActive) this.ensureBackdrop();
+    }
 
+    getPassthroughMode() {
+        return this.passthroughMode;
+    }
+
+    private ensureVideoTexture() {
+        if (this.videoTexture) return;
         this.videoTexture = new THREE.VideoTexture(this.videoElement);
         this.videoTexture.colorSpace = THREE.SRGBColorSpace;
         this.videoTexture.minFilter = THREE.LinearFilter;
         this.videoTexture.magFilter = THREE.LinearFilter;
         this.videoTexture.generateMipmaps = false;
+        this.videoTexture.wrapS = THREE.RepeatWrapping;
+        this.videoTexture.wrapT = THREE.ClampToEdgeWrapping;
+    }
+
+    ensureBackdrop() {
+        if (this.passthroughMode === 'scene-background') {
+            this.ensureScenePassthrough();
+            return;
+        }
+        this.ensureWorldPlane();
+    }
+
+    private ensureScenePassthrough() {
+        const scene = sceneManager.getScene();
+        if (!scene) return;
+        this.ensureVideoTexture();
+        if (!this.usingSceneBackground) {
+            this.savedSceneBackground = scene.background;
+            this.usingSceneBackground = true;
+        }
+        if (this.videoTexture) {
+            scene.background = this.videoTexture;
+        }
+        this.applySceneCover();
+    }
+
+    private ensureWorldPlane() {
+        if (this.videoPlane) return;
+        const scene = sceneManager.getScene();
+        if (!scene) return;
+
+        this.ensureVideoTexture();
 
         const geometry = new THREE.PlaneGeometry(1, 1);
         const material = new THREE.MeshBasicMaterial({
@@ -65,6 +111,12 @@ export class FaceMaskCompositor {
     }
 
     disposeBackdrop() {
+        const scene = sceneManager.getScene();
+        if (scene && this.usingSceneBackground) {
+            scene.background = this.savedSceneBackground;
+        }
+        this.usingSceneBackground = false;
+        this.savedSceneBackground = null;
         if (this.videoPlane) {
             this.videoPlane.removeFromParent();
             this.videoPlane.geometry.dispose();
@@ -111,7 +163,21 @@ export class FaceMaskCompositor {
         };
     }
 
+    private applySceneCover() {
+        if (!this.videoTexture) return;
+        const camera = sceneManager.getCamera();
+        const aspect = camera?.aspect || 16 / 9;
+        const cover = this.getCoverTransform(aspect);
+        this.videoTexture.repeat.set(this.mirrorX ? -cover.repeatX : cover.repeatX, cover.repeatY);
+        this.videoTexture.offset.set(this.mirrorX ? 1 - cover.offsetX : cover.offsetX, cover.offsetY);
+        this.videoTexture.needsUpdate = true;
+    }
+
     updateBackdrop(maskDepth: number, backset: number) {
+        if (this.passthroughMode === 'scene-background') {
+            this.ensureScenePassthrough();
+            return;
+        }
         if (!this.videoPlane) return;
         const camera = sceneManager.getCamera();
         if (!camera) return;

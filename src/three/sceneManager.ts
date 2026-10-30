@@ -670,6 +670,10 @@ class SceneManager {
     return this.followMode !== null;
   }
 
+  getBackgroundId() {
+    return this.lastBackgroundId;
+  }
+
   async setBackground(id: BackgroundId | string, force = false) {
     if (!this.scene) return;
     

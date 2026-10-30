@@ -179,6 +179,7 @@ export type FaceCapturePath = 'face-landmarker' | 'holistic' | 'arkit-companion'
 export interface MotionCaptureStatus {
   isTracking: boolean;
   isFaceMaskMode: boolean;
+  isHeadOnlyMode: boolean;
   mode: MocapTrackingMode;
   isHolisticReady: boolean;
   isFaceLandmarkerReady: boolean;
@@ -279,6 +280,7 @@ export class MotionCaptureManager {
 
   // Webcam XR face mask state
   private faceMaskMode = false;
+  private headOnlyMode = false;
   private faceMaskPoseSnapshot: VRMPose | null = null;
   private faceMaskSavedBaseHipsPosition = new THREE.Vector3(0, 1.0, 0);
   private faceMaskSavedCurrentRootPosition = new THREE.Vector3(0, 1.0, 0);
@@ -645,6 +647,21 @@ export class MotionCaptureManager {
       this.faceMaskModeBeforeIsolation = null;
   }
 
+  setHeadOnlyMode(enabled: boolean) {
+      this.headOnlyMode = enabled;
+      if (enabled) {
+          this.applyFaceMaskVisibility();
+          return;
+      }
+      if (!this.faceMaskMode) {
+          this.restoreFaceMaskVisibility();
+      }
+  }
+
+  setPassthroughMode(mode: 'scene-background' | 'world-plane') {
+      this.faceMaskCompositor.setPassthroughMode(mode);
+  }
+
   setFaceMaskMode(enabled: boolean) {
       if (enabled === this.faceMaskMode && enabled) {
           return;
@@ -664,8 +681,13 @@ export class MotionCaptureManager {
           this.disposeFaceMaskVideoBackdrop();
           this.disposeFaceMaskDebugOverlay();
           this.exitFaceMaskPoseIsolation();
+          if (this.headOnlyMode) {
+              this.applyFaceMaskVisibility();
+          }
           return;
       }
+
+      this.headOnlyMode = true;
 
       if (!this.vrm) return;
 
@@ -733,6 +755,7 @@ export class MotionCaptureManager {
     return {
       isTracking: this.isTracking,
       isFaceMaskMode: this.faceMaskMode,
+      isHeadOnlyMode: this.headOnlyMode || this.faceMaskMode,
       mode: this.mode,
       isHolisticReady: Boolean(this.holistic),
       isFaceLandmarkerReady: faceLandmarkerTracker.isReady(),

@@ -42,6 +42,7 @@ import {
 const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
   isTracking: false,
   isFaceMaskMode: false,
+  isHeadOnlyMode: false,
   mode: 'full',
   isHolisticReady: false,
   isFaceLandmarkerReady: false,
@@ -193,6 +194,7 @@ export function MocapTab() {
   const [faceMaskAvatarProfileId, setFaceMaskAvatarProfileId] = useState('avatar');
   const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
   const [faceMaskDebug, setFaceMaskDebug] = useState(false);
+  const [headOnlyEnabled, setHeadOnlyEnabled] = useState(false);
   const [browserCaptureSupport, setBrowserCaptureSupport] = useState(getBrowserCaptureSupport);
   const [captureCapabilities, setCaptureCapabilities] = useState<FaceCaptureCapabilities | null>(null);
   const [arkitStatus, setArkitStatus] = useState(arkitFaceBridge.getStatus());
@@ -602,6 +604,22 @@ export function MocapTab() {
     addToast("Face AR adjustments reset", "info");
   }, [addToast, getFaceMaskProfileKey, setFaceMaskProfile]);
 
+  const toggleHeadOnly = useCallback(() => {
+    if (!managerRef.current) return;
+    if (!avatarManager.getVRM()) {
+      addToast("Load a VRM avatar before enabling head-only mode.", "warning");
+      return;
+    }
+    if (faceMaskEnabled && headOnlyEnabled) {
+      addToast("Head-only stays on while Face Overlay is compositing the webcam.", "info");
+      return;
+    }
+    const next = !headOnlyEnabled;
+    managerRef.current.setHeadOnlyMode(next);
+    setHeadOnlyEnabled(next);
+    addToast(next ? "Head-only: body meshes hidden, head/hair/neck remain." : "Full body meshes restored.", "info");
+  }, [addToast, faceMaskEnabled, headOnlyEnabled]);
+
   const clearFacialCaptureData = useCallback(() => {
     const confirmed = window.confirm(
       'Clear the saved Facial XR camera choice and all local face-mask calibration profiles? Your browser permissions and downloaded recordings will not be changed.',
@@ -621,7 +639,9 @@ export function MocapTab() {
       finishRecording(true);
     }
     managerRef.current.setFaceMaskMode(false);
+    managerRef.current.setHeadOnlyMode(false);
     setFaceMaskEnabled(false);
+    setHeadOnlyEnabled(false);
     setFaceMaskDebug(false);
     managerRef.current.stop();
     setIsActive(false);
@@ -760,7 +780,9 @@ export function MocapTab() {
 
     if (faceMaskEnabled) {
       managerRef.current.setFaceMaskMode(false);
+      managerRef.current.setHeadOnlyMode(false);
       setFaceMaskEnabled(false);
+      setHeadOnlyEnabled(false);
       setFaceMaskDebug(false);
       addToast("Face AR stopped", "info");
       return;
@@ -799,10 +821,12 @@ export function MocapTab() {
     managerRef.current.setFaceMaskAdjustments(adjustments);
     managerRef.current.setFaceMaskDebug(faceMaskDebug);
     managerRef.current.setFaceMaskMode(true);
+    managerRef.current.setPassthroughMode('scene-background');
+    managerRef.current.setHeadOnlyMode(true);
     setFaceMaskEnabled(true);
+    setHeadOnlyEnabled(true);
     sceneManager.setFollowTarget(null, null);
     sceneManager.setCameraPreset('headshot', true, 0.2);
-    sceneManager.setBackground('transparent');
     setIsGreenScreen(false);
     setManagerStatus(managerRef.current.getStatus());
     const voiceReady = withVoice ? await startVoiceLipSync() : isVoiceLipSyncActive;
@@ -817,7 +841,9 @@ export function MocapTab() {
   const toggleFacialXR = useCallback(async () => {
     if (faceMaskEnabled) {
       managerRef.current?.setFaceMaskMode(false);
+      managerRef.current?.setHeadOnlyMode(false);
       setFaceMaskEnabled(false);
+      setHeadOnlyEnabled(false);
       setFaceMaskDebug(false);
       stopVoiceLipSync();
       stopMocap();
@@ -831,7 +857,9 @@ export function MocapTab() {
   const startLiveFace = useCallback(async () => {
     if (faceMaskEnabled && streamMode) {
       managerRef.current?.setFaceMaskMode(false);
+      managerRef.current?.setHeadOnlyMode(false);
       setFaceMaskEnabled(false);
+      setHeadOnlyEnabled(false);
       setFaceMaskDebug(false);
       stopVoiceLipSync();
       stopMocap();
@@ -1283,6 +1311,17 @@ export function MocapTab() {
                 <MagicWand size={16} weight="duotone" /> {faceMaskEnabled ? 'Face Overlay: On' : 'Face Overlay'}
             </button>
 
+            <button
+                className={`secondary full-width ${headOnlyEnabled ? 'active' : ''}`}
+                onClick={toggleHeadOnly}
+                disabled={isStarting}
+                aria-pressed={headOnlyEnabled}
+                style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                title="Hide body meshes and keep the head, neck, and hair for a Snapchat-style face swap"
+            >
+                <UserFocus size={16} weight="duotone" /> {headOnlyEnabled ? 'Head-Only: On' : 'Head-Only'}
+            </button>
+
             {faceMaskEnabled && (
                 <div className="mocap-mask-controls" aria-label="Face AR manual adjustments">
                     <div className="mocap-mask-controls__header">
@@ -1481,6 +1520,8 @@ export function MocapTab() {
               <li><strong>Go Live (Face):</strong> One tap for Face Landmarker + overlay + Stream Mode. Press Esc to show UI.</li>
               <li><strong>Face Only:</strong> Head and ARKit-mapped expressions. Best path on iPhone Safari.</li>
               <li><strong>Upper Body:</strong> Track face, hands, and arms without lower-body tracking.</li>
+              <li><strong>Face Overlay:</strong> Webcam as <code>scene.background</code> passthrough, with the VRM head aligned over your face.</li>
+              <li><strong>Head-Only:</strong> Hides body meshes and keeps head / neck / hair. Face Overlay turns this on automatically.</li>
               <li><strong>Face AR:</strong> Uses the front camera as a live backdrop and replaces the tracked human head with the loaded VRM head.</li>
               <li><strong>Full Body:</strong> Stand back so your head, torso, legs, and hands are visible.</li>
               <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button. Face-only skips the T-pose step.</li>
