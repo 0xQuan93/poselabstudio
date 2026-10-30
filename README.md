@@ -141,6 +141,9 @@ npm install
 
 # 3. Start dev server
 npm run dev
+
+# Blendshape mapping / smoothing tests (no camera required)
+npm test
 ```
 
 ### Run Modes
