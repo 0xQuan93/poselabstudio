@@ -96,11 +96,24 @@
 4.  **Use**: The recording is automatically added to your Animations list.
 
 ### 📱 **For iPhone Facial XR**
-1.  **Load Avatar**: Use the header menu → **Load avatar** and choose a `.vrm` from Files.
-2.  **Open Facial XR**: Tap the tools button → **Face AR** → **Enter Facial XR**. Allow camera and microphone access when Safari asks.
-3.  **Preflight**: Center your face in even front lighting. The capture panel shows actual tracker FPS and recording readiness.
-4.  **Record**: Tap the red camera button on the stage. Safari uses an MP4-compatible recorder when available and records voice with the avatar canvas.
-5.  **Verify**: After the take saves, download its local **Passport** companion to retain a hash and capture metadata without uploading biometric media.
+Safari on iPhone **cannot** use WebXR `immersive-ar` or native ARKit TrueDepth blendshapes. PoseLab does **not** fake ARKit in the browser.
+
+**What the in-page “Facial XR / Face AR” path actually is**
+- Front camera + **MediaPipe Face Landmarker** (Holistic fallback) inside Safari
+- Coefficients mapped to **ARKit-named** VRM expressions (VRCFaceTracking table) and smoothed with OneEuroFilter
+- Optional Face Overlay (`scene.background` webcam passthrough) and Head-Only mesh hiding
+- Local MP4/WebM recording + Take Passport — no biometric upload
+
+**vrManager “Facial XR masks”** hide the avatar’s face meshes from an **immersive-vr headset camera**. That is not TrueDepth.
+
+1.  **Load Avatar**: Header menu → **Load avatar** → choose a `.vrm` from Files.
+2.  **Capability ladder**: Open **Mocap / Face AR**. The ladder will show WebXR-AR as unavailable on iOS Safari and recommend Face Landmarker.
+3.  **Go Live (Face)**: One tap starts face-only tracking, overlay, and Stream Mode. Or **Enter Facial XR**, then allow camera / mic.
+4.  **Calibrate**: Exit Stream Mode (Esc) and run **Wizard** for a face-only neutral rest pose.
+5.  **Record**: Red camera button on the stage. Download the local **Passport** if you want a hash without uploading media.
+
+**Optional native ARKit (real iPhone app, LAN only)**  
+Set `VITE_ENABLE_ARKIT_FACE_BRIDGE=true`, run `npm run dev`, and use `companion/ios/PoseLabFaceBridge`. 52 TrueDepth blendshapes stay on your Wi-Fi. Off by default. See [companion/README.md](companion/README.md).
 
 ### 🤝 **For Co-op Sessions**
 **Goal: Share a live scene with a teammate.**
@@ -145,10 +158,11 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LP_SESSION_SECRET=[REQUIRED_FOR_SIGNED_LP_SESSIONS]
 VITE_ENABLE_VMC_BRIDGE=false
 VITE_ENABLE_POSE_EXPORT=false
+VITE_ENABLE_ARKIT_FACE_BRIDGE=false
 ```
 
 > [!NOTE]
-> `VITE_ENABLE_VMC_BRIDGE` and `VITE_ENABLE_POSE_EXPORT` are **off by default**. Enable them only for trusted local development. Avoid shipping `VITE_GEMINI_API_KEY`; use the Netlify Gemini proxy with server-side `GEMINI_API_KEY`.
+> `VITE_ENABLE_VMC_BRIDGE`, `VITE_ENABLE_POSE_EXPORT`, and `VITE_ENABLE_ARKIT_FACE_BRIDGE` are **off by default**. Enable them only for trusted local development. The ARKit companion binds a LAN WebSocket and rejects public peers; it never uploads face data. Avoid shipping `VITE_GEMINI_API_KEY`; use the Netlify Gemini proxy with server-side `GEMINI_API_KEY`.
 
 ---
 

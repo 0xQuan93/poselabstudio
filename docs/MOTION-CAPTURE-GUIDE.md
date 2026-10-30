@@ -25,13 +25,15 @@ Previously, physics often updated *before* bones moved, causing hair and clothes
   3. **Render**: Draws the frame.
 - **Benefit**: Every bone movement is perfectly synchronized with the physics engine.
 
-### 3. 📱 Face AR (iPhone Safari prioritized)
-You can now bring your avatar into the real world.
-- **Supported Devices**: Android Phones (Chrome), Meta Quest, Vision Pro.
-- **Usage**: Load a VRM, open **Mocap**, then tap **Start Face AR**. Allow front-camera access when Safari asks.
-- **How it works**: The browser uses MediaPipe facial landmarks to drive and composite the VRM head over the live front-camera view.
-- **iPhone note**: This is a browser-based Face AR experience. Safari does not expose native ARKit face anchors or immersive WebXR AR to web apps.
-- **Function**: The background becomes your camera feed, and the avatar stands on your floor/desk.
+### 3. 📱 Face AR (iPhone Safari — honest limits)
+This is **Safari Face AR UX**, not native ARKit.
+
+- **iPhone Safari**: No WebXR `immersive-ar`, no browser TrueDepth / `ARFaceAnchor`. Best path is front camera + MediaPipe **Face Landmarker** (Holistic fallback) with ARKit-named blendshape → VRM mapping.
+- **WebXR immersive-ar**: Chrome Android / compatible headsets only. The AR button is hidden when `isSessionSupported('immersive-ar')` is false.
+- **WebXR immersive-vr**: visionOS-oriented. `vrManager` “Facial XR masks” hide avatar face meshes from the **headset camera** — not TrueDepth.
+- **Optional native ARKit**: local iOS companion (`VITE_ENABLE_ARKIT_FACE_BRIDGE`, LAN WebSocket). Off by default. See `companion/README.md`.
+- **Usage**: Load a VRM → **Mocap** → **Go Live (Face)** or **Enter Facial XR**. Allow the front camera when Safari asks.
+- **Overlay**: Webcam is `scene.background` (`THREE.VideoTexture`). **Head-Only** hides body meshes and keeps head/neck/hair.
 
 ---
 
@@ -43,9 +45,11 @@ You can now bring your avatar into the real world.
 3. **Distance**: Stand/sit where your head and shoulders are clearly visible.
 
 ### Modes
-- **Full Body**: Tracks body + face + fingers. Best for full performance.
-- **Face Only**: Tracks face/head rotation. Body plays idle animation (e.g., "Sunset Call").
-- **AR Mode**: (New) Projects avatar into your room. Requires HTTPS and a compatible device.
+- **Full Body**: Tracks body + face + fingers (MediaPipe Holistic). Best for full performance.
+- **Upper Body**: Face, hands, and arms without lower-body tracking.
+- **Face Only**: Head + ARKit-mapped expressions via Face Landmarker. Best path on iPhone Safari.
+- **Face Overlay / Head-Only**: Webcam passthrough background; hide body meshes.
+- **WebXR AR**: Only on browsers where `immersive-ar` is supported. Not iOS Safari.
 
 ### Troubleshooting
 
