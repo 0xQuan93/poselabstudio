@@ -17,6 +17,9 @@ import {
   consumeAiVisionCaptureAuthorization,
   type AiVisionCaptureAuthorization,
 } from './aiVisionConsent';
+import { applyNeutralCalibration, kalidokitFaceToArkit, mapArkitToVrm } from './blendshapeMapper';
+import type { ArkitCoefficientMap } from './arkitBlendshapes';
+import { faceLandmarkerTracker, type FaceLandmarkerFrame } from './faceLandmarkerTracker';
 
 // ======================
 // Configuration Constants
@@ -170,11 +173,16 @@ interface FaceMaskMaterialRecord {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HandLandmarks2D = any; 
 
+export type MocapTrackingMode = 'full' | 'face' | 'faceOnly';
+export type FaceCapturePath = 'face-landmarker' | 'holistic' | 'arkit-companion' | 'none';
+
 export interface MotionCaptureStatus {
   isTracking: boolean;
   isFaceMaskMode: boolean;
-  mode: 'full' | 'face';
+  mode: MocapTrackingMode;
   isHolisticReady: boolean;
+  isFaceLandmarkerReady: boolean;
+  capturePath: FaceCapturePath;
   videoWidth: number;
   videoHeight: number;
   fps: number;
@@ -186,7 +194,7 @@ export interface MotionCaptureStatus {
   lastLeftHandAt: number | null;
   lastRightHandAt: number | null;
   lastFaceMaskAt: number | null;
-  activeSources: Array<'camera' | 'vmc'>;
+  activeSources: Array<'camera' | 'vmc' | 'arkit-companion'>;
 }
 
 export interface FaceMaskAdjustments {
@@ -221,14 +229,17 @@ export class MotionCaptureManager {
   private vrm?: VRM;
   private videoElement: HTMLVideoElement;
   private isTracking = false;
-  private updateSources: Set<'camera' | 'vmc'> = new Set();
+  private updateSources: Set<'camera' | 'vmc' | 'arkit-companion'> = new Set();
+  private capturePath: FaceCapturePath = 'none';
+  private lastArkitCoefficients: ArkitCoefficientMap = {};
+  private faceNeutralRest: ArkitCoefficientMap | undefined;
   
   // Track available blendshapes on the current avatar for fuzzy matching
   private availableBlendshapes: Set<string> = new Set();
   
   // Tracking Mode
-  private mode: 'full' | 'face' = 'full';
-  private faceMaskModeBeforeIsolation: 'full' | 'face' | null = null;
+  private mode: MocapTrackingMode = 'full';
+  private faceMaskModeBeforeIsolation: MocapTrackingMode | null = null;
 
   // Smoothing State
   private targetFaceValues: Map<string, number> = new Map();
@@ -406,10 +417,60 @@ export class MotionCaptureManager {
       
       // XR Face Mask is a head-only compositor. Keep expressions/head pose, but
       // do not let body, hand, or root tracking bend the mask's neutral base.
-      if (!this.faceMaskMode && rigs.pose) this.applyPoseRig(rigs.pose);
+      const bodyTracking = !this.faceMaskMode && this.mode !== 'faceOnly';
+      if (bodyTracking && rigs.pose) this.applyPoseRig(rigs.pose);
       if (rigs.face) this.applyFaceRig(rigs.face);
-      if (!this.faceMaskMode && rigs.rightHand) this.applyHandRig(rigs.rightHand, 'Right');
-      if (!this.faceMaskMode && rigs.leftHand) this.applyHandRig(rigs.leftHand, 'Left');
+      if (bodyTracking && rigs.rightHand) this.applyHandRig(rigs.rightHand, 'Right');
+      if (bodyTracking && rigs.leftHand) this.applyHandRig(rigs.leftHand, 'Left');
+  }
+
+  private processFaceLandmarkerFrame(now: number): boolean {
+      if (!this.prefersFaceLandmarker() || !faceLandmarkerTracker.isReady()) {
+          return false;
+      }
+
+      const frame = faceLandmarkerTracker.detect(this.videoElement, now);
+      if (!frame) return false;
+
+      this.handleFaceLandmarkerFrame(frame, now);
+      return true;
+  }
+
+  private handleFaceLandmarkerFrame(frame: FaceLandmarkerFrame, now: number) {
+      this.capturePath = 'face-landmarker';
+      this.lastFaceAt = now;
+      this.recordTrackingFrame(now);
+      this.applyArkitBlendshapes(frame.blendshapes);
+
+      if (frame.landmarks.length > 0) {
+          this.updateFaceMaskTarget(frame.landmarks, now);
+          const width = this.videoElement.videoWidth;
+          const height = this.videoElement.videoHeight;
+          const rig = Kalidokit.Face.solve(
+              frame.landmarks.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 })),
+              {
+                  runtime: 'mediapipe',
+                  imageSize: { width, height },
+                  smoothBlink: true,
+                  blinkSettings: [0.25, 0.75],
+              },
+          );
+          if (rig) {
+              this.applyHeadFromFaceRig(rig);
+          }
+      }
+  }
+
+  applyArkitBlendshapes(coeffs: ArkitCoefficientMap) {
+      this.lastArkitCoefficients = { ...coeffs };
+      const calibrated = applyNeutralCalibration(coeffs, this.faceNeutralRest);
+      const { targets } = mapArkitToVrm(calibrated, this.availableBlendshapes);
+      Object.entries(targets).forEach(([name, value]) => {
+          if (voiceLipSync.getIsActive() && voiceLipSync.isExpressionControlled(name)) {
+              return;
+          }
+          this.targetFaceValues.set(name, value);
+      });
   }
 
   setVRM(vrm: VRM | null) {
@@ -455,9 +516,16 @@ export class MotionCaptureManager {
     }
   }
 
-  setMode(mode: 'full' | 'face') {
+  setMode(mode: MocapTrackingMode) {
       this.mode = mode;
       console.log('[MotionCaptureManager] Set mode:', mode);
+      if (this.prefersFaceLandmarker() && this.isTracking) {
+          void faceLandmarkerTracker.init();
+      }
+  }
+
+  private prefersFaceLandmarker() {
+      return this.mode === 'faceOnly' || this.faceMaskMode;
   }
 
   private captureFaceMaskOriginalTransform() {
@@ -575,6 +643,10 @@ export class MotionCaptureManager {
 
       if (!this.vrm) return;
 
+      if (this.isTracking) {
+          void faceLandmarkerTracker.init();
+      }
+
       this.enterFaceMaskPoseIsolation();
       this.captureFaceMaskBaseline();
       this.ensureFaceMaskVideoBackdrop();
@@ -637,6 +709,8 @@ export class MotionCaptureManager {
       isFaceMaskMode: this.faceMaskMode,
       mode: this.mode,
       isHolisticReady: Boolean(this.holistic),
+      isFaceLandmarkerReady: faceLandmarkerTracker.isReady(),
+      capturePath: this.capturePath,
       videoWidth: this.videoElement.videoWidth || 0,
       videoHeight: this.videoElement.videoHeight || 0,
       fps: this.measuredFps,
@@ -650,6 +724,15 @@ export class MotionCaptureManager {
       lastFaceMaskAt: this.lastFaceMaskAt,
       activeSources: Array.from(this.updateSources),
     };
+  }
+
+  getLastArkitCoefficients(): ArkitCoefficientMap {
+    return { ...this.lastArkitCoefficients };
+  }
+
+  resetFaceNeutralCalibration() {
+    this.faceNeutralRest = undefined;
+    this.eyeCalibrationOffset = { x: 0, y: 0 };
   }
 
   getHandLandmarks2D() {
@@ -783,6 +866,10 @@ export class MotionCaptureManager {
             }
         });
 
+        if (this.prefersFaceLandmarker()) {
+            await faceLandmarkerTracker.init();
+        }
+
         // Start processing loop
         this.isTracking = true;
         this.attachCameraLifecycle(stream);
@@ -826,7 +913,7 @@ export class MotionCaptureManager {
        const processFrame = async () => {
            if (generation !== this.cameraLoopGeneration) return;
 
-            if (!this.videoElement.paused && !this.videoElement.ended && this.holistic) {
+            if (!this.videoElement.paused && !this.videoElement.ended) {
                 const startedAt = performance.now();
                 const frameIntervalMs = 1000 / this.inferenceTargetFps;
                 if (startedAt - this.lastInferenceAt < frameIntervalMs) {
@@ -836,7 +923,11 @@ export class MotionCaptureManager {
                 }
                 this.lastInferenceAt = startedAt;
                 try {
-                    await this.holistic.send({ image: this.videoElement });
+                    const usedLandmarker = this.processFaceLandmarkerFrame(startedAt);
+                    if (!usedLandmarker && this.holistic) {
+                        await this.holistic.send({ image: this.videoElement });
+                        this.capturePath = 'holistic';
+                    }
                     this.updateInferenceBudget(performance.now() - startedAt);
                 } catch (error) {
                    // Stopping a camera can race with an in-flight MediaPipe send.
@@ -1064,7 +1155,7 @@ export class MotionCaptureManager {
       }
   }
 
-  private startUpdateLoop(source: 'camera' | 'vmc') {
+  private startUpdateLoop(source: 'camera' | 'vmc' | 'arkit-companion') {
       this.updateSources.add(source);
       if (this.tickDispose) {
           return;
@@ -1074,7 +1165,7 @@ export class MotionCaptureManager {
       }, 30);
   }
   
-  private stopUpdateLoop(source: 'camera' | 'vmc') {
+  private stopUpdateLoop(source: 'camera' | 'vmc' | 'arkit-companion') {
       this.updateSources.delete(source);
       if (this.tickDispose && this.updateSources.size === 0) {
           this.tickDispose();
@@ -1147,13 +1238,15 @@ export class MotionCaptureManager {
           this.targetBoneRotations.clear();
       } else {
           this.targetBoneRotations.forEach((targetQ, boneName) => {
-              if (this.mode === 'face' && !isVMC) {
-                  const allowedBones = [
-                      'head', 'neck',
-                      'chest', 'upperchest', 'spine', // Hips removed to prevent full body rotation
-                      'shoulder', 'arm', // Covers upperArm, lowerArm
-                      'hand', 'thumb', 'index', 'middle', 'ring', 'little'
-                  ];
+              if ((this.mode === 'face' || this.mode === 'faceOnly') && !isVMC) {
+                  const allowedBones = this.mode === 'faceOnly'
+                      ? ['head', 'neck']
+                      : [
+                          'head', 'neck',
+                          'chest', 'upperchest', 'spine',
+                          'shoulder', 'arm',
+                          'hand', 'thumb', 'index', 'middle', 'ring', 'little'
+                      ];
                   if (!allowedBones.some(b => boneName.toLowerCase().includes(b))) return;
               }
 
@@ -1761,6 +1854,7 @@ export class MotionCaptureManager {
     console.log('[MotionCaptureManager] Calibrating Face/Eye Gaze Offsets...');
     this.eyeCalibrationOffset = { x: 0, y: 0 };
     this.shouldCalibrateFace = true;
+    this.faceNeutralRest = { ...this.lastArkitCoefficients };
   }
 
   /**
@@ -1883,112 +1977,98 @@ export class MotionCaptureManager {
     });
   }
 
-  private applyFaceRig(rig: any) {
-      const live2dData = { head: { x: 0, y: 0, z: 0 }, eye: { l: 1, r: 1 }, pupil: { x: 0, y: 0 }, mouth: { open: 0 } };
-      if (this.shouldCalibrateFace) {
-          if (rig.pupil) {
-              this.eyeCalibrationOffset = { x: rig.pupil.x, y: rig.pupil.y };
-              this.shouldCalibrateFace = false;
+  private applyHeadFromFaceRig(rig: { head?: { x: number; y: number; z: number; w?: number }; pupil?: { x: number; y: number } }) {
+      if (this.shouldCalibrateFace && rig.pupil) {
+          this.eyeCalibrationOffset = { x: rig.pupil.x, y: rig.pupil.y };
+          this.shouldCalibrateFace = false;
+      }
+      if (!rig.head) return;
+      const headBone = this.vrm?.humanoid?.getNormalizedBoneNode('head');
+      if (!headBone) return;
+
+      const q = rig.head;
+      const headQ = q.w !== undefined
+          ? new THREE.Quaternion(q.x, q.y, q.z, q.w)
+          : new THREE.Quaternion().setFromEuler(new THREE.Euler(q.x, q.y, q.z, 'YXZ'));
+      const identityQ = new THREE.Quaternion();
+      headQ.slerp(identityQ, HEAD_DAMPENING);
+      if (this.faceMaskMode) {
+          this.faceMaskHeadRotation.copy(headQ);
+          this.faceMaskHasHeadRotation = true;
+      } else {
+          this.targetBoneRotations.set('head', headQ);
+      }
+
+      if ((this.mode === 'face' || this.mode === 'faceOnly') && !this.faceMaskMode) {
+          const identity = new THREE.Quaternion();
+          const neckQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.NECK);
+          if (!this.targetBoneRotations.has('neck')) {
+              this.targetBoneRotations.set('neck', neckQ);
+          }
+          if (this.mode === 'face') {
+              const upperChestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.UPPER_CHEST);
+              if (!this.targetBoneRotations.has('upperChest')) {
+                  this.targetBoneRotations.set('upperChest', upperChestQ);
+              }
+              const chestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.CHEST);
+              if (!this.targetBoneRotations.has('chest')) {
+                  this.targetBoneRotations.set('chest', chestQ);
+              }
+              const spineQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.SPINE);
+              if (!this.targetBoneRotations.has('spine')) {
+                  this.targetBoneRotations.set('spine', spineQ);
+              }
           }
       }
-      const setExpressionTarget = (candidates: string[], value: number) => {
-          candidates.forEach(name => { if (this.availableBlendshapes.has(name)) this.targetFaceValues.set(name, value); });
-      };
+  }
+
+  private applyFaceRig(rig: any) {
+      const live2dData = { head: { x: 0, y: 0, z: 0 }, eye: { l: 1, r: 1 }, pupil: { x: 0, y: 0 }, mouth: { open: 0 } };
+      this.applyHeadFromFaceRig(rig);
       if (rig.head) {
-             const headBone = this.vrm?.humanoid?.getNormalizedBoneNode('head');
-             if (headBone) {
-                const q = rig.head;
-                const headQ = new THREE.Quaternion(q.x, q.y, q.z, q.w);
-                const identityQ = new THREE.Quaternion();
-                headQ.slerp(identityQ, HEAD_DAMPENING);
-                if (this.faceMaskMode) {
-                    this.faceMaskHeadRotation.copy(headQ);
-                    this.faceMaskHasHeadRotation = true;
-                } else {
-                    this.targetBoneRotations.set('head', headQ);
-                }
-                const euler = new THREE.Euler().setFromQuaternion(headQ, 'YXZ');
-                live2dData.head = { x: THREE.MathUtils.radToDeg(euler.x), y: THREE.MathUtils.radToDeg(euler.y), z: THREE.MathUtils.radToDeg(euler.z) };
-                
-                // Upper body follow - make torso subtly follow head rotation for natural movement
-                // Only apply in face/upper body mode (not full body where pose rig handles torso)
-                // We only apply this if these bones weren't already set by the pose rig, 
-                // or if we want to prioritize head-driven torso motion (smoother for seated mocap)
-                if (this.mode === 'face' && !this.faceMaskMode) {
-                    const identity = new THREE.Quaternion();
-                    
-                    // Neck follows head most closely
-                    const neckQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.NECK);
-                    if (!this.targetBoneRotations.has('neck')) {
-                        this.targetBoneRotations.set('neck', neckQ);
-                    }
-                    
-                    // Upper chest follows less
-                    const upperChestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.UPPER_CHEST);
-                    if (!this.targetBoneRotations.has('upperChest')) {
-                        this.targetBoneRotations.set('upperChest', upperChestQ);
-                    }
-                    
-                    // Chest follows even less
-                    const chestQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.CHEST);
-                    if (!this.targetBoneRotations.has('chest')) {
-                        this.targetBoneRotations.set('chest', chestQ);
-                    }
-                    
-                    // Spine follows least - just a subtle hint
-                    const spineQ = headQ.clone().slerp(identity, 1 - UPPER_BODY_FOLLOW.SPINE);
-                    if (!this.targetBoneRotations.has('spine')) {
-                        this.targetBoneRotations.set('spine', spineQ);
-                    }
-                }
-             }
+          if (typeof rig.head.w === 'number') {
+              const euler = new THREE.Euler().setFromQuaternion(
+                  new THREE.Quaternion(rig.head.x, rig.head.y, rig.head.z, rig.head.w),
+                  'YXZ',
+              );
+              live2dData.head = {
+                  x: THREE.MathUtils.radToDeg(euler.x),
+                  y: THREE.MathUtils.radToDeg(euler.y),
+                  z: THREE.MathUtils.radToDeg(euler.z),
+              };
+          } else {
+              live2dData.head = {
+                  x: THREE.MathUtils.radToDeg(rig.head.x),
+                  y: THREE.MathUtils.radToDeg(rig.head.y),
+                  z: THREE.MathUtils.radToDeg(rig.head.z),
+              };
+          }
       }
       if (rig.eye) {
-          const blinkL = 1 - rig.eye.l; const blinkR = 1 - rig.eye.r;
-          setExpressionTarget(['BlinkLeft', 'blink_l', 'eyeBlinkLeft', 'LeftEyeBlink'], blinkL);
-          setExpressionTarget(['BlinkRight', 'blink_r', 'eyeBlinkRight', 'RightEyeBlink'], blinkR);
-          const blinkMax = Math.max(blinkL, blinkR);
-          setExpressionTarget(['Blink', 'blink', 'eyeBlink'], blinkMax);
           live2dData.eye = { l: rig.eye.l, r: rig.eye.r };
       }
       if (rig.pupil) {
           const x = THREE.MathUtils.clamp((rig.pupil.x - this.eyeCalibrationOffset.x) * GAZE_SENSITIVITY, -1, 1);
           const y = THREE.MathUtils.clamp(-(rig.pupil.y - this.eyeCalibrationOffset.y) * GAZE_SENSITIVITY, -1, 1);
           live2dData.pupil = { x, y };
-          const stabilizedX = Math.abs(x) < GAZE_DEADZONE ? 0 : x;
-          const stabilizedY = Math.abs(y) < GAZE_DEADZONE ? 0 : y;
-          const setARKitGaze = (xVal: number, yVal: number) => {
-             if (xVal > 0) { 
-                 setExpressionTarget(['eyeLookOutRight', 'LookRight'], xVal); setExpressionTarget(['eyeLookInLeft', 'LookLeft'], xVal);
-                 setExpressionTarget(['eyeLookInRight', 'LookLeft'], 0); setExpressionTarget(['eyeLookOutLeft', 'LookRight'], 0);
-             } else { 
-                 setExpressionTarget(['eyeLookInRight', 'LookLeft'], -xVal); setExpressionTarget(['eyeLookOutLeft', 'LookRight'], -xVal);
-                 setExpressionTarget(['eyeLookOutRight', 'LookRight'], 0); setExpressionTarget(['eyeLookInLeft', 'LookLeft'], 0);
-             }
-             if (yVal > 0) { 
-                 setExpressionTarget(['eyeLookDownRight', 'LookDown'], yVal); setExpressionTarget(['eyeLookDownLeft', 'LookDown'], yVal);
-                 setExpressionTarget(['eyeLookUpRight', 'LookUp'], 0); setExpressionTarget(['eyeLookUpLeft', 'LookUp'], 0);
-             } else { 
-                 setExpressionTarget(['eyeLookUpRight', 'LookUp'], -yVal); setExpressionTarget(['eyeLookUpLeft', 'LookUp'], -yVal);
-                 setExpressionTarget(['eyeLookDownRight', 'LookDown'], 0); setExpressionTarget(['eyeLookDownLeft', 'LookDown'], 0);
-             }
-          };
-          setARKitGaze(stabilizedX, stabilizedY);
       }
-      if (rig.mouth) {
-          const shape = rig.mouth.shape;
-          setExpressionTarget(['Aa', 'a', 'mouthOpen'], shape.A); setExpressionTarget(['Ee', 'e'], shape.E); setExpressionTarget(['Ih', 'i'], shape.I);
-          setExpressionTarget(['Oh', 'o', 'mouthPucker'], shape.O); setExpressionTarget(['Ou', 'u', 'mouthFunnel'], shape.U);
-          if (rig.mouth.open !== undefined) { setExpressionTarget(['jawOpen', 'mouthOpen', 'A'], rig.mouth.open); live2dData.mouth.open = rig.mouth.open; }
+      if (rig.mouth?.open !== undefined) {
+          live2dData.mouth.open = rig.mouth.open;
       }
-      if (rig.smile !== undefined) {
-          const smile = rig.smile;
-          setExpressionTarget(['Joy', 'joy', 'Happy', 'happy', 'Fun', 'fun'], smile);
-          setExpressionTarget(['mouthSmileLeft', 'mouthSmileRight'], smile); setExpressionTarget(['mouthSmile'], smile);
-      }
-      if (rig.brow) {
-          setExpressionTarget(['browInnerUp', 'BrowsUp', 'browOuterUpLeft', 'browOuterUpRight', 'Surprised', 'surprise'], rig.brow);
-      }
+
+      const pupilX = live2dData.pupil.x;
+      const pupilY = live2dData.pupil.y;
+      const arkit = kalidokitFaceToArkit({
+          eye: rig.eye,
+          pupil: {
+              x: Math.abs(pupilX) < GAZE_DEADZONE ? 0 : pupilX,
+              y: Math.abs(pupilY) < GAZE_DEADZONE ? 0 : pupilY,
+          },
+          brow: rig.brow,
+          mouth: rig.mouth,
+          smile: rig.smile,
+      });
+      this.applyArkitBlendshapes(arkit);
       live2dManager.updateFaceModel(live2dData);
   }
 

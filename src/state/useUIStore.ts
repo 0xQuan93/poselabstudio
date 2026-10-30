@@ -18,6 +18,7 @@ interface UIState {
   // Calibration Wizard State
   isCalibrationActive: boolean;
   calibrationStep: number;
+  calibrationKind: 'body' | 'face';
 
   // Global UI State
   activeCssOverlay: string | null;
@@ -36,7 +37,7 @@ interface UIState {
   prevTutorialStep: () => void;
   setTutorialStep: (step: number) => void;
 
-  startCalibration: () => void;
+  startCalibration: (kind?: 'body' | 'face') => void;
   endCalibration: () => void;
   setCalibrationStep: (step: number) => void;
 
@@ -57,6 +58,7 @@ export const useUIStore = create<UIState>((set) => ({
 
   isCalibrationActive: false,
   calibrationStep: 0,
+  calibrationKind: 'body',
 
   activeCssOverlay: null,
   focusModeActive: false,
@@ -74,7 +76,7 @@ export const useUIStore = create<UIState>((set) => ({
   prevTutorialStep: () => set((state) => ({ currentTutorialStep: Math.max(0, state.currentTutorialStep - 1) })),
   setTutorialStep: (step) => set({ currentTutorialStep: step }),
 
-  startCalibration: () => set({ isCalibrationActive: true, calibrationStep: 0 }),
+  startCalibration: (kind = 'body') => set({ isCalibrationActive: true, calibrationStep: 0, calibrationKind: kind }),
   endCalibration: () => set({ isCalibrationActive: false, calibrationStep: 0 }),
   setCalibrationStep: (step) => set({ calibrationStep: step }),
 

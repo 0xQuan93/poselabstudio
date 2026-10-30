@@ -47,7 +47,7 @@ type PausedInputState = {
   vmc: boolean;
   liveMode: boolean;
   faceMask: boolean;
-  mocapMode: 'full' | 'face';
+  mocapMode: 'full' | 'face' | 'faceOnly';
   selectedDeviceId: string;
 } | null;
 
