@@ -6,35 +6,57 @@ interface CalibrationWizardProps {
   manager: MotionCaptureManager | null;
 }
 
-const STEPS = [
+const BODY_STEPS = [
   {
     title: "Step 1: Body Alignment",
     instruction: "Stand straight in a T-Pose. Ensure your arms are horizontal and your feet are shoulder-width apart.",
     actionLabel: "Capture T-Pose",
-    type: 'body'
+    type: 'body' as const,
   },
   {
     title: "Step 2: Eye Calibration",
     instruction: "Look directly at the center of your screen (at your avatar's face). Keep your head neutral.",
     actionLabel: "Capture Gaze Center",
-    type: 'face'
+    type: 'face' as const,
   },
   {
     title: "Step 3: Ready!",
     instruction: "Your tracking is now calibrated. You can now move naturally.",
     actionLabel: "Finish Wizard",
-    type: 'finish'
-  }
+    type: 'finish' as const,
+  },
+];
+
+const FACE_STEPS = [
+  {
+    title: "Step 1: Neutral Face",
+    instruction: "Sit still, look at the camera, and keep a relaxed face. This becomes the rest pose so blinks and smiles start from zero.",
+    actionLabel: "Capture Neutral Face",
+    type: 'face' as const,
+  },
+  {
+    title: "Step 2: Gaze Center",
+    instruction: "Keep looking at the camera without turning your head. This centers eye look-left / look-right.",
+    actionLabel: "Capture Gaze Center",
+    type: 'face' as const,
+  },
+  {
+    title: "Step 3: Ready!",
+    instruction: "Face-only tracking is calibrated. Expressions use ARKit-named blendshapes mapped onto your VRM.",
+    actionLabel: "Finish Wizard",
+    type: 'finish' as const,
+  },
 ];
 
 export function CalibrationWizard({ manager }: CalibrationWizardProps) {
-  const { isCalibrationActive, calibrationStep, setCalibrationStep, endCalibration } = useUIStore();
+  const { isCalibrationActive, calibrationStep, calibrationKind, setCalibrationStep, endCalibration } = useUIStore();
   const { addToast } = useToastStore();
 
   if (!isCalibrationActive) return null;
 
-  const currentStep = STEPS[calibrationStep] || STEPS[0];
-  const progress = Math.min((calibrationStep + 1) / STEPS.length, 1);
+  const steps = calibrationKind === 'face' ? FACE_STEPS : BODY_STEPS;
+  const currentStep = steps[calibrationStep] || steps[0];
+  const progress = Math.min((calibrationStep + 1) / steps.length, 1);
 
   const handleAction = () => {
     if (!manager) {
@@ -44,17 +66,17 @@ export function CalibrationWizard({ manager }: CalibrationWizardProps) {
 
     try {
       if (currentStep.type === 'body') {
-        console.log('[CalibrationWizard] Triggering Body Calibration');
         manager.calibrateBody();
         addToast("Body offsets captured!", "success");
-        setCalibrationStep(Math.min(calibrationStep + 1, STEPS.length - 1));
+        setCalibrationStep(Math.min(calibrationStep + 1, steps.length - 1));
       } else if (currentStep.type === 'face') {
-        console.log('[CalibrationWizard] Triggering Face Calibration');
         manager.calibrateFace();
-        addToast("Face/Gaze center captured!", "success");
-        setCalibrationStep(Math.min(calibrationStep + 1, STEPS.length - 1));
+        if (calibrationKind === 'face') {
+          manager.calibrateFaceMaskNeutral();
+        }
+        addToast(calibrationKind === 'face' ? "Neutral face captured!" : "Face/Gaze center captured!", "success");
+        setCalibrationStep(Math.min(calibrationStep + 1, steps.length - 1));
       } else {
-        console.log('[CalibrationWizard] Finishing Calibration');
         endCalibration();
         addToast("Calibration complete!", "success");
       }
@@ -73,10 +95,10 @@ export function CalibrationWizard({ manager }: CalibrationWizardProps) {
 
         <div className="calibration-wizard__meta">
           <span className="calibration-wizard__eyebrow">
-            Mocap Setup
+            {calibrationKind === 'face' ? 'Face-Only Setup' : 'Mocap Setup'}
           </span>
           <span className="calibration-wizard__step">
-            Step {Math.min(calibrationStep + 1, STEPS.length)} of {STEPS.length}
+            Step {Math.min(calibrationStep + 1, steps.length)} of {steps.length}
           </span>
         </div>
 
@@ -99,7 +121,9 @@ export function CalibrationWizard({ manager }: CalibrationWizardProps) {
 
         {calibrationStep === 0 && (
           <p className="muted small calibration-wizard__tip">
-            Tip: Ensure your webcam has a clear view of your upper body and good lighting.
+            {calibrationKind === 'face'
+              ? 'Tip: Use the front camera, even lighting, and keep your whole face in frame.'
+              : 'Tip: Ensure your webcam has a clear view of your upper body and good lighting.'}
           </p>
         )}
       </div>

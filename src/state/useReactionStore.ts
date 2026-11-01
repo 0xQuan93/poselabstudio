@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { defaultPreset, findPresetById, pickPresetForName, randomPreset } from '../data/reactions';
 import type { ReactionPreset, AnimationMode } from '../types/reactions';
 
+export type MocapMode = 'full' | 'face' | 'faceOnly';
+
 interface ReactionState {
   nameInput: string;
   activePreset: ReactionPreset;
@@ -9,7 +11,7 @@ interface ReactionState {
   animationMode: AnimationMode;
   liveModeEnabled: boolean;
   liveControlsEnabled: boolean;
-  mocapMode: 'full' | 'face';
+  mocapMode: MocapMode;
   vmcEnabled: boolean;
   vmcWebSocketUrl: string;
   setNameInput: (value: string) => void;
@@ -17,7 +19,7 @@ interface ReactionState {
   setAnimationMode: (mode: AnimationMode) => void;
   setLiveModeEnabled: (enabled: boolean) => void;
   setLiveControlsEnabled: (enabled: boolean) => void;
-  setMocapMode: (mode: 'full' | 'face') => void;
+  setMocapMode: (mode: MocapMode) => void;
   setVmcEnabled: (enabled: boolean) => void;
   setVmcWebSocketUrl: (url: string) => void;
   applyName: () => ReactionPreset;

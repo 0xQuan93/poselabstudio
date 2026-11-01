@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnimationClip } from 'three';
 import { MotionCaptureManager, type FaceMaskAdjustments, type MotionCaptureStatus } from '../../utils/motionCapture';
+import type { MocapMode } from '../../state/useReactionStore';
+import { FaceCaptureLadder } from '../FaceCaptureLadder';
+import { detectFaceCaptureCapabilities, type FaceCaptureCapabilities } from '../../utils/faceCaptureCapabilities';
 import { voiceLipSync } from '../../utils/voiceLipSync';
 import { avatarManager } from '../../three/avatarManager';
 import { useAnimationStore } from '../../state/useAnimationStore';
@@ -39,6 +42,8 @@ const EMPTY_MOCAP_STATUS: MotionCaptureStatus = {
   isFaceMaskMode: false,
   mode: 'full',
   isHolisticReady: false,
+  isFaceLandmarkerReady: false,
+  capturePath: 'none',
   videoWidth: 0,
   videoHeight: 0,
   fps: 0,
@@ -112,7 +117,7 @@ function getBrowserCaptureSupport() {
 export function MocapTab() {
   const { addToast } = useToastStore();
   const { addAnimation } = useAnimationStore();
-  const { startCalibration, isCalibrationActive, setStreamMode } = useUIStore();
+  const { startCalibration, isCalibrationActive, setStreamMode, streamMode } = useUIStore();
   const {
     liveModeEnabled,
     liveControlsEnabled,
@@ -160,7 +165,7 @@ export function MocapTab() {
   const [isSelfieMode, setIsSelfieMode] = useState(false);
   const [isVoiceStarting, setIsVoiceStarting] = useState(false);
   
-  const previousMocapModeRef = useRef<'full' | 'face'>(mocapMode);
+  const previousMocapModeRef = useRef<MocapMode>(mocapMode);
   const previousMocapActiveRef = useRef(isActive);
   const previousVoiceActiveRef = useRef(isVoiceLipSyncActive);
   const liveModeEnabledRef = useRef(liveModeEnabled);
@@ -183,6 +188,7 @@ export function MocapTab() {
   const [faceMaskAdjustments, setFaceMaskAdjustments] = useState<FaceMaskAdjustments>(DEFAULT_FACE_MASK_ADJUSTMENTS);
   const [faceMaskDebug, setFaceMaskDebug] = useState(false);
   const [browserCaptureSupport, setBrowserCaptureSupport] = useState(getBrowserCaptureSupport);
+  const [captureCapabilities, setCaptureCapabilities] = useState<FaceCaptureCapabilities | null>(null);
 
   // Camera Selection
   const { devices, fetchDevices } = useMediaDevices();
@@ -215,6 +221,16 @@ export function MocapTab() {
     refreshCaptureSupport();
     window.addEventListener('pageshow', refreshCaptureSupport);
     return () => window.removeEventListener('pageshow', refreshCaptureSupport);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    detectFaceCaptureCapabilities().then((next) => {
+      if (!cancelled) setCaptureCapabilities(next);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -339,7 +355,7 @@ export function MocapTab() {
       }
   };
 
-  const handleModeChange = useCallback((mode: 'full' | 'face') => {
+  const handleModeChange = useCallback((mode: MocapMode) => {
       if (faceMaskEnabled) {
           addToast("Stop Face AR before changing mocap modes.", "warning");
           return;
@@ -356,7 +372,9 @@ export function MocapTab() {
           avatarManager.freezeCurrentPose();
           avatarManager.setInteraction(true);
           
-          if (mode === 'face') {
+          if (mode === 'faceOnly') {
+              addToast("Face-only tracking: head and ARKit-mapped expressions", "info");
+          } else if (mode === 'face') {
               addToast("Upper Body Tracking: Animation paused for mocap control", "info");
           } else {
               addToast("Full Body Mode: Animation Frozen for Tracking", "info");
@@ -364,7 +382,7 @@ export function MocapTab() {
       }
   }, [addToast, faceMaskEnabled, isActive, setMocapMode]);
 
-  const setMocapModeOnly = useCallback((mode: 'full' | 'face') => {
+  const setMocapModeOnly = useCallback((mode: MocapMode) => {
     setMocapMode(mode);
     if (managerRef.current) {
       managerRef.current.setMode(mode);
@@ -548,6 +566,7 @@ export function MocapTab() {
 
     clearFaceMaskProfiles();
     managerRef.current?.resetFaceMaskAdjustments();
+    managerRef.current?.resetFaceNeutralCalibration();
     setFaceMaskAdjustments(DEFAULT_FACE_MASK_ADJUSTMENTS);
     addToast('Saved Facial XR calibration and camera choice cleared from this device.', 'success');
   }, [addToast, clearFaceMaskProfiles]);
@@ -572,7 +591,7 @@ export function MocapTab() {
     mocapStartingRef.current = false;
   }, [finishRecording, isActive, isRecording, isSelfieMode, setFaceMaskEnabled, setIsActive, setIsStarting]);
 
-  const startMocap = useCallback(async (modeOverride?: 'full' | 'face', options?: StartMocapOptions) => {
+  const startMocap = useCallback(async (modeOverride?: MocapMode, options?: StartMocapOptions) => {
     if (!managerRef.current || isActive || mocapStartingRef.current) return;
     const vrm = avatarManager.getVRM();
     if (!vrm) {
@@ -714,13 +733,13 @@ export function MocapTab() {
       setIsSelfieMode(false);
     }
 
-    if (mocapMode !== 'face') {
-      setMocapMode('face');
-      managerRef.current.setMode('face');
+    if (mocapMode !== 'faceOnly') {
+      setMocapMode('faceOnly');
+      managerRef.current.setMode('faceOnly');
     }
 
     if (!isActive) {
-      await startMocap('face', { isolateFaceMask: true });
+      await startMocap('faceOnly', { isolateFaceMask: true });
       if (!managerRef.current?.getStatus().isTracking) {
         managerRef.current?.setFaceMaskMode(false);
         return;
@@ -764,6 +783,23 @@ export function MocapTab() {
 
     await toggleFaceMask(true);
   }, [addToast, faceMaskEnabled, setFaceMaskEnabled, stopMocap, stopVoiceLipSync, toggleFaceMask]);
+
+  const startLiveFace = useCallback(async () => {
+    if (faceMaskEnabled && streamMode) {
+      managerRef.current?.setFaceMaskMode(false);
+      setFaceMaskEnabled(false);
+      setFaceMaskDebug(false);
+      stopVoiceLipSync();
+      stopMocap();
+      setStreamMode(false);
+      addToast('Live Face ended. Camera, microphone, and stream chrome restored.', 'info');
+      return;
+    }
+
+    await toggleFaceMask(true);
+    setStreamMode(true);
+    addToast('Live Face: front-camera Face Landmarker, overlay, and Stream Mode. Press Esc to show UI, then Wizard for a neutral rest pose.', 'success');
+  }, [addToast, faceMaskEnabled, setFaceMaskEnabled, setStreamMode, stopMocap, stopVoiceLipSync, streamMode, toggleFaceMask]);
 
   const enterVR = async () => {
     const vrm = avatarManager.getVRM();
@@ -869,7 +905,8 @@ export function MocapTab() {
       : isActive
         ? 'Interrupted'
         : 'Idle';
-  const trackingQualityLabel = !managerStatus.isHolisticReady
+  const trackerReady = managerStatus.isHolisticReady || managerStatus.isFaceLandmarkerReady;
+  const trackingQualityLabel = !trackerReady
     ? 'MediaPipe unavailable'
     : !isActive
       ? 'Standby'
@@ -882,8 +919,8 @@ export function MocapTab() {
           : activePartCount >= 1
             ? 'Partial'
             : 'Searching';
-  const trackingHint = !managerStatus.isHolisticReady
-    ? 'Reload if the CDN script failed.'
+  const trackingHint = !trackerReady
+    ? 'Reload if the MediaPipe CDN script failed.'
     : !isActive
       ? 'Ready when the camera starts.'
       : !managerStatus.isTracking
@@ -906,9 +943,30 @@ export function MocapTab() {
       <div className="tab-section">
         <h3>Face AR</h3>
         <p className="muted small">
-          Browser-first facial capture for your VRM: front camera, voice lip sync, and local video recording. It uses browser landmarks—not native TrueDepth/ARKit data.
+          Browser-first facial capture for your VRM: front camera, voice lip sync, and local video recording. iPhone Safari has no WebXR immersive-ar and no TrueDepth ARKit blendshapes — this path uses MediaPipe Face Landmarker with ARKit-named mapping.
         </p>
+        <FaceCaptureLadder
+          capabilities={captureCapabilities}
+          activeTier={
+            managerStatus.capturePath === 'face-landmarker'
+              ? 'mediapipe-face'
+              : managerStatus.capturePath === 'arkit-companion'
+                ? 'arkit-companion'
+                : managerStatus.capturePath === 'holistic'
+                  ? 'mediapipe-face'
+                  : null
+          }
+        />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <button
+            className={`primary full-width ${faceMaskEnabled && streamMode ? 'secondary' : ''}`}
+            onClick={startLiveFace}
+            disabled={isStarting}
+            aria-pressed={faceMaskEnabled && streamMode}
+            style={{ flex: '1 1 100%' }}
+          >
+            <Broadcast size={18} weight="duotone" /> {faceMaskEnabled && streamMode ? 'Stop Live Face' : 'Go Live (Face)'}
+          </button>
           <button
             className={`primary full-width ${faceMaskEnabled ? 'secondary' : ''}`}
             onClick={toggleFacialXR}
@@ -948,6 +1006,9 @@ export function MocapTab() {
         <div className="mocap-checklist" aria-label="Live performance readiness">
           <span className={avatarManager.getVRM() ? 'is-ready' : ''}>Avatar</span>
           <span className={browserCaptureSupport.canUseCamera ? 'is-ready' : ''}>Camera API</span>
+          <span className={managerStatus.isFaceLandmarkerReady || managerStatus.capturePath === 'face-landmarker' ? 'is-ready' : managerStatus.isHolisticReady ? 'is-pending' : ''}>
+            {managerStatus.capturePath === 'face-landmarker' ? 'Face Landmarker' : managerStatus.isHolisticReady ? 'Holistic fallback' : 'Tracker'}
+          </span>
           <span className={isVoiceLipSyncActive ? 'is-ready' : isVoiceStarting ? 'is-pending' : ''}>
             {isVoiceStarting ? 'Voice starting' : 'Voice'}
           </span>
@@ -1000,6 +1061,9 @@ export function MocapTab() {
           <span className={`mocap-signal ${leftHandFresh ? 'is-ready' : ''}`}>Left Hand</span>
           <span className={`mocap-signal ${rightHandFresh ? 'is-ready' : ''}`}>Right Hand</span>
           <span className={`mocap-signal ${faceMaskFresh ? 'is-ready' : ''}`}>Face AR</span>
+          <span className={`mocap-signal ${managerStatus.capturePath !== 'none' ? 'is-ready' : ''}`}>
+            {managerStatus.capturePath === 'face-landmarker' ? 'Landmarker' : managerStatus.capturePath === 'holistic' ? 'Holistic' : managerStatus.capturePath === 'arkit-companion' ? 'ARKit LAN' : 'Path'}
+          </span>
           <span
             className={`mocap-signal ${managerStatus.fps > 12 ? 'is-ready' : ''}`}
             title={managerStatus.droppedVideoFrames > 0 ? `${managerStatus.droppedVideoFrames} camera frames skipped to protect rendering performance` : 'Tracker frame rate'}
@@ -1072,13 +1136,13 @@ export function MocapTab() {
         )}
 
         {/* Mode Selection */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
             <button
                 className={`secondary full-width ${mocapMode === 'full' ? 'active' : ''}`}
                 onClick={() => handleModeChange('full')}
                 aria-pressed={mocapMode === 'full'}
                 title="Track both body and face"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: '1 1 30%' }}
             >
                 <Person size={16} weight="duotone" /> Full Body
             </button>
@@ -1087,9 +1151,18 @@ export function MocapTab() {
                 onClick={() => handleModeChange('face')}
                 aria-pressed={mocapMode === 'face'}
                 title="Track face, hands, and upper body"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: '1 1 30%' }}
             >
                 <UserFocus size={16} weight="duotone" /> Upper Body
+            </button>
+            <button
+                className={`secondary full-width ${mocapMode === 'faceOnly' ? 'active' : ''}`}
+                onClick={() => handleModeChange('faceOnly')}
+                aria-pressed={mocapMode === 'faceOnly'}
+                title="Track only the face with MediaPipe Face Landmarker"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: '1 1 30%' }}
+            >
+                <MagicWand size={16} weight="duotone" /> Face Only
             </button>
         </div>
 
@@ -1124,10 +1197,10 @@ export function MocapTab() {
                                 addToast("Please start the camera first!", "warning");
                                 return;
                             }
-                            startCalibration();
+                            startCalibration(faceMaskEnabled || mocapMode === 'faceOnly' ? 'face' : 'body');
                         }}
                         style={{ flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                        title="Launch the calibration wizard for body and face"
+                        title={faceMaskEnabled || mocapMode === 'faceOnly' ? 'Launch the face-only calibration wizard' : 'Launch the calibration wizard for body and face'}
                     >
                         <MagicWand size={16} weight="duotone" /> Wizard
                     </button>
@@ -1328,10 +1401,12 @@ export function MocapTab() {
       <div className="tab-section">
           <h3>Instructions</h3>
           <ul className="small muted" style={{ paddingLeft: '1.2rem' }}>
+              <li><strong>Go Live (Face):</strong> One tap for Face Landmarker + overlay + Stream Mode. Press Esc to show UI.</li>
+              <li><strong>Face Only:</strong> Head and ARKit-mapped expressions. Best path on iPhone Safari.</li>
               <li><strong>Upper Body:</strong> Track face, hands, and arms without lower-body tracking.</li>
               <li><strong>Face AR:</strong> Uses the front camera as a live backdrop and replaces the tracked human head with the loaded VRM head.</li>
               <li><strong>Full Body:</strong> Stand back so your head, torso, legs, and hands are visible.</li>
-              <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button to align your body and gaze.</li>
+              <li><strong>Calibration:</strong> Use the <strong>Wizard</strong> button. Face-only skips the T-pose step.</li>
               <li>If the camera stops immediately, check browser camera permissions and close other apps using the camera.</li>
               <li>Ensure good lighting on your face.</li>
           </ul>
