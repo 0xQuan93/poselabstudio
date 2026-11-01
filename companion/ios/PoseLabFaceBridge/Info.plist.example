@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>PoseLab Face Bridge uses TrueDepth to drive your local VRM. Frames stay on this phone and your LAN.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>PoseLab Face Bridge sends blendshapes to PoseLab on your local network only.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_ws._tcp</string>
+  </array>
+</dict>
+</plist>

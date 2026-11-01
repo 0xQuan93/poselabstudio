@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { FaceMaskAdjustments } from '../utils/motionCapture';
+import { ARKIT_FACE_DEFAULT_URL } from '../utils/arkitFaceProtocol';
 
 interface MocapState {
   isActive: boolean;
@@ -14,6 +15,8 @@ interface MocapState {
   faceMaskProfiles: Record<string, FaceMaskAdjustments>;
   voiceVolume: number;
   voiceSensitivity: number;
+  arkitCompanionUrl: string;
+  arkitCompanionEnabled: boolean;
   
   setIsActive: (active: boolean) => void;
   setIsStarting: (starting: boolean) => void;
@@ -28,6 +31,8 @@ interface MocapState {
   clearFaceMaskProfiles: () => void;
   setVoiceVolume: (volume: number) => void;
   setVoiceSensitivity: (sensitivity: number) => void;
+  setArkitCompanionUrl: (url: string) => void;
+  setArkitCompanionEnabled: (enabled: boolean) => void;
 }
 
 export const useMocapStore = create<MocapState>()(
@@ -44,6 +49,8 @@ export const useMocapStore = create<MocapState>()(
       faceMaskProfiles: {},
       voiceVolume: 0,
       voiceSensitivity: 2.0,
+      arkitCompanionUrl: ARKIT_FACE_DEFAULT_URL,
+      arkitCompanionEnabled: false,
 
       setIsActive: (active) => set({ isActive: active }),
       setIsStarting: (starting) => set({ isStarting: starting }),
@@ -65,12 +72,15 @@ export const useMocapStore = create<MocapState>()(
       clearFaceMaskProfiles: () => set({ selectedDeviceId: '', faceMaskProfiles: {} }),
       setVoiceVolume: (volume) => set({ voiceVolume: volume }),
       setVoiceSensitivity: (sensitivity) => set({ voiceSensitivity: sensitivity }),
+      setArkitCompanionUrl: (url) => set({ arkitCompanionUrl: url }),
+      setArkitCompanionEnabled: (enabled) => set({ arkitCompanionEnabled: enabled }),
     }),
     {
       name: 'poselab-mocap-settings',
       partialize: (state) => ({
         selectedDeviceId: state.selectedDeviceId,
         faceMaskProfiles: state.faceMaskProfiles,
+        arkitCompanionUrl: state.arkitCompanionUrl,
       }),
     }
   )
