@@ -77,6 +77,12 @@ class AvatarManager {
   
   // Locked Hips rotation - enforced every frame when rotation is locked
   private lockedHipsRotation: THREE.Quaternion | null = null;
+  /** Default Y rotation applied to loaded VRMs (Math.PI for standard +Z exports). */
+  private defaultYRotation = Math.PI;
+
+  setDefaultYRotation(radians: number) {
+    this.defaultYRotation = radians;
+  }
   
     constructor(){
   
@@ -264,9 +270,9 @@ class AvatarManager {
     this.currentUrl = url;
 
     vrm.scene.position.set(0, 0, 0);
-    // Most VRMs are exported facing +Z but poses were authored with avatar at 180°.
-    // Start at 180° rotation so avatar faces camera, poses will maintain this.
-    vrm.scene.rotation.set(0, Math.PI, 0);
+    // Standard VRMs export facing +Z (camera looks at -Z) → Math.PI flip.
+    // Pre-rotated custom models can call setDefaultYRotation(0).
+    vrm.scene.rotation.set(0, this.defaultYRotation, 0);
     
     // Tag the scene object so SceneManager can find it reliably
     vrm.scene.userData.vrm = vrm;
