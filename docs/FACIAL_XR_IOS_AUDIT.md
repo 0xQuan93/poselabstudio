@@ -1,10 +1,19 @@
 # Facial XR iPhone & Provenance Audit
 
-Audit date: 2026-07-18
+Audit date: 2026-07-18  
+Capability-ladder refresh: 2026-10-30
 
 ## Product boundary
 
 PoseLab supports a browser-first Facial XR tier on iPhone: front camera, microphone-driven lip sync, local canvas video recording, and local take provenance. It does **not** receive native TrueDepth depth, `ARFaceAnchor`, or ARKit blendshape data from Safari. The UI must describe this as browser landmark tracking, not ARKit-quality face capture.
+
+Verified platform limits (do not contradict in product copy):
+
+1. Safari / iOS has **no** WebXR `immersive-ar` and **no** browser ARKit face blendshapes.
+2. Safari WebXR `immersive-vr` is visionOS-oriented.
+3. `vrManager.ts` “Facial XR masks” hide avatar face meshes for immersive-vr headsets. They are not TrueDepth ARKit.
+
+The Mocap **capability ladder** detects `immersive-ar` as unavailable on iOS Safari and recommends MediaPipe Face Landmarker. Native 52-shape ARKit is an **optional** LAN companion (`VITE_ENABLE_ARKIT_FACE_BRIDGE`), off by default, never uploaded.
 
 Safari's browser capture path is appropriate for the primary flow:
 

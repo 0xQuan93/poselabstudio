@@ -9,6 +9,7 @@
 
 ## 2. Camera, Microphone, and Facial XR
 *   **Permission and processing:** Camera and microphone access require a browser permission prompt and are activated from the relevant control. MediaPipe-based facial and body tracking processes the live stream in the browser.
+*   **Optional ARKit companion:** When explicitly enabled (`VITE_ENABLE_ARKIT_FACE_BRIDGE`), an iPhone app may stream ARKit blendshapes to PoseLab over a **LAN-only** WebSocket. Public internet hosts are rejected. Face coefficients are not uploaded to PoseLab servers.
 *   **Voice:** Voice lip sync analyzes microphone input locally. Voice chat is separate: enabling it publishes microphone audio to the LiveKit session for the people in that session.
 *   **AI visual interpretation:** This optional feature can send one current webcam frame to Google Gemini to interpret pose or expression. PoseLab displays a fresh confirmation before each frame is captured or transmitted; choosing Cancel keeps the frame on-device. Google's processing is governed by Google's applicable terms and privacy policies.
 

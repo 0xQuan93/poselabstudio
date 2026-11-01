@@ -11,6 +11,7 @@
     "typecheck": "tsc -b",
     "build": "npm run lint && npm run typecheck && vite build",
     "lint": "eslint .",
+    "test": "tsx --test src/utils/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -61,6 +62,7 @@
     "globals": "^17.5.0",
     "netlify-cli": "^26.0.0",
     "node-osc": "^11.4.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.10",
